@@ -76,3 +76,24 @@ Stage Summary:
   * Admin → Applications → see new submission → approve → "APPROVED" + technician account created (POST 200) ✓
   * Invoice document view renders printable invoice with all details ✓
 - Existing MEKANIX appearance fully preserved; all new features integrate with the same graphite+amber industrial design language.
+
+---
+Task ID: 23-26
+Agent: orchestrator
+Task: Replace abstract SVG mark with real logo (big hero on splash) + add Persian/English language switching with RTL
+
+Work Log:
+- Created i18n layer (src/lib/i18n.ts): en/fa dictionaries for splash, mode-select, nav, common; translate() helper
+- Added `lang` + `setLang` to Zustand store (default "fa"); created useT() hook that syncs <html dir/lang> for RTL/LTR
+- Replaced Logo component (brand/logo.tsx): now uses real /logo.png image everywhere instead of abstract SVG icon mark
+- Rewrote splash HeroLogo: real logo at 200px on a soft white spotlight disk (240px radial gradient) so the dark "M" reads on graphite bg; spring reveal + one-time ring pulse; no frame/glow
+- Rewrote splash: removed scan-line + top status bar; big hero logo as page centerpiece; language toggle (EN/فارسی) top-right with animated pill; all strings translated via t()
+- Rewrote mode-select: translated heading/cards/feature strip; language toggle in top bar; RTL-aware arrows/layout
+- Updated app-shell: added language toggle in header; nav labels translated via NAV_LABELS map (view→key); mode-switch toast + label translated; RTL flips entire layout
+- VLM verified: splash logo now rated 8/10 — "logo is the clear hero and perfectly readable, spotlight creates a sophisticated high-end stage effect"
+- Browser verified: fa↔en toggle works on splash, mode-select, and app shell; dir flips rtl/ltr correctly; nav labels translate (خانه/ناوگان من/تاریخچه سرویس/اعلان‌ها/تنظیمات)
+
+Stage Summary:
+- Lint clean, no browser errors.
+- Real MEKANIX logo (logo.png) now used: big spotlight hero on splash + small mark in all headers/footers.
+- Full Persian/English bilingual support with automatic RTL. Default language: Persian (fa).

@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench, LogOut, ArrowLeftRight, Car, Truck,
+  Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench, LogOut, ArrowLeftRight, Car, Truck, Languages,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Logo } from "./brand/logo";
@@ -12,11 +12,23 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { NotificationCenter } from "./shared/notification-center";
 import { useActiveUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
+import { useT, LANGS, type Lang } from "@/lib/use-t";
 import type { Role } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+// Map nav view → translation key
+const NAV_LABELS: Record<string, string> = {
+  home: "nav.home", vehicles: "nav.vehicles", "service-history": "nav.serviceHistory",
+  notifications: "nav.alerts", settings: "nav.settings", dashboard: "nav.dashboard",
+  requests: "nav.requests", earnings: "nav.earnings", schedule: "nav.schedule",
+  reviews: "nav.reviews", profile: "nav.profile", overview: "nav.overview",
+  applications: "nav.applications", customers: "nav.customers", technicians: "nav.technicians",
+  jobs: "nav.jobs", payments: "nav.payments", disputes: "nav.disputes",
+  categories: "nav.categories", verification: "nav.verification",
+};
 
 export interface NavItem {
   view: string;
@@ -34,7 +46,8 @@ export function AppShell({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  const { view, go, reset, portal, auth, machineMode, setMachineMode, exitToSplash, bootStage } = useApp();
+  const { view, go, reset, portal, auth, machineMode, setMachineMode, exitToSplash, bootStage, lang, setLang } = useApp();
+  const { t, isFa } = useT();
   const { user } = useActiveUser();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -45,7 +58,7 @@ export function AppShell({
   const switchMode = () => {
     const next = machineMode === "heavy" ? "passenger" : "heavy";
     setMachineMode(next);
-    toast.success(next === "heavy" ? "Switched to Heavy Machinery" : "Switched to Passenger Vehicles");
+    toast.success(next === "heavy" ? t("mode.switchedHeavy") : t("mode.switchedPassenger"));
     reset("home");
   };
 
@@ -98,7 +111,7 @@ export function AppShell({
           )}
         >
           <item.icon className="size-4" />
-          <span className="flex-1 text-left">{item.label}</span>
+          <span className="flex-1 text-left">{NAV_LABELS[item.view] ? t(NAV_LABELS[item.view]) : item.label}</span>
           {item.badge ? (
             <span className="rounded-full bg-amber/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber">
               {item.badge}
@@ -123,17 +136,31 @@ export function AppShell({
           </button>
 
           <div className="ml-auto flex items-center gap-1">
+            {/* Language toggle */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5">
+              {LANGS.map((l) => (
+                <button
+                  key={l.code}
+                  onClick={() => setLang(l.code as Lang)}
+                  className={`relative rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${lang === l.code ? "text-black" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {lang === l.code && <motion.div layoutId="header-lang-pill" className="absolute inset-0 rounded-md bg-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
+                  <span className="relative">{l.label}</span>
+                </button>
+              ))}
+            </div>
+
             {portal === "customer" && bootStage === "app" && (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="sm" className="gap-1.5 px-2.5" onClick={switchMode}>
                       {machineMode === "heavy" ? <Truck className="size-3.5 text-emerald-glow" /> : <Car className="size-3.5 text-amber" />}
-                      <span className="hidden text-[11px] font-medium sm:inline">{machineMode === "heavy" ? "Heavy" : "Passenger"}</span>
+                      <span className="hidden text-[11px] font-medium sm:inline">{machineMode === "heavy" ? (isFa ? "سنگین" : "Heavy") : (isFa ? "سواری" : "Passenger")}</span>
                       <ArrowLeftRight className="size-3 text-muted-foreground" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Switch machine category</TooltipContent>
+                  <TooltipContent>{t("common.switchMachine")}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Role } from "./api";
 import type { MachineMode } from "./constants";
+import type { Lang } from "./i18n";
 
 export type CustomerView =
   | "home"
@@ -71,6 +72,9 @@ interface AppState extends NavState {
   // Boot & portal
   bootStage: BootStage;
   portal: Portal; // which portal the user entered through
+  // Language
+  lang: Lang;
+  setLang: (lang: Lang) => void;
   // Auth
   auth: AuthState;
   signIn: (auth: Partial<AuthState>) => void;
@@ -93,12 +97,15 @@ export const useApp = create<AppState>()(
     (set, get) => ({
       bootStage: "splash",
       portal: "customer",
+      lang: "fa" as Lang,
       auth: { userId: null, phone: null, name: null, isGuest: false, verified: false },
       role: "CUSTOMER",
       machineMode: "heavy",
       view: "home",
       params: {},
       history: [],
+
+      setLang: (lang) => set({ lang }),
 
       signIn: (patch) => set((s) => ({ auth: { ...s.auth, ...patch } })),
       signOut: () =>

@@ -1,0 +1,173 @@
+"use client";
+// MEKANIX — minimal i18n layer (English + Persian/Farsi) with RTL support.
+// Designed so adding a language or a key is a one-line change.
+
+export type Lang = "en" | "fa";
+
+export const LANGS: { code: Lang; label: string; labelEn: string; dir: "ltr" | "rtl" }[] = [
+  { code: "en", label: "English", labelEn: "English", dir: "ltr" },
+  { code: "fa", label: "فارسی", labelEn: "Persian", dir: "rtl" },
+];
+
+// ─── Translation dictionary ───
+const DICT: Record<Lang, Record<string, string>> = {
+  en: {
+    // Splash
+    "splash.title": "MEKANIX",
+    "splash.subtitle": "On-demand mobile repair & maintenance",
+    "splash.subtitle2": "for vehicles and heavy machinery",
+    "splash.signInMobile": "Sign in with Mobile",
+    "splash.continueGuest": "Continue as Guest",
+    "splash.applyMechanic": "Apply as Mechanic",
+    "splash.operations": "Operations",
+    "splash.guestHint": "Guests can browse the platform but cannot submit service requests.",
+    "splash.securedBy": "Secured by MEKANIX · Verified technicians · 6-month warranty",
+    "splash.signIn": "Sign in",
+    "splash.enterMobile": "Enter your mobile number to receive a verification code",
+    "splash.mobileNumber": "Mobile Number",
+    "splash.sendCode": "Send Verification Code",
+    "splash.enterCode": "Enter code",
+    "splash.sentTo": "Sent to",
+    "splash.demoCode": "Demo code",
+    "splash.verifyContinue": "Verify & Continue",
+    "splash.resend": "Resend code",
+    "splash.back": "Back",
+    "splash.codeSent": "Verification code sent",
+    "splash.welcome": "Welcome",
+    "splash.invalidCode": "Invalid code",
+    "splash.codeExpired": "Code expired. Request a new one.",
+    "splash.validPhone": "Valid phone number required",
+    "splash.enterCodeShort": "Enter the 6-digit code",
+
+    // Mode select
+    "mode.greeting": "Welcome back",
+    "mode.guest": "Browsing as guest",
+    "mode.title": "What do you need serviced today?",
+    "mode.subtitle": "Choose a category to get matched with the right specialists",
+    "mode.passenger": "Passenger Vehicles",
+    "mode.heavy": "Heavy Machinery",
+    "mode.passengerDesc": "Cars, SUVs, light vehicles",
+    "mode.heavyDesc": "Trucks, buses, excavators, loaders, tractors, industrial",
+    "mode.signOut": "Sign out",
+    "mode.verifiedSpecialists": "Verified specialists",
+    "mode.backgroundChecked": "Background-checked",
+    "mode.warranty": "6-month warranty",
+    "mode.onPartsLabor": "On parts & labor",
+    "mode.onSiteService": "On-site service",
+    "mode.weComeToYou": "We come to you",
+    "mode.guestBrowseHint": "You're browsing as a guest — sign in to submit service requests.",
+    "mode.switchedHeavy": "Switched to Heavy Machinery",
+    "mode.switchedPassenger": "Switched to Passenger Vehicles",
+
+    // Nav
+    "nav.home": "Home",
+    "nav.vehicles": "My Fleet",
+    "nav.serviceHistory": "Service History",
+    "nav.alerts": "Alerts",
+    "nav.settings": "Settings",
+    "nav.dashboard": "Dashboard",
+    "nav.requests": "Requests",
+    "nav.earnings": "Earnings",
+    "nav.schedule": "Schedule",
+    "nav.reviews": "Reviews",
+    "nav.profile": "Profile",
+    "nav.overview": "Overview",
+    "nav.applications": "Applications",
+    "nav.customers": "Customers",
+    "nav.technicians": "Technicians",
+    "nav.jobs": "Jobs",
+    "nav.payments": "Payments",
+    "nav.disputes": "Disputes",
+    "nav.categories": "Categories",
+    "nav.verification": "Verification",
+
+    // Common
+    "common.signOut": "Sign out",
+    "common.switchMachine": "Switch machine category",
+    "common.reseed": "Reseed demo data",
+    "common.language": "Language",
+    "common.all": "All",
+  },
+  fa: {
+    // Splash
+    "splash.title": "مکانیکس",
+    "splash.subtitle": "تعمیر و نگهداری سیار در محل",
+    "splash.subtitle2": "برای خودرو و ماشین‌آلات سنگین",
+    "splash.signInMobile": "ورود با شماره موبایل",
+    "splash.continueGuest": "ادامه به عنوان مهمان",
+    "splash.applyMechanic": "ثبت‌نام به عنوان مکانیک",
+    "splash.operations": "عملیات",
+    "splash.guestHint": "مهمان‌ها می‌توانند پلتفرم را مرور کنند اما نمی‌توانند درخواست ثبت کنند.",
+    "splash.securedBy": "امن‌شده توسط مکانیکس · مکانیک‌های تأییدشده · ۶ ماه گارانتی",
+    "splash.signIn": "ورود",
+    "splash.enterMobile": "شماره موبایل خود را وارد کنید تا کد تأیید دریافت شود",
+    "splash.mobileNumber": "شماره موبایل",
+    "splash.sendCode": "ارسال کد تأیید",
+    "splash.enterCode": "کد را وارد کنید",
+    "splash.sentTo": "ارسال شد به",
+    "splash.demoCode": "کد نمونه",
+    "splash.verifyContinue": "تأیید و ادامه",
+    "splash.resend": "ارسال مجدد کد",
+    "splash.back": "بازگشت",
+    "splash.codeSent": "کد تأیید ارسال شد",
+    "splash.welcome": "خوش آمدید",
+    "splash.invalidCode": "کد نامعتبر است",
+    "splash.codeExpired": "کد منقضی شده. کد جدید درخواست کنید.",
+    "splash.validPhone": "شماره موبایل معتبر وارد کنید",
+    "splash.enterCodeShort": "کد ۶ رقمی را وارد کنید",
+
+    // Mode select
+    "mode.greeting": "خوش آمدید",
+    "mode.guest": "مرور به عنوان مهمان",
+    "mode.title": "امروز چه چیزی نیاز به سرویس دارد؟",
+    "mode.subtitle": "یک دسته انتخاب کنید تا با متخصصان مناسب تطبیق داده شوید",
+    "mode.passenger": "خودروی سواری",
+    "mode.heavy": "ماشین‌آلات سنگین",
+    "mode.passengerDesc": "خودرو، شاسی‌بلند، خودروی سبک",
+    "mode.heavyDesc": "کامیون، اتوبوس، بیل، لودر، تراکتور، صنعتی",
+    "mode.signOut": "خروج",
+    "mode.verifiedSpecialists": "متخصصان تأییدشده",
+    "mode.backgroundChecked": "بررسی سوءپیشینه",
+    "mode.warranty": "۶ ماه گارانتی",
+    "mode.onPartsLabor": "روی قطعات و دستمزد",
+    "mode.onSiteService": "سرویس در محل",
+    "mode.weComeToYou": "ما پیش شما می‌آییم",
+    "mode.guestBrowseHint": "شما به عنوان مهمان مرور می‌کنید — برای ثبت درخواست وارد شوید.",
+    "mode.switchedHeavy": "تغییر به ماشین‌آلات سنگین",
+    "mode.switchedPassenger": "تغییر به خودروی سواری",
+
+    // Nav
+    "nav.home": "خانه",
+    "nav.vehicles": "ناوگان من",
+    "nav.serviceHistory": "تاریخچه سرویس",
+    "nav.alerts": "اعلان‌ها",
+    "nav.settings": "تنظیمات",
+    "nav.dashboard": "داشبورد",
+    "nav.requests": "درخواست‌ها",
+    "nav.earnings": "درآمد",
+    "nav.schedule": "زمان‌بندی",
+    "nav.reviews": "نظرات",
+    "nav.profile": "پروفایل",
+    "nav.overview": "نمای کلی",
+    "nav.applications": "درخواست‌ها",
+    "nav.customers": "مشتریان",
+    "nav.technicians": "مکانیک‌ها",
+    "nav.jobs": "کارها",
+    "nav.payments": "پرداخت‌ها",
+    "nav.disputes": "اختلافات",
+    "nav.categories": "دسته‌بندی‌ها",
+    "nav.verification": "تأیید",
+
+    // Common
+    "common.signOut": "خروج",
+    "common.switchMachine": "تغییر دسته ماشین",
+    "common.reseed": "بازسازی داده‌های نمونه",
+    "common.language": "زبان",
+    "common.all": "همه",
+  },
+};
+
+// ─── t() helper (pure) ───
+export function translate(lang: Lang, key: string, fallback?: string): string {
+  return DICT[lang]?.[key] ?? DICT.en[key] ?? fallback ?? key;
+}
