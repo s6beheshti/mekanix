@@ -1,0 +1,258 @@
+"use client";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  Wrench, Siren, CalendarClock, Car, History, ChevronRight, MapPin, Clock, ShieldCheck, Activity, Zap,
+} from "lucide-react";
+import type { DemoUser } from "@/lib/use-active-user";
+import { useApp } from "@/lib/store";
+import { api, type Vehicle, type Job } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
+import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
+import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
+import { fmtRelative, fmtDate } from "@/lib/format";
+import { Link as LinkIcon, CircleDot } from "lucide-react";
+
+export function CustomerHome({ customer }: { customer: DemoUser }) {
+  const { go } = useApp();
+  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+  const [activeJobs, setActiveJobs] = useState<Job[] | null>(null);
+  const [history, setHistory] = useState<Job[] | null>(null);
+
+  useEffect(() => {
+    if (!customer.customer) return;
+    api.listVehicles(customer.customer.id).then(setVehicles).catch(() => setVehicles([]));
+    api.listJobs({ customerId: customer.customer.id }).then((j) => {
+      setActiveJobs(j.filter((x) => x.status !== "COMPLETED" && x.status !== "CANCELLED"));
+      setHistory(j.filter((x) => x.status === "COMPLETED").slice(0, 3));
+    }).catch(() => { setActiveJobs([]); setHistory([]); });
+  }, [customer]);
+
+  const quickActions = [
+    { label: "Request a Mechanic", desc: "Book a service call", icon: Wrench, tone: "amber", view: "request-type" },
+    { label: "Emergency Assistance", desc: "Roadside, breakdown", icon: Siren, tone: "rose", view: "request-type", urgency: "EMERGENCY" },
+    { label: "Schedule Maintenance", desc: "Plan ahead", icon: CalendarClock, tone: "emerald", view: "request-type", urgency: "NORMAL" },
+    { label: "My Vehicles", desc: "Manage fleet", icon: Car, tone: "blue", view: "vehicles" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="absolute inset-0 mk-grid-bg opacity-40" />
+        <div className="absolute -right-20 -top-20 size-72 rounded-full bg-amber/20 blur-3xl mk-radial-fade" />
+        <div className="absolute -left-10 bottom-0 size-48 rounded-full bg-emerald-glow/10 blur-3xl mk-radial-fade" />
+        <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.4fr_1fr]">
+          <div>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-[11px] font-medium text-amber">
+              <span className="size-1.5 rounded-full bg-amber mk-status-pulse" />
+              {vehicles?.length ?? 0} machines in your fleet
+            </motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="mt-4 font-display text-3xl font-bold leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl"
+            >
+              Get the right technician <br className="hidden sm:block" />
+              <span className="text-amber mk-text-glow">to your machine.</span>
+            </motion.h1>
+            <p className="mt-3 max-w-md text-sm text-muted-foreground sm:text-base">
+              On-demand diagnostics, repair, and maintenance for cars, trucks, buses, and heavy machinery — wherever your fleet is parked.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90">
+                <Wrench className="mr-1.5 size-4" /> Request a Mechanic
+              </Button>
+              <Button variant="outline" onClick={() => go("vehicles")}>
+                <Car className="mr-1.5 size-4" /> View My Fleet
+              </Button>
+            </div>
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-emerald-glow" /> Verified technicians</span>
+              <span className="inline-flex items-center gap-1.5"><Activity className="size-3.5 text-amber" /> Real-time tracking</span>
+              <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5 text-sky-400" /> Avg. 15 min response</span>
+            </div>
+          </div>
+
+          {/* Live ops mini panel */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+            className="relative rounded-xl border border-border bg-background/60 p-4 backdrop-blur"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Live Ops</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-glow/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-glow">
+                <span className="size-1.5 rounded-full bg-emerald-glow mk-status-pulse" /> Operational
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <MiniMetric label="Active Jobs" value={activeJobs?.length ?? "—"} icon={Wrench} tone="amber" />
+              <MiniMetric label="In Fleet" value={vehicles?.length ?? "—"} icon={Car} tone="blue" />
+              <MiniMetric label="Completed" value={history?.length ?? "—"} icon={ShieldCheck} tone="emerald" />
+              <MiniMetric label="Response" value="15m" icon={Zap} tone="violet" />
+            </div>
+            <div className="mt-3 rounded-lg border border-border bg-card/60 p-2.5">
+              <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">Coverage Zone</p>
+              <div className="mt-1.5 flex items-center gap-2 text-[11px]">
+                <MapPin className="size-3.5 text-amber" />
+                <span>San Francisco Bay Area · 24/7</span>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Quick actions */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {quickActions.map((a, i) => (
+          <motion.button
+            key={a.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04 }}
+            whileHover={{ y: -2 }}
+            onClick={() => go(a.view, a.urgency ? { urgency: a.urgency } : undefined)}
+            className="group relative overflow-hidden rounded-xl border border-border bg-card p-4 text-left mk-card-hover hover:border-amber/40"
+          >
+            <div className={`grid size-10 place-items-center rounded-lg border ${toneBorder(a.tone)} ${toneBg(a.tone)}`}>
+              <a.icon className={`size-5 ${toneText(a.tone)}`} />
+            </div>
+            <p className="mt-3 font-display text-sm font-semibold">{a.label}</p>
+            <p className="text-[11px] text-muted-foreground">{a.desc}</p>
+            <ChevronRight className="absolute right-3 top-3 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </motion.button>
+        ))}
+      </section>
+
+      {/* Active jobs */}
+      <section>
+        <SectionHeader
+          title="Active Service Calls"
+          subtitle="Track ongoing jobs in real time"
+          action={<Button variant="ghost" size="sm" onClick={() => go("service-history")}>History <ChevronRight className="size-3.5" /></Button>}
+        />
+        <div className="mt-3">
+          {activeJobs === null ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[0, 1].map((i) => <div key={i} className="h-28 rounded-xl bg-muted/60 mk-shimmer" />)}
+            </div>
+          ) : activeJobs.length === 0 ? (
+            <EmptyState icon={Wrench} title="No active jobs" description="Request a mechanic to start a service call." action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90"><Wrench className="mr-1.5 size-4" />Request a Mechanic</Button>} />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {activeJobs.slice(0, 4).map((job) => (
+                <ActiveJobCard key={job.id} job={job} onClick={() => go("track", { jobId: job.id })} />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Fleet snapshot + recent history */}
+      <section className="grid gap-5 lg:grid-cols-2">
+        <div>
+          <SectionHeader title="Your Fleet" action={<Button variant="ghost" size="sm" onClick={() => go("vehicles")}>Manage <ChevronRight className="size-3.5" /></Button>} />
+          <div className="mt-3">
+            {vehicles === null ? (
+              <div className="h-28 rounded-xl bg-muted/60 mk-shimmer" />
+            ) : vehicles.length === 0 ? (
+              <EmptyState icon={Car} title="No vehicles yet" description="Add your first vehicle or machine." action={<Button onClick={() => go("vehicles")} variant="outline" size="sm"><Car className="mr-1.5 size-4" />Add Vehicle</Button>} />
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {vehicles.slice(0, 4).map((v) => (
+                  <button key={v.id} onClick={() => go("vehicles")} className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-left mk-card-hover hover:border-amber/40">
+                    <div className="grid size-9 place-items-center rounded-lg border border-border bg-background">
+                      <MekIcon name={iconForMachineType(v.type)} className="size-4 text-amber" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{v.make} {v.model}</p>
+                      <p className="text-[11px] text-muted-foreground">{v.type} · {v.year}</p>
+                    </div>
+                    {v.plate && <span className="font-mono text-[9px] text-muted-foreground">{v.plate}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div>
+          <SectionHeader title="Recent Service History" action={<Button variant="ghost" size="sm" onClick={() => go("service-history")}>All <ChevronRight className="size-3.5" /></Button>} />
+          <div className="mt-3">
+            {history === null ? (
+              <div className="h-28 rounded-xl bg-muted/60 mk-shimmer" />
+            ) : history.length === 0 ? (
+              <EmptyState icon={History} title="No history yet" description="Completed jobs will appear here." />
+            ) : (
+              <div className="space-y-2">
+                {history.map((job) => (
+                  <button key={job.id} onClick={() => go("service-history")} className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left mk-card-hover hover:border-amber/40">
+                    <div className="grid size-9 place-items-center rounded-lg border border-emerald-glow/30 bg-emerald-glow/10">
+                      <ShieldCheck className="size-4 text-emerald-glow" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{job.request.title}</p>
+                      <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model} · {fmtDate(job.completedAt ?? job.createdAt)}</p>
+                    </div>
+                    {job.invoice && <span className="font-mono text-xs text-amber">${Math.round(job.invoice.total)}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value, icon: Icon, tone }: { label: string; value: any; icon: any; tone: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card/60 p-2.5">
+      <div className="flex items-center gap-1.5">
+        <Icon className={`size-3 ${toneText(tone)}`} />
+        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      </div>
+      <p className={`mt-1 font-display text-lg font-semibold ${toneText(tone)}`}>{value}</p>
+    </div>
+  );
+}
+
+function ActiveJobCard({ job, onClick }: { job: Job; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="group relative overflow-hidden rounded-xl border border-border bg-card p-4 text-left mk-card-hover hover:border-amber/40">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] text-muted-foreground">{job.code}</span>
+            <UrgencyBadge urgency={job.request.urgency} />
+          </div>
+          <p className="mt-1 truncate font-display text-sm font-semibold">{job.request.title}</p>
+          <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model}</p>
+        </div>
+        <StatusBadge status={job.status} />
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <MapPin className="size-3 text-amber" /> {job.request.vehicle.location ?? "On-site"}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Clock className="size-3 text-amber" /> {fmtRelative(job.updatedAt)}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function toneText(t: string) {
+  return { amber: "text-amber", rose: "text-destructive", emerald: "text-emerald-glow", blue: "text-sky-400", violet: "text-violet-400" }[t] ?? "text-foreground";
+}
+function toneBg(t: string) {
+  return { amber: "bg-amber/10", rose: "bg-destructive/10", emerald: "bg-emerald-glow/10", blue: "bg-sky-500/10", violet: "bg-violet-500/10" }[t] ?? "bg-muted";
+}
+function toneBorder(t: string) {
+  return { amber: "border-amber/30", rose: "border-destructive/30", emerald: "border-emerald-glow/30", blue: "border-sky-500/30", violet: "border-violet-500/30" }[t] ?? "border-border";
+}
