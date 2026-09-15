@@ -15,7 +15,8 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  phone     String?
+  phone     String?  @unique
+  phoneVerified Boolean @default(false)
   password  String   @default("demo") // demo only — never store plaintext in prod
   name      String
   avatar    String?
@@ -33,8 +34,11 @@ model User {
   messagesSent   Message[]   @relation("msgFrom")
   reviewsGiven   Review[]   @relation("revFrom")
   payments       Payment[]
+  otps           OtpCode[]
+  mechanicApplication MechanicApplication?
 
   @@index([role])
+  @@index([phone])
 }
 
 enum Role {
@@ -421,4 +425,53 @@ model ServiceCategory {
   basePrice Float  @default(0)
   active    Boolean @default(true)
   order     Int    @default(0)
+}
+
+// ───────────────────────── OTP / Phone Verification ─────────────────────────
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  consumed   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([phone, createdAt])
+}
+
+// ───────────────────────── Mechanic Applications ─────────────────────────
+// Public applications submitted from the splash "Apply as Mechanic" flow.
+// Admin reviews & approves → a User (role TECHNICIAN) + Technician profile is created.
+
+model MechanicApplication {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  fullName    String
+  phone       String
+  email       String?
+  city        String
+  experienceYears Int  @default(0)
+  specialties String   // JSON array of category slugs
+  certifications String? // JSON array
+  bio         String?
+  vehicleOwned Boolean @default(false) // has own service vehicle
+  status      ApplicationStatus @default(PENDING)
+  adminNotes  String?
+  userId      String?  @unique
+  user        User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reviewerId  String?
+  createdAt   DateTime @default(now())
+  reviewedAt  DateTime?
+
+  @@index([status])
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ON_HOLD
 }

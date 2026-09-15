@@ -339,6 +339,11 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   {job.invoice.status === "PAID" ? "Invoice paid — warranty activated." : job.customerApproved ? "Customer approved — begin repair." : "Waiting for customer approval."}
                 </div>
               )}
+              {job.invoice && (
+                <Button onClick={() => toast.success(`Invoice ${job.invoice!.code} issued to customer`)} variant="outline" size="sm" className="mt-2 w-full">
+                  <FileText className="mr-1.5 size-3.5" /> Issue Invoice {job.invoice.code}
+                </Button>
+              )}
             </div>
           )}
 

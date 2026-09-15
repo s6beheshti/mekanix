@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Wrench, Siren, CalendarClock, Car, History, ChevronRight, MapPin, Clock, ShieldCheck, Activity, Zap,
+  Wrench, Siren, CalendarClock, Car, History, ChevronRight, MapPin, Clock, ShieldCheck, Activity, Zap, ShieldAlert,
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
@@ -15,19 +15,20 @@ import { fmtRelative, fmtDate } from "@/lib/format";
 import { Link as LinkIcon, CircleDot } from "lucide-react";
 
 export function CustomerHome({ customer }: { customer: DemoUser }) {
-  const { go } = useApp();
+  const { go, machineMode, auth } = useApp();
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [activeJobs, setActiveJobs] = useState<Job[] | null>(null);
   const [history, setHistory] = useState<Job[] | null>(null);
 
   useEffect(() => {
     if (!customer.customer) return;
-    api.listVehicles(customer.customer.id).then(setVehicles).catch(() => setVehicles([]));
+    api.listVehicles(customer.customer.id).then((v) => setVehicles(filterByMode(v, machineMode))).catch(() => setVehicles([]));
     api.listJobs({ customerId: customer.customer.id }).then((j) => {
-      setActiveJobs(j.filter((x) => x.status !== "COMPLETED" && x.status !== "CANCELLED"));
-      setHistory(j.filter((x) => x.status === "COMPLETED").slice(0, 3));
+      const filtered = filterJobsByMode(j, machineMode);
+      setActiveJobs(filtered.filter((x) => x.status !== "COMPLETED" && x.status !== "CANCELLED"));
+      setHistory(filtered.filter((x) => x.status === "COMPLETED").slice(0, 3));
     }).catch(() => { setActiveJobs([]); setHistory([]); });
-  }, [customer]);
+  }, [customer, machineMode]);
 
   const quickActions = [
     { label: "Request a Mechanic", desc: "Book a service call", icon: Wrench, tone: "amber", view: "request-type" },
@@ -47,8 +48,14 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
           <div>
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-[11px] font-medium text-amber">
               <span className="size-1.5 rounded-full bg-amber mk-status-pulse" />
-              {vehicles?.length ?? 0} machines in your fleet
+              {machineMode === "heavy" ? "Heavy Machinery" : "Passenger Vehicles"} mode · {vehicles?.length ?? 0} machines
             </motion.div>
+            {auth.isGuest && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/5 px-3 py-1.5 text-[11px] text-amber">
+                <ShieldAlert className="size-3.5" />
+                Browsing as guest — sign in to submit service requests
+              </motion.div>
+            )}
             <motion.h1
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -255,4 +262,18 @@ function toneBg(t: string) {
 }
 function toneBorder(t: string) {
   return { amber: "border-amber/30", rose: "border-destructive/30", emerald: "border-emerald-glow/30", blue: "border-sky-500/30", violet: "border-violet-500/30" }[t] ?? "border-border";
+}
+
+// ─── Mode filtering helpers (shared across customer views) ───
+import { typesForMode, type MachineMode } from "@/lib/constants";
+import type { Job } from "@/lib/api";
+
+export function filterByMode<T extends { type: string }>(items: T[], mode: MachineMode): T[] {
+  const types = typesForMode(mode);
+  return items.filter((i) => types.includes(i.type));
+}
+
+export function filterJobsByMode(jobs: Job[], mode: MachineMode): Job[] {
+  const types = typesForMode(mode);
+  return jobs.filter((j) => types.includes(j.request.vehicle.type));
 }

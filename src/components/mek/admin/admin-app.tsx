@@ -1,7 +1,7 @@
 "use client";
 import {
   LayoutDashboard, Users, Wrench, Briefcase, CreditCard, Star, AlertTriangle,
-  Layers, ShieldCheck, Settings,
+  Layers, ShieldCheck, Settings, UserPlus,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/mek/app-shell";
 import { useApp } from "@/lib/store";
@@ -14,10 +14,12 @@ import { AdminReviews } from "./reviews";
 import { AdminDisputes } from "./disputes";
 import { AdminCategories } from "./categories";
 import { AdminVerification } from "./verification";
+import { AdminApplications } from "./applications";
 import { AdminSettings } from "./settings";
 
 const NAV: NavItem[] = [
   { view: "overview", label: "Overview", icon: LayoutDashboard },
+  { view: "applications", label: "Applications", icon: UserPlus },
   { view: "customers", label: "Customers", icon: Users },
   { view: "technicians", label: "Technicians", icon: Wrench },
   { view: "jobs", label: "Jobs", icon: Briefcase },
@@ -34,6 +36,7 @@ export function AdminApp() {
   const render = () => {
     switch (view) {
       case "overview": return <AdminOverview />;
+      case "applications": return <AdminApplications />;
       case "customers": return <AdminCustomers />;
       case "technicians": return <AdminTechnicians />;
       case "jobs": return <AdminJobs />;

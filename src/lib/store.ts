@@ -1,9 +1,10 @@
 "use client";
-// MEKANIX — global UI state (Zustand). Handles role-switch + view navigation
-// for the single-route SPA, plus auth context for the active demo identity.
+// MEKANIX — global UI state (Zustand). Handles boot flow (splash → mode → app),
+// phone-OTP auth, role-switch, machine-mode filter, and view navigation.
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Role } from "./api";
+import type { MachineMode } from "./constants";
 
 export type CustomerView =
   | "home"
@@ -14,6 +15,7 @@ export type CustomerView =
   | "technician-profile"
   | "track"
   | "invoice"
+  | "invoice-document"
   | "completion"
   | "service-history"
   | "chat"
@@ -28,7 +30,8 @@ export type TechView =
   | "schedule"
   | "profile"
   | "reviews"
-  | "notifications";
+  | "notifications"
+  | "chat";
 
 export type AdminView =
   | "overview"
@@ -40,7 +43,21 @@ export type AdminView =
   | "disputes"
   | "categories"
   | "verification"
+  | "applications"
   | "settings";
+
+// Boot stages determine which top-level experience is shown.
+export type BootStage = "splash" | "mode-select" | "app";
+
+export type Portal = "customer" | "mechanic" | "admin";
+
+interface AuthState {
+  userId: string | null;
+  phone: string | null;
+  name: string | null;
+  isGuest: boolean; // guest = no verified phone
+  verified: boolean;
+}
 
 interface NavState {
   view: string;
@@ -50,25 +67,82 @@ interface NavState {
   reset: (view: string) => void;
 }
 
-interface RoleState extends NavState {
+interface AppState extends NavState {
+  // Boot & portal
+  bootStage: BootStage;
+  portal: Portal; // which portal the user entered through
+  // Auth
+  auth: AuthState;
+  signIn: (auth: Partial<AuthState>) => void;
+  signOut: () => void;
+  // Role (within app)
   role: Role;
-  userId: string | null; // active demo user id per role
-  history: { view: string; params: Record<string, any> }[];
   setRole: (role: Role) => void;
-  setUserId: (id: string) => void;
+  // Machine mode filter (heavy vs passenger)
+  machineMode: MachineMode;
+  setMachineMode: (mode: MachineMode) => void;
+  // Navigation
+  history: { view: string; params: Record<string, any> }[];
+  // Boot flow helpers
+  enterApp: (portal: Portal, auth?: Partial<AuthState>) => void;
+  exitToSplash: () => void;
 }
 
-export const useApp = create<RoleState>()(
+export const useApp = create<AppState>()(
   persist(
     (set, get) => ({
+      bootStage: "splash",
+      portal: "customer",
+      auth: { userId: null, phone: null, name: null, isGuest: false, verified: false },
       role: "CUSTOMER",
-      userId: null,
+      machineMode: "heavy",
       view: "home",
       params: {},
       history: [],
+
+      signIn: (patch) => set((s) => ({ auth: { ...s.auth, ...patch } })),
+      signOut: () =>
+        set({
+          bootStage: "splash",
+          portal: "customer",
+          auth: { userId: null, phone: null, name: null, isGuest: false, verified: false },
+          role: "CUSTOMER",
+          view: "home",
+          params: {},
+          history: [],
+        }),
+
       setRole: (role) =>
-        set({ role, view: role === "CUSTOMER" ? "home" : role === "TECHNICIAN" ? "dashboard" : "overview", params: {}, history: [] }),
-      setUserId: (userId) => set({ userId }),
+        set({
+          role,
+          view: role === "CUSTOMER" ? "home" : role === "TECHNICIAN" ? "dashboard" : "overview",
+          params: {},
+          history: [],
+        }),
+
+      setMachineMode: (mode) => set({ machineMode: mode }),
+
+      // After splash auth → go to mode-select (customer) or straight to app (mechanic/admin)
+      enterApp: (portal, auth) =>
+        set((s) => ({
+          portal,
+          auth: auth ? { ...s.auth, ...auth } : s.auth,
+          bootStage: portal === "customer" ? "mode-select" : "app",
+          role: portal === "mechanic" ? "TECHNICIAN" : portal === "admin" ? "ADMIN" : "CUSTOMER",
+          view: portal === "mechanic" ? "dashboard" : portal === "admin" ? "overview" : "home",
+          params: {},
+          history: [],
+        })),
+
+      exitToSplash: () =>
+        set({
+          bootStage: "splash",
+          auth: { userId: null, phone: null, name: null, isGuest: false, verified: false },
+          view: "home",
+          params: {},
+          history: [],
+        }),
+
       go: (view, params = {}) => {
         const { view: cur, params: curParams, history } = get();
         set({ view, params, history: [...history, { view: cur, params: curParams }].slice(-30) });
@@ -84,10 +158,3 @@ export const useApp = create<RoleState>()(
     { name: "mekanix-app" }
   )
 );
-
-// Demo identity map: which seeded user represents each role by default.
-export const DEMO_USERS = {
-  CUSTOMER: "cus_demo",   // resolved at runtime from /api/auth/demo
-  TECHNICIAN: "tech_demo",
-  ADMIN: "admin_demo",
-} as const;

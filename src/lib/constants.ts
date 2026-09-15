@@ -2,19 +2,45 @@
 // Kept in sync with prisma/schema.prisma
 
 export const MACHINE_TYPES = [
-  { slug: "CAR", label: "Passenger Car", icon: "Car", group: "vehicle" },
-  { slug: "TRUCK", label: "Truck", icon: "Truck", group: "vehicle" },
-  { slug: "BUS", label: "Bus", icon: "Bus", group: "vehicle" },
-  { slug: "EXCAVATOR", label: "Excavator", icon: "Excavator", group: "heavy" },
-  { slug: "LOADER", label: "Loader", icon: "Loader", group: "heavy" },
-  { slug: "BULLDOZER", label: "Bulldozer", icon: "Bulldozer", group: "heavy" },
-  { slug: "GRADER", label: "Grader", icon: "Grader", group: "heavy" },
-  { slug: "AGRI", label: "Agricultural", icon: "Tractor", group: "agri" },
-  { slug: "INDUSTRIAL", label: "Industrial", icon: "Factory", group: "industrial" },
-  { slug: "OTHER", label: "Other", icon: "Wrench", group: "other" },
+  { slug: "CAR", label: "Passenger Car", icon: "Car", group: "vehicle", mode: "passenger" },
+  { slug: "TRUCK", label: "Truck", icon: "Truck", group: "vehicle", mode: "heavy" },
+  { slug: "BUS", label: "Bus", icon: "Bus", group: "vehicle", mode: "heavy" },
+  { slug: "EXCAVATOR", label: "Excavator", icon: "Excavator", group: "heavy", mode: "heavy" },
+  { slug: "LOADER", label: "Loader", icon: "Loader", group: "heavy", mode: "heavy" },
+  { slug: "BULLDOZER", label: "Bulldozer", icon: "Bulldozer", group: "heavy", mode: "heavy" },
+  { slug: "GRADER", label: "Grader", icon: "Grader", group: "heavy", mode: "heavy" },
+  { slug: "AGRI", label: "Agricultural", icon: "Tractor", group: "agri", mode: "heavy" },
+  { slug: "INDUSTRIAL", label: "Industrial", icon: "Factory", group: "industrial", mode: "heavy" },
+  { slug: "OTHER", label: "Other", icon: "Wrench", group: "other", mode: "heavy" },
 ] as const;
 
 export type MachineTypeSlug = (typeof MACHINE_TYPES)[number]["slug"];
+export type MachineMode = "passenger" | "heavy";
+
+export const MACHINE_MODES = [
+  {
+    slug: "passenger" as MachineMode,
+    label: "Passenger Vehicles",
+    labelFa: "خودروی سواری",
+    desc: "Cars, SUVs, light vehicles",
+    icon: "Car",
+    tone: "amber",
+    types: ["CAR"],
+  },
+  {
+    slug: "heavy" as MachineMode,
+    label: "Heavy Machinery",
+    labelFa: "ماشین‌آلات سنگین",
+    desc: "Trucks, buses, excavators, loaders, tractors, industrial",
+    icon: "Truck",
+    tone: "emerald",
+    types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"],
+  },
+] as const;
+
+export function typesForMode(mode: MachineMode): string[] {
+  return MACHINE_MODES.find((m) => m.slug === mode)?.types ?? [];
+}
 
 export const JOB_STATUS_FLOW: {
   key: string;

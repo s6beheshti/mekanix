@@ -427,6 +427,33 @@ async function main() {
     });
   }
 
+  // ── Mechanic Applications (for admin review queue) ──
+  await db.mechanicApplication.deleteMany();
+  const apps = [
+    { fullName: "Reza Karimi", phone: "+989121118011", email: "reza.karimi@gmail.com", city: "Tehran", exp: 7, specs: ["engine", "heavy-diesel", "diagnostic"], bio: "Heavy truck specialist, 7 yrs at a Volvo dealership.", vehicle: true },
+    { fullName: "Carlos Mendez", phone: "+14155550222", email: "carlos.mendez@outlook.com", city: "Oakland", exp: 5, specs: ["electrical", "diagnostic", "battery"], bio: "EV & hybrid certified, mobile since 2021.", vehicle: true },
+    { fullName: "Fatima Zahra", phone: "+989354449900", email: null, city: "Isfahan", exp: 3, specs: ["brakes", "tire", "ac"], bio: "Light vehicle mechanic, looking to go mobile.", vehicle: false },
+    { fullName: "Ivan Petrov", phone: "+491511220099", email: "ivan.petrov@mail.de", city: "Munich", exp: 12, specs: ["hydraulic", "heavy-diesel", "engine"], bio: "Construction equipment specialist, CAT & Liebherr.", vehicle: true },
+  ];
+  for (let i = 0; i < apps.length; i++) {
+    const a = apps[i];
+    await db.mechanicApplication.create({
+      data: {
+        code: `APP-${2000 + i}`,
+        fullName: a.fullName,
+        phone: a.phone,
+        email: a.email,
+        city: a.city,
+        experienceYears: a.exp,
+        specialties: JSON.stringify(a.specs),
+        bio: a.bio,
+        vehicleOwned: a.vehicle,
+        status: i < 3 ? "PENDING" : "APPROVED",
+        createdAt: iso(-(i + 1) * day * 0.5),
+      },
+    });
+  }
+
   console.log("✅ Seed complete.");
   console.log(`   Users: ${await db.user.count()}`);
   console.log(`   Technicians: ${await db.technician.count()}`);

@@ -5,8 +5,9 @@ import { Car, Plus, Loader2, X, Save } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
 import { api, type Vehicle } from "@/lib/api";
-import { MACHINE_TYPES } from "@/lib/constants";
+import { MACHINE_TYPES, typesForMode } from "@/lib/constants";
 import { VehicleCard } from "@/components/mek/shared/vehicle-card";
+import { filterByMode } from "./home";
 import { EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
 import { Button } from "@/components/ui/button";
@@ -18,15 +19,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 
 export function CustomerVehicles({ customer }: { customer: DemoUser }) {
-  const { go } = useApp();
+  const { go, machineMode } = useApp();
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const load = () => {
     if (!customer.customer) return;
-    api.listVehicles(customer.customer.id).then(setVehicles).catch(() => setVehicles([]));
+    api.listVehicles(customer.customer.id).then((v) => setVehicles(filterByMode(v, machineMode))).catch(() => setVehicles([]));
   };
-  useEffect(load, [customer]);
+  useEffect(load, [customer, machineMode]);
 
   const onDelete = async (id: string) => {
     await api.deleteVehicle(id);
@@ -61,13 +62,13 @@ export function CustomerVehicles({ customer }: { customer: DemoUser }) {
         </div>
       )}
 
-      <AddVehicleDialog open={addOpen} onOpenChange={setAddOpen} customerId={customer.customer?.id ?? ""} onCreated={load} />
+      <AddVehicleDialog open={addOpen} onOpenChange={setAddOpen} customerId={customer.customer?.id ?? ""} onCreated={load} machineMode={machineMode} />
     </div>
   );
 }
 
-function AddVehicleDialog({ open, onOpenChange, customerId, onCreated }: { open: boolean; onOpenChange: (v: boolean) => void; customerId: string; onCreated: () => void }) {
-  const [type, setType] = useState<string>("CAR");
+function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMode }: { open: boolean; onOpenChange: (v: boolean) => void; customerId: string; onCreated: () => void; machineMode: "passenger" | "heavy" }) {
+  const [type, setType] = useState<string>(machineMode === "heavy" ? "TRUCK" : "CAR");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -78,7 +79,7 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated }: { open:
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setType("CAR"); setMake(""); setModel(""); setYear(String(new Date().getFullYear())); setPlate(""); setLocation(""); setEngineHours(""); setNotes("");
+    setType(machineMode === "heavy" ? "TRUCK" : "CAR"); setMake(""); setModel(""); setYear(String(new Date().getFullYear())); setPlate(""); setLocation(""); setEngineHours(""); setNotes("");
   };
 
   const submit = async () => {
@@ -125,7 +126,7 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated }: { open:
           <div>
             <Label className="text-xs">Machine Type</Label>
             <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {MACHINE_TYPES.filter((m) => m.slug !== "OTHER").map((m) => (
+              {MACHINE_TYPES.filter((m) => m.slug !== "OTHER" && typesForMode(machineMode).includes(m.slug)).map((m) => (
                 <button
                   key={m.slug}
                   onClick={() => setType(m.slug)}

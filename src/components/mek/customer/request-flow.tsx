@@ -8,7 +8,7 @@ import {
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
 import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
-import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, JOB_STATUS_FLOW } from "@/lib/constants";
+import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, JOB_STATUS_FLOW, typesForMode } from "@/lib/constants";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { VehicleCard } from "@/components/mek/shared/vehicle-card";
 import { TechnicianCard } from "@/components/mek/shared/technician-card";
@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { X } from "lucide-react";
 
@@ -79,10 +80,10 @@ export function RequestType({ customer }: { customer: DemoUser }) {
 
 // ─── Step 2: Describe Problem ───
 export function DescribeProblem({ customer }: { customer: DemoUser }) {
-  const { go, params } = useApp();
+  const { go, params, machineMode, auth, exitToSplash } = useApp();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
-  const [type, setType] = useState<string>(params.type ?? "CAR");
+  const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
   const [category, setCategory] = useState<string>("");
   const [urgency, setUrgency] = useState<string>(params.urgency ?? "NORMAL");
   const [title, setTitle] = useState("");
@@ -90,10 +91,11 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const [address, setAddress] = useState("Pier 38, San Francisco, CA");
   const [media, setMedia] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [guestBlock, setGuestBlock] = useState(false);
 
   useEffect(() => {
-    if (customer.customer) api.listVehicles(customer.customer.id).then(setVehicles);
-  }, [customer]);
+    if (customer.customer) api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => typesForMode(machineMode).includes(x.type))));
+  }, [customer, machineMode]);
 
   const addMockMedia = () => {
     const id = Math.floor(Math.random() * 1000);
@@ -102,6 +104,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   };
 
   const submit = async () => {
+    if (auth.isGuest) { setGuestBlock(true); return; }
     if (!category) { toast.error("Pick a service category"); return; }
     if (!title.trim()) { toast.error("Add a short title"); return; }
     if (!vehicleId && !type) { toast.error("Select a machine"); return; }
@@ -267,6 +270,24 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
           </div>
         </div>
       </div>
+
+      {/* Guest sign-in prompt */}
+      <Dialog open={guestBlock} onOpenChange={setGuestBlock}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-display">
+              <ShieldCheck className="size-4 text-amber" /> Sign in required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            To submit a service request, please sign in with your mobile number. Guests can browse the platform but cannot place requests.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="ghost" onClick={() => setGuestBlock(false)}>Later</Button>
+            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>Sign in now</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

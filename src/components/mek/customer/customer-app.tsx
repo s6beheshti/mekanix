@@ -11,6 +11,7 @@ import { CustomerVehicles } from "./vehicles";
 import { RequestType, DescribeProblem, Matching, TechnicianProfileView } from "./request-flow";
 import { CustomerTracking } from "./tracking";
 import { CustomerInvoice } from "./invoice";
+import { InvoiceDocument } from "./invoice-document";
 import { CustomerCompletion } from "./completion";
 import { CustomerHistory } from "./service-history";
 import { CustomerChat } from "./chat";
@@ -55,6 +56,7 @@ export function CustomerApp() {
       case "technician-profile": return <TechnicianProfileView customer={user} />;
       case "track": return <CustomerTracking customer={user} />;
       case "invoice": return <CustomerInvoice customer={user} />;
+      case "invoice-document": return <InvoiceDocument customer={user} />;
       case "completion": return <CustomerCompletion customer={user} />;
       case "service-history": return <CustomerHistory customer={user} />;
       case "chat": return <CustomerChat customer={user} />;

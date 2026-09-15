@@ -51,6 +51,13 @@ const HANDLERS: Record<string, () => Promise<any[]>> = {
   categories: async () => {
     return db.serviceCategory.findMany({ orderBy: { order: "asc" } });
   },
+  applications: async () => {
+    const list = await db.mechanicApplication.findMany({
+      orderBy: { createdAt: "desc" },
+      include: { user: { include: { technician: true } } },
+    });
+    return list;
+  },
 };
 
 export async function GET(_req: Request, { params }: { params: Promise<{ resource: string }> }) {

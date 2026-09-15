@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Receipt, Loader2, CreditCard, Wallet, Landmark, Banknote, ShieldCheck, CheckCircle2, ArrowLeft, Lock,
+  Receipt, Loader2, CreditCard, Wallet, Landmark, Banknote, ShieldCheck, CheckCircle2, ArrowLeft, Lock, FileText,
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
@@ -201,9 +201,14 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
             <h3 className="font-display text-sm font-semibold">Payment Complete</h3>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">Paid {fmtMoney(invoice.total)} on {fmtDate(invoice.updatedAt)}.</p>
-          <Button onClick={() => go("completion", { jobId: job.id })} className="mt-3 bg-amber text-black hover:bg-amber/90">
-            View Summary & Rate
-          </Button>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={() => go("invoice-document", { jobId: job.id })} variant="outline" className="flex-1">
+              <FileText className="mr-1.5 size-4" /> View Invoice
+            </Button>
+            <Button onClick={() => go("completion", { jobId: job.id })} className="flex-1 bg-amber text-black hover:bg-amber/90">
+              View Summary & Rate
+            </Button>
+          </div>
         </motion.div>
       )}
     </div>

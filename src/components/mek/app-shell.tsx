@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench,
+  Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench, LogOut, ArrowLeftRight, Car, Truck,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Logo } from "./brand/logo";
@@ -34,13 +34,20 @@ export function AppShell({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  const { view, go, reset } = useApp();
+  const { view, go, reset, portal, auth, machineMode, setMachineMode, exitToSplash, bootStage } = useApp();
   const { user } = useActiveUser();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+
+  const switchMode = () => {
+    const next = machineMode === "heavy" ? "passenger" : "heavy";
+    setMachineMode(next);
+    toast.success(next === "heavy" ? "Switched to Heavy Machinery" : "Switched to Passenger Vehicles");
+    reset("home");
+  };
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
@@ -116,6 +123,21 @@ export function AppShell({
           </button>
 
           <div className="ml-auto flex items-center gap-1">
+            {portal === "customer" && bootStage === "app" && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-1.5 px-2.5" onClick={switchMode}>
+                      {machineMode === "heavy" ? <Truck className="size-3.5 text-emerald-glow" /> : <Car className="size-3.5 text-amber" />}
+                      <span className="hidden text-[11px] font-medium sm:inline">{machineMode === "heavy" ? "Heavy" : "Passenger"}</span>
+                      <ArrowLeftRight className="size-3 text-muted-foreground" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Switch machine category</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -150,6 +172,17 @@ export function AppShell({
             )}
 
             <RoleSwitcher />
+
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-9" onClick={exitToSplash}>
+                    <LogOut className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Sign out</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       </header>
