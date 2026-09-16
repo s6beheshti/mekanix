@@ -127,106 +127,97 @@ export function Splash() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#050607]">
-      <div className="absolute inset-0 mk-grid-bg opacity-[0.22]" />
-      <div className="absolute left-1/2 top-1/3 size-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.12), transparent 62%)" }} />
+      {/* Subtle ambient glow only — no grid, no scan line */}
+      <div className="absolute left-1/2 top-[35%] size-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.08), transparent 65%)" }} />
 
-      {/* Language toggle — top-right */}
-      <div className="absolute end-5 top-5 z-30 flex items-center gap-1 rounded-lg border border-border bg-card/60 p-0.5 backdrop-blur">
+      {/* Language toggle — top-right, minimal */}
+      <div className="absolute end-5 top-5 z-30 flex items-center gap-1 rounded-full border border-white/8 bg-white/5 p-0.5 backdrop-blur">
         {LANGS.map((l) => (
           <button
             key={l.code}
             onClick={() => setLang(l.code as Lang)}
-            className={`relative rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${lang === l.code ? "text-black" : "text-muted-foreground hover:text-foreground"}`}
+            className={`relative rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${lang === l.code ? "text-black" : "text-white/50 hover:text-white"}`}
           >
-            {lang === l.code && (
-              <motion.div layoutId="splash-lang-pill" className="absolute inset-0 rounded-md bg-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />
-            )}
+            {lang === l.code && <motion.div layoutId="splash-lang" className="absolute inset-0 rounded-full bg-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
             <span className="relative">{l.label}</span>
           </button>
         ))}
       </div>
 
-      {/* Center hero */}
-      <div className="relative z-20 mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 pb-10">
+      {/* Center hero — clean, minimal, spacious */}
+      <div className="relative z-20 mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center px-6">
         <AnimatePresence mode="wait">
           {stage === "entry" && (
             <motion.div
               key="entry"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.4 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
               className="w-full text-center"
             >
-              {/* HERO LOGO — big, dynamic, the brand statement */}
+              {/* Logo — inverted, clean, no disk */}
               <HeroLogo />
 
-              <motion.h1
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1.4, duration: 0.5 }}
-                className="mt-6 font-display text-5xl font-bold tracking-tight sm:text-6xl"
-                dir={isFa ? "rtl" : "ltr"}
-              >
-                {t("splash.title")}
-              </motion.h1>
+              {/* Tagline — subtle, not bold */}
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 1.55 }}
-                className="mt-3 text-sm text-muted-foreground sm:text-base"
+                transition={{ delay: 0.5 }}
+                className="mt-8 text-[11px] font-light uppercase tracking-[0.3em] text-white/35"
                 dir={isFa ? "rtl" : "ltr"}
               >
-                {t("splash.subtitle")}
-                <br />{t("splash.subtitle2")}
+                {isFa ? "تعمیر / نگهداری / اتصال" : "Repair / Maintain / Connect"}
               </motion.p>
 
+              {/* Actions — minimal, two primary + two secondary */}
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.7 }}
-                className="mt-10 space-y-2.5"
+                transition={{ delay: 0.7 }}
+                className="mt-10 space-y-2"
               >
                 <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full bg-amber text-black hover:bg-amber/90">
                   <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
                 </Button>
-                <Button onClick={continueAsGuest} variant="outline" className="h-11 w-full">
+                <Button onClick={continueAsGuest} variant="ghost" className="h-11 w-full text-white/70 hover:text-white hover:bg-white/5">
                   <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
                 </Button>
               </motion.div>
 
-              {/* Mechanic portal entry — separate from customer */}
-              <motion.button
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1.85 }}
-                onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
-                className="mt-4 inline-flex items-center gap-2 text-[11px] text-white/40 transition-colors hover:text-[oklch(0.74_0.16_68)]"
-                dir={isFa ? "rtl" : "ltr"}
-              >
-                <Wrench className="size-3.5" /> {isFa ? "ورود مکانیک‌ها" : "Mechanic Portal"}
-                <ArrowRight className={isFa ? "size-3 rotate-180" : "size-3"} />
-              </motion.button>
-
+              {/* Divider */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 1.85 }}
-                className="mt-5 flex items-center justify-center gap-4 text-[11px] text-muted-foreground"
+                transition={{ delay: 0.9 }}
+                className="my-5 flex items-center gap-3"
+              >
+                <div className="h-px flex-1 bg-white/8" />
+                <span className="text-[9px] uppercase tracking-widest text-white/25">{isFa ? "یا" : "or"}</span>
+                <div className="h-px flex-1 bg-white/8" />
+              </motion.div>
+
+              {/* Secondary actions — mechanic + apply */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.0 }}
+                className="flex items-center justify-center gap-6 text-[11px] text-white/40"
                 dir={isFa ? "rtl" : "ltr"}
               >
-                <button onClick={() => setApplyOpen(true)} className="inline-flex items-center gap-1.5 transition-colors hover:text-amber">
-                  <Wrench className="size-3.5" /> {t("splash.applyMechanic")}
-                  <ArrowRight className={isFa ? "size-3 rotate-180" : "size-3"} />
+                <button onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }} className="inline-flex items-center gap-1.5 transition-colors hover:text-amber">
+                  <Wrench className="size-3.5" /> {isFa ? "ورود مکانیک‌ها" : "Mechanic Portal"}
                 </button>
-
+                <button onClick={() => setApplyOpen(true)} className="inline-flex items-center gap-1.5 transition-colors hover:text-amber">
+                  {t("splash.applyMechanic")}
+                </button>
               </motion.div>
 
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 2.0 }}
-                className="mt-6 text-[10px] text-muted-foreground"
+                transition={{ delay: 1.2 }}
+                className="mt-8 text-[10px] text-white/25"
                 dir={isFa ? "rtl" : "ltr"}
               >
                 {t("splash.guestHint")}
@@ -245,8 +236,14 @@ export function Splash() {
             >
               <BackBtn onClick={() => setStage("entry")} label={t("splash.back")} />
               <div className="mt-2 text-center">
-                <h2 className="font-display text-2xl font-semibold">{t("splash.signIn")}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{t("splash.enterMobile")}</p>
+                <h2 className="font-display text-2xl font-semibold">
+                  {loginTarget === "mechanic" ? (isFa ? "ورود مکانیک" : "Mechanic Login") : t("splash.signIn")}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {loginTarget === "mechanic"
+                    ? (isFa ? "برای ورود به پورتال مکانیک، شماره موبایل خود را وارد کنید" : "Enter your mobile to access the mechanic portal")
+                    : t("splash.enterMobile")}
+                </p>
               </div>
 
               <div className="mt-6 space-y-3">
@@ -355,7 +352,7 @@ function HeroLogo() {
         src="/logo.png"
         alt="MEKANIX"
         className="relative z-10 select-none object-contain"
-        style={{ width: 220, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
+        style={{ width: 200, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -397,7 +394,7 @@ function OtpInput({ value, onChange, length }: { value: string; onChange: (v: st
           }}
           inputMode="numeric"
           maxLength={1}
-          className="size-12 rounded-xl border border-border bg-card text-center font-display text-xl font-semibold focus:border-amber focus:outline-none focus:ring-2 focus:ring-amber/20"
+          className="size-12 rounded-xl border border-white/10 bg-white/5 text-center font-display text-xl font-semibold text-white focus:border-amber focus:outline-none focus:ring-2 focus:ring-amber/20"
         />
       ))}
     </div>

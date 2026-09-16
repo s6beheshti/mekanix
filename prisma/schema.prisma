@@ -462,7 +462,7 @@ model MechanicApplication {
   fullName    String
   phone       String
   email       String?
-  city        String
+  city        String?
   experienceYears Int  @default(0)
   specialties String   // JSON array of category slugs
   certifications String? // JSON array

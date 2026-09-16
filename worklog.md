@@ -310,3 +310,30 @@ Stage Summary:
 - Machine types: heavy mode shows کامیون/اتوبوس/بیل مکانیکی, no خودروی سواری
 - Service history: fully translated (status + dates + prices in IRR)
 - Notifications: translated titles + bodies
+
+---
+Task ID: 117-120
+Agent: orchestrator
+Task: Redesign splash, fix mechanic registration, fix mechanic login heading
+
+Work Log:
+- Splash redesign: removed grid background, scan line, big "مکانیکس" heading, subtitle text. Now clean/minimal:
+  * Logo (inverted CSS) + tagline "تعمیر / نگهداری / اتصال" (small, tracking)
+  * Two primary buttons: ورود با موبایل + ادامه به‌عنوان مهمان
+  * Divider with "یا"
+  * Two secondary links: ورود مکانیک‌ها + ثبت‌نام به‌عنوان مکانیک
+  * Guest hint at bottom
+  * No clutter, spacious, clean dark aesthetic
+  * VLM: 9/10 "exceptionally clean, significantly less cluttered"
+
+- Mechanic registration fix: root cause was `city` field in MechanicApplication schema was NOT NULL but the API was sending null when city was empty. Fixed: changed `city String` to `city String?` in schema.
+
+- Mechanic login heading: when loginTarget === "mechanic", heading now shows "ورود مکانیک" instead of generic "ورود"
+
+- Verified full flow: register (APP-3758) → approve → go to mechanic login → OTP (724865) → dashboard loads with داشبورد/درخواست‌ها/درآمد
+
+Stage Summary:
+- Lint clean, no browser errors.
+- Splash: clean, minimal, 9/10 VLM rating
+- Mechanic registration: works end-to-end (register → approve → login → dashboard)
+- Mechanic login: shows "ورود مکانیک" heading correctly
