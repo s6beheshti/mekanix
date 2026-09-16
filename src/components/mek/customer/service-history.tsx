@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { History, ChevronRight, Loader2, ShieldCheck, Wrench } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
+import { useT } from "@/lib/use-t";
 import { api, type Job } from "@/lib/api";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
 import { StatusBadge } from "@/components/mek/shared/status-badge";
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input";
 
 export function CustomerHistory({ customer }: { customer: DemoUser }) {
   const { go } = useApp();
+  const { t, isFa, money } = useT();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -33,22 +35,22 @@ export function CustomerHistory({ customer }: { customer: DemoUser }) {
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       <SectionHeader
-        title="Service History"
-        subtitle="Complete record of your repair & maintenance jobs"
-        action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90"><Wrench className="mr-1.5 size-4" /> New Request</Button>}
+        title={t("history.title")}
+        subtitle={t("history.subtitle")}
+        action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90"><Wrench className="mr-1.5 size-4" /> {t("history.newRequest")}</Button>}
       />
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by job, vehicle, code…" className="sm:max-w-xs" />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("history.searchPlaceholder")} className="sm:max-w-xs" />
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="sm:w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All jobs</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="all">{t("history.allJobs")}</SelectItem>
+            <SelectItem value="active">{t("history.active")}</SelectItem>
+            <SelectItem value="completed">{t("history.completed")}</SelectItem>
+            <SelectItem value="cancelled">{t("history.cancelled")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -58,7 +60,7 @@ export function CustomerHistory({ customer }: { customer: DemoUser }) {
           {[0, 1, 2].map((i) => <div key={i} className="h-20 rounded-xl bg-muted/60 mk-shimmer" />)}
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={History} title="No jobs found" description="Adjust filters or start a new service request." action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90">New Request</Button>} />
+        <EmptyState icon={History} title={t("history.noJobs")} description={t("history.noJobsDesc")} action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90">{t("history.newRequest")}</Button>} />
       ) : (
         <div className="space-y-2">
           {filtered.map((job, i) => (
@@ -79,12 +81,12 @@ export function CustomerHistory({ customer }: { customer: DemoUser }) {
                   <StatusBadge status={job.status} />
                 </div>
                 <p className="mt-0.5 truncate text-sm font-medium">{job.request.title}</p>
-                <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model} · {fmtDate(job.completedAt ?? job.createdAt)}</p>
+                <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model} · {fmtDate(job.completedAt ?? job.createdAt, undefined, isFa ? "fa" : "en")}</p>
               </div>
               {job.invoice && (
                 <div className="hidden text-right sm:block">
-                  <p className="font-display text-sm font-semibold text-amber">{fmtMoney(job.invoice.total)}</p>
-                  <p className="text-[10px] text-muted-foreground">{job.invoice.status}</p>
+                  <p className="font-display text-sm font-semibold text-amber">{money(job.invoice.total, job.invoice.currency)}</p>
+                  <p className="text-[10px] text-muted-foreground">{t(`invst.${job.invoice.status}`, job.invoice.status)}</p>
                 </div>
               )}
               <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />

@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { useApp } from "./store";
 import { translate, type Lang, LANGS } from "./i18n";
+import { fmtMoney } from "./format";
 
 // Returns the current language + a translation function.
 // Also keeps <html dir> and lang attribute in sync for RTL/LTR.
@@ -17,8 +18,14 @@ export function useT() {
   }, [lang]);
 
   const t = (key: string, fallback?: string) => translate(lang, key, fallback);
+  const cat = (slug: string) => translate(lang, `cat.${slug}`, slug);
+  const type = (slug: string) => translate(lang, `type.${slug}`, slug);
+  const notifType = (ntype: string) => translate(lang, `notif.type.${ntype}`, ntype);
+  // Money helper: when language is Persian, force IRR conversion (Iran market).
+  const money = (amount: number, currency: string = "USD") =>
+    fmtMoney(amount, lang === "fa" ? "IRR" : currency, lang);
   const isFa = lang === "fa";
-  return { t, lang, isFa, dir: lang === "fa" ? ("rtl" as const) : ("ltr" as const) };
+  return { t, lang, isFa, dir: lang === "fa" ? ("rtl" as const) : ("ltr" as const), cat, type, notifType, money };
 }
 
 export { LANGS, type Lang };

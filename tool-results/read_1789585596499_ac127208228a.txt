@@ -1,0 +1,558 @@
+     1→     1→"use client";
+     2→     2→import { useEffect, useState } from "react";
+     3→     3→import { motion, AnimatePresence } from "framer-motion";
+     4→     4→import {
+     5→     5→  ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Mic, Upload, Search, Star,
+     6→     6→  BadgeCheck, Clock, Zap, ShieldCheck, Navigation as NavIcon, ArrowLeft, CheckCircle2,
+     7→     7→} from "lucide-react";
+     8→     8→import type { DemoUser } from "@/lib/use-active-user";
+     9→     9→import { useApp } from "@/lib/store";
+    10→    10→import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
+    11→    11→import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, JOB_STATUS_FLOW, typesForMode } from "@/lib/constants";
+    12→    12→import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
+    13→    13→import { VehicleCard } from "@/components/mek/shared/vehicle-card";
+    14→    14→import { TechnicianCard } from "@/components/mek/shared/technician-card";
+    15→    15→import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
+    16→    16→import { UrgencyBadge } from "@/components/mek/shared/status-badge";
+    17→    17→import { fmtDistance, fmtDuration, haversine } from "@/lib/format";
+    18→    18→import { Button } from "@/components/ui/button";
+    19→    19→import { Input } from "@/components/ui/input";
+    20→    20→import { Label } from "@/components/ui/label";
+    21→    21→import { Textarea } from "@/components/ui/textarea";
+    22→    22→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    23→    23→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+    24→    24→import { toast } from "sonner";
+    25→    25→import { X } from "lucide-react";
+    26→    26→
+    27→    27→// ─── Step 1: Select Machine ───
+    28→    28→export function RequestType({ customer }: { customer: DemoUser }) {
+    29→    29→  const { go, params } = useApp();
+    30→    30→  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+    31→    31→  const [selectedType, setSelectedType] = useState<string | null>(params.type ?? null);
+    32→    32→
+    33→    33→  useEffect(() => {
+    34→    34→    if (customer.customer) api.listVehicles(customer.customer.id).then(setVehicles).catch(() => setVehicles([]));
+    35→    35→  }, [customer]);
+    36→    36→
+    37→    37→  const saved = vehicles ?? [];
+    38→    38→  const hasSaved = saved.length > 0;
+    39→    39→
+    40→    40→  const proceed = (vehicle?: Vehicle, type?: string) => {
+    41→    41→    go("describe", { vehicleId: vehicle?.id, type: type ?? vehicle?.type ?? selectedType ?? "CAR" });
+    42→    42→  };
+    43→    43→
+    44→    44→  return (
+    45→    45→    <div className="space-y-5">
+    46→    46→      <StepHeader step={1} total={3} title="Select Machine" subtitle="Choose a saved machine or pick a type to continue" onBack={() => go("home")} />
+    47→    47→
+    48→    48→      {hasSaved && (
+    49→    49→        <section>
+    50→    50→          <SectionHeader title="Saved in Your Fleet" subtitle="Tap a machine to request service" />
+    51→    51→          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    52→    52→            {saved.map((v) => (
+    53→    53→              <VehicleCard key={v.id} vehicle={v} selected={params.vehicleId === v.id} onSelect={() => proceed(v)} />
+    54→    54→            ))}
+    55→    55→          </div>
+    56→    56→        </section>
+    57→    57→      )}
+    58→    58→
+    59→    59→      <section>
+    60→    60→        <SectionHeader title={hasSaved ? "Or Pick a New Type" : "What needs service?"} subtitle="Select the machine category" />
+    61→    61→        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    62→    62→          {MACHINE_TYPES.map((m) => (
+    63→    63→            <motion.button
+    64→    64→              key={m.slug}
+    65→    65→              whileHover={{ y: -2 }}
+    66→    66→              onClick={() => { setSelectedType(m.slug); proceed(undefined, m.slug); }}
+    67→    67→              className={`group relative overflow-hidden rounded-xl border bg-card p-4 text-center mk-card-hover ${selectedType === m.slug ? "border-amber mk-amber-glow" : "border-border hover:border-amber/40"}`}
+    68→    68→            >
+    69→    69→              <div className={`mx-auto grid size-12 place-items-center rounded-xl border ${selectedType === m.slug ? "border-amber/40 bg-amber/10" : "border-border bg-background"}`}>
+    70→    70→                <MekIcon name={m.icon} className={`size-6 ${selectedType === m.slug ? "text-amber" : "text-muted-foreground"}`} />
+    71→    71→              </div>
+    72→    72→              <p className="mt-2 font-display text-sm font-semibold">{m.label}</p>
+    73→    73→            </motion.button>
+    74→    74→          ))}
+    75→    75→        </div>
+    76→    76→      </section>
+    77→    77→    </div>
+    78→    78→  );
+    79→    79→}
+    80→    80→
+    81→    81→// ─── Step 2: Describe Problem ───
+    82→    82→export function DescribeProblem({ customer }: { customer: DemoUser }) {
+    83→    83→  const { go, params, machineMode, auth, exitToSplash } = useApp();
+    84→    84→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    85→    85→  const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
+    86→    86→  const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
+    87→    87→  const [category, setCategory] = useState<string>("");
+    88→    88→  const [urgency, setUrgency] = useState<string>(params.urgency ?? "NORMAL");
+    89→    89→  const [title, setTitle] = useState("");
+    90→    90→  const [description, setDescription] = useState("");
+    91→    91→  const [address, setAddress] = useState("Pier 38, San Francisco, CA");
+    92→    92→  const [media, setMedia] = useState<string[]>([]);
+    93→    93→  const [submitting, setSubmitting] = useState(false);
+    94→    94→  const [guestBlock, setGuestBlock] = useState(false);
+    95→    95→
+    96→    96→  useEffect(() => {
+    97→    97→    if (customer.customer) api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => typesForMode(machineMode).includes(x.type))));
+    98→    98→  }, [customer, machineMode]);
+    99→    99→
+   100→   100→  const addMockMedia = () => {
+   101→   101→    const id = Math.floor(Math.random() * 1000);
+   102→   102→    setMedia((m) => [...m, `https://picsum.photos/seed/mek${id}/120/120`]);
+   103→   103→    toast.success("Photo attached");
+   104→   104→  };
+   105→   105→
+   106→   106→  const submit = async () => {
+   107→   107→    if (auth.isGuest) { setGuestBlock(true); return; }
+   108→   108→    if (!category) { toast.error("Pick a service category"); return; }
+   109→   109→    if (!title.trim()) { toast.error("Add a short title"); return; }
+   110→   110→    if (!vehicleId && !type) { toast.error("Select a machine"); return; }
+   111→   111→    setSubmitting(true);
+   112→   112→    try {
+   113→   113→      const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
+   114→   114→      const lng = -122.4194 + (Math.random() - 0.5) * 0.03;
+   115→   115→      const sr = await api.createRequest({
+   116→   116→        customerId: customer.customer!.id,
+   117→   117→        vehicleId: vehicleId ?? vehicles[0]?.id,
+   118→   118→        category,
+   119→   119→        urgency,
+   120→   120→        title: title.trim(),
+   121→   121→        description: description.trim(),
+   122→   122→        mediaUrls: media,
+   123→   123→        address,
+   124→   124→        lat,
+   125→   125→        lng,
+   126→   126→      });
+   127→   127→      toast.success(`Request ${sr.code} created`);
+   128→   128→      go("matching", { requestId: sr.id });
+   129→   129→    } catch (e: any) {
+   130→   130→      toast.error(e.message ?? "Failed to create request");
+   131→   131→    } finally {
+   132→   132→      setSubmitting(false);
+   133→   133→    }
+   134→   134→  };
+   135→   135→
+   136→   136→  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
+   137→   137→
+   138→   138→  return (
+   139→   139→    <div className="space-y-5">
+   140→   140→      <StepHeader step={2} total={3} title="Describe the Problem" subtitle="Tell us what's going on with your machine" onBack={() => go("request-type")} />
+   141→   141→
+   142→   142→      <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
+   143→   143→        <div className="space-y-5">
+   144→   144→          {/* Machine */}
+   145→   145→          <div className="rounded-xl border border-border bg-card p-4">
+   146→   146→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Machine</Label>
+   147→   147→            {selectedVehicle ? (
+   148→   148→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 p-3">
+   149→   149→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   150→   150→                  <MekIcon name={iconForMachineType(selectedVehicle.type)} className="size-5 text-amber" />
+   151→   151→                </div>
+   152→   152→                <div className="min-w-0 flex-1">
+   153→   153→                  <p className="truncate text-sm font-medium">{selectedVehicle.make} {selectedVehicle.model}</p>
+   154→   154→                  <p className="text-[11px] text-muted-foreground">{selectedVehicle.type} · {selectedVehicle.year}</p>
+   155→   155→                </div>
+   156→   156→                <Button variant="ghost" size="sm" onClick={() => { setVehicleId(undefined); }}>Change</Button>
+   157→   157→              </div>
+   158→   158→            ) : (
+   159→   159→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-3">
+   160→   160→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   161→   161→                  <MekIcon name={iconForMachineType(type)} className="size-5 text-amber" />
+   162→   162→                </div>
+   163→   163→                <span className="text-sm font-medium">{MACHINE_TYPES.find((m) => m.slug === type)?.label}</span>
+   164→   164→              </div>
+   165→   165→            )}
+   166→   166→            {vehicles.length > 0 && !selectedVehicle && (
+   167→   167→              <Select onValueChange={setVehicleId} value={vehicleId ?? ""}>
+   168→   168→                <SelectTrigger className="mt-2"><SelectValue placeholder="Link to saved machine (optional)" /></SelectTrigger>
+   169→   169→                <SelectContent>
+   170→   170→                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.make} {v.model} · {v.type}</SelectItem>)}
+   171→   171→                </SelectContent>
+   172→   172→              </Select>
+   173→   173→            )}
+   174→   174→          </div>
+   175→   175→
+   176→   176→          {/* Category */}
+   177→   177→          <div className="rounded-xl border border-border bg-card p-4">
+   178→   178→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Service Category</Label>
+   179→   179→            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+   180→   180→              {SERVICE_CATEGORIES.map((c) => (
+   181→   181→                <button
+   182→   182→                  key={c.slug}
+   183→   183→                  onClick={() => setCategory(c.slug)}
+   184→   184→                  className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-colors ${category === c.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
+   185→   185→                >
+   186→   186→                  <MekIcon name={c.icon} className={`size-4 shrink-0 ${category === c.slug ? "text-amber" : "text-muted-foreground"}`} />
+   187→   187→                  <span className="text-[11px] font-medium leading-tight">{c.label}</span>
+   188→   188→                </button>
+   189→   189→              ))}
+   190→   190→            </div>
+   191→   191→          </div>
+   192→   192→
+   193→   193→          {/* Title + description */}
+   194→   194→          <div className="rounded-xl border border-border bg-card p-4">
+   195→   195→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Problem Summary</Label>
+   196→   196→            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Loud knocking under load at 1600 RPM" className="mt-2" maxLength={120} />
+   197→   197→            <Label className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">Describe Symptoms</Label>
+   198→   198→            <Textarea
+   199→   199→              value={description}
+   200→   200→              onChange={(e) => setDescription(e.target.value)}
+   201→   201→              placeholder="When does it happen? Any warning lights? Recent changes? The more detail, the better the match."
+   202→   202→              rows={4}
+   203→   203→              className="mt-2"
+   204→   204→              maxLength={1000}
+   205→   205→            />
+   206→   206→            <p className="mt-1 text-right text-[10px] text-muted-foreground">{description.length}/1000</p>
+   207→   207→          </div>
+   208→   208→
+   209→   209→          {/* Media */}
+   210→   210→          <div className="rounded-xl border border-border bg-card p-4">
+   211→   211→            <div className="flex items-center justify-between">
+   212→   212→              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attach Photos / Video</Label>
+   213→   213→              <div className="flex gap-1">
+   214→   214→                <Button variant="outline" size="sm" onClick={addMockMedia}><Camera className="mr-1 size-3.5" /> Add</Button>
+   215→   215→                <Button variant="ghost" size="sm" onClick={() => toast.info("Voice recording ready")}><Mic className="size-3.5" /></Button>
+   216→   216→                <Button variant="ghost" size="sm" onClick={() => toast.info("Upload from device")}><Upload className="size-3.5" /></Button>
+   217→   217→              </div>
+   218→   218→            </div>
+   219→   219→            {media.length > 0 && (
+   220→   220→              <div className="mt-3 flex flex-wrap gap-2">
+   221→   221→                {media.map((url, i) => (
+   222→   222→                  <div key={i} className="relative">
+   223→   223→                    { }
+   224→   224→                    <img src={url} alt="" className="size-16 rounded-lg border border-border object-cover" />
+   225→   225→                    <button onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))} className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"><X className="size-2.5" /></button>
+   226→   226→                  </div>
+   227→   227→                ))}
+   228→   228→              </div>
+   229→   229→            )}
+   230→   230→          </div>
+   231→   231→        </div>
+   232→   232→
+   233→   233→        {/* Right column: urgency + location + submit */}
+   234→   234→        <div className="space-y-5">
+   235→   235→          <div className="rounded-xl border border-border bg-card p-4">
+   236→   236→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Urgency</Label>
+   237→   237→            <div className="mt-3 space-y-2">
+   238→   238→              {URGENCY.map((u) => (
+   239→   239→                <button
+   240→   240→                  key={u.slug}
+   241→   241→                  onClick={() => setUrgency(u.slug)}
+   242→   242→                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${urgency === u.slug ? "border-amber bg-amber/5" : "border-border hover:bg-accent"}`}
+   243→   243→                >
+   244→   244→                  <UrgencyBadge urgency={u.slug} />
+   245→   245→                  <div className="min-w-0 flex-1">
+   246→   246→                    <p className="text-sm font-medium">{u.label}</p>
+   247→   247→                    <p className="text-[11px] text-muted-foreground">{u.desc}</p>
+   248→   248→                  </div>
+   249→   249→                </button>
+   250→   250→              ))}
+   251→   251→            </div>
+   252→   252→          </div>
+   253→   253→
+   254→   254→          <div className="rounded-xl border border-border bg-card p-4">
+   255→   255→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Service Location</Label>
+   256→   256→            <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+   257→   257→              <MapPin className="size-4 text-amber" />
+   258→   258→              <Input value={address} onChange={(e) => setAddress(e.target.value)} className="border-0 px-0 focus-visible:ring-0" />
+   259→   259→            </div>
+   260→   260→            <div className="mt-3 h-24 overflow-hidden rounded-lg border border-border bg-[oklch(0.16_0.008_260)]">
+   261→   261→              <div className="size-full mk-grid-bg opacity-40" />
+   262→   262→            </div>
+   263→   263→          </div>
+   264→   264→
+   265→   265→          <div className="sticky bottom-3">
+   266→   266→            <Button onClick={submit} disabled={submitting} className="w-full bg-amber text-black hover:bg-amber/90">
+   267→   267→              {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
+   268→   268→              Find Technicians
+   269→   269→            </Button>
+   270→   270→          </div>
+   271→   271→        </div>
+   272→   272→      </div>
+   273→   273→
+   274→   274→      {/* Guest sign-in prompt */}
+   275→   275→      <Dialog open={guestBlock} onOpenChange={setGuestBlock}>
+   276→   276→        <DialogContent className="max-w-sm">
+   277→   277→          <DialogHeader>
+   278→   278→            <DialogTitle className="flex items-center gap-2 font-display">
+   279→   279→              <ShieldCheck className="size-4 text-amber" /> Sign in required
+   280→   280→            </DialogTitle>
+   281→   281→          </DialogHeader>
+   282→   282→          <p className="text-sm text-muted-foreground">
+   283→   283→            To submit a service request, please sign in with your mobile number. Guests can browse the platform but cannot place requests.
+   284→   284→          </p>
+   285→   285→          <DialogFooter className="gap-2 sm:gap-2">
+   286→   286→            <Button variant="ghost" onClick={() => setGuestBlock(false)}>Later</Button>
+   287→   287→            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>Sign in now</Button>
+   288→   288→          </DialogFooter>
+   289→   289→        </DialogContent>
+   290→   290→      </Dialog>
+   291→   291→    </div>
+   292→   292→  );
+   293→   293→}
+   294→   294→
+   295→   295→// ─── Step 3: Matching ───
+   296→   296→export function Matching({ customer }: { customer: DemoUser }) {
+   297→   297→  const { go, params } = useApp();
+   298→   298→  const [techs, setTechs] = useState<Technician[] | null>(null);
+   299→   299→  const [phase, setPhase] = useState<"searching" | "results">("searching");
+   300→   300→  const [selected, setSelected] = useState<string | null>(null);
+   301→   301→
+   302→   302→  useEffect(() => {
+   303→   303→    const lat = 37.7749, lng = -122.4194;
+   304→   304→    api.listTechnicians({ lat, lng }).then((t) => {
+   305→   305→      // simulate searching delay
+   306→   306→      setTimeout(() => {
+   307→   307→        setTechs(t);
+   308→   308→        setPhase("results");
+   309→   309→      }, 1900);
+   310→   310→    });
+   311→   311→  }, []);
+   312→   312→
+   313→   313→  const ranked = (techs ?? []).map((t) => {
+   314→   314→    const km = t.lat && t.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: t.lat, lng: t.lng }) : 99;
+   315→   315→    const eta = Math.max(5, Math.round((km / 35) * 60) + t.responseMins);
+   316→   316→    const score = t.rating * 20 - km * 0.4 + (t.verified ? 5 : 0) + t.completedJobs * 0.02;
+   317→   317→    return { tech: t, km, eta, score };
+   318→   318→  }).sort((a, b) => b.score - a.score);
+   319→   319→
+   320→   320→  const onSelect = (techId: string) => {
+   321→   321→    setSelected(techId);
+   322→   322→    go("technician-profile", { requestId: params.requestId, technicianId: techId });
+   323→   323→  };
+   324→   324→
+   325→   325→  return (
+   326→   326→    <div className="space-y-5">
+   327→   327→      <StepHeader step={3} total={3} title="Matching Technicians" subtitle="We found qualified, verified specialists near you" onBack={() => go("describe")} />
+   328→   328→
+   329→   329→      <AnimatePresence mode="wait">
+   330→   330→        {phase === "searching" ? (
+   331→   331→          <motion.div key="searching" exit={{ opacity: 0 }} className="grid place-items-center py-16">
+   332→   332→            <div className="relative">
+   333→   333→              <motion.div
+   334→   334→                animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+   335→   335→                transition={{ duration: 2, repeat: Infinity }}
+   336→   336→                className="absolute inset-0 rounded-full bg-amber"
+   337→   337→              />
+   338→   338→              <div className="relative grid size-20 place-items-center rounded-full border-2 border-amber/30 bg-amber/10">
+   339→   339→                <Search className="size-8 text-amber" />
+   340→   340→              </div>
+   341→   341→            </div>
+   342→   342→            <p className="mt-6 font-display text-lg font-semibold">Searching nearby technicians…</p>
+   343→   343→            <p className="text-sm text-muted-foreground">Analyzing distance, expertise, availability & ratings</p>
+   344→   344→            <div className="mt-4 flex gap-6 text-[11px] text-muted-foreground">
+   345→   345→              <span className="inline-flex items-center gap-1"><NavIcon className="size-3 text-amber" /> Distance</span>
+   346→   346→              <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> Rating</span>
+   347→   347→              <span className="inline-flex items-center gap-1"><BadgeCheck className="size-3 text-amber" /> Certifications</span>
+   348→   348→              <span className="inline-flex items-center gap-1"><Clock className="size-3 text-amber" /> ETA</span>
+   349→   349→            </div>
+   350→   350→          </motion.div>
+   351→   351→        ) : (
+   352→   352→          <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+   353→   353→            {ranked.length === 0 ? (
+   354→   354→              <EmptyState icon={Search} title="No technicians available" description="Try expanding your urgency or location. Emergency dispatch available 24/7." action={<Button onClick={() => go("describe")} variant="outline">Back to details</Button>} />
+   355→   355→            ) : (
+   356→   356→              <div className="grid gap-3 lg:grid-cols-2">
+   357→   357→                {ranked.map((r, i) => (
+   358→   358→                  <TechnicianCard
+   359→   359→                    key={r.tech.id}
+   360→   360→                    tech={r.tech}
+   361→   361→                    distanceKm={r.km}
+   362→   362→                    etaMins={r.eta}
+   363→   363→                    rank={i + 1}
+   364→   364→                    selected={selected === r.tech.id}
+   365→   365→                    onSelect={() => onSelect(r.tech.id)}
+   366→   366→                  />
+   367→   367→                ))}
+   368→   368→              </div>
+   369→   369→            )}
+   370→   370→          </motion.div>
+   371→   371→        )}
+   372→   372→      </AnimatePresence>
+   373→   373→    </div>
+   374→   374→  );
+   375→   375→}
+   376→   376→
+   377→   377→// ─── Technician Profile ───
+   378→   378→export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
+   379→   379→  const { go, params, back } = useApp();
+   380→   380→  const [tech, setTech] = useState<Technician | null>(null);
+   381→   381→  const [requesting, setRequesting] = useState(false);
+   382→   382→
+   383→   383→  useEffect(() => {
+   384→   384→    if (params.technicianId) api.getTechnician(params.technicianId).then(setTech);
+   385→   385→  }, [params.technicianId]);
+   386→   386→
+   387→   387→  const request = async () => {
+   388→   388→    setRequesting(true);
+   389→   389→    try {
+   390→   390→      // assign the technician to the request + create a job in REQUESTED state
+   391→   391→      const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
+   392→   392→      if (!sr) throw new Error("Request not found");
+   393→   393→      // create job
+   394→   394→      const res = await fetch("/api/jobs", { method: "POST" as any }).catch(() => null);
+   395→   395→      // The job creation needs a dedicated endpoint; use the matching+status flow instead:
+   396→   396→      // We'll create the job by patching the request's matchedTech and creating via a dedicated endpoint.
+   397→   397→      const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
+   398→   398→        method: "POST",
+   399→   399→        headers: { "Content-Type": "application/json" },
+   400→   400→        body: JSON.stringify({ technicianId: params.technicianId }),
+   401→   401→      });
+   402→   402→      const job = await jobRes.json();
+   403→   403→      if (!job?.id) throw new Error("Failed to assign technician");
+   404→   404→      toast.success(`${tech?.user.name} has been notified`);
+   405→   405→      go("track", { jobId: job.id });
+   406→   406→    } catch (e: any) {
+   407→   407→      toast.error(e.message ?? "Could not assign technician");
+   408→   408→    } finally {
+   409→   409→      setRequesting(false);
+   410→   410→    }
+   411→   411→  };
+   412→   412→
+   413→   413→  if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
+   414→   414→
+   415→   415→  return (
+   416→   416→    <div className="space-y-5">
+   417→   417→      <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+   418→   418→        <ArrowLeft className="size-4" /> Back to results
+   419→   419→      </button>
+   420→   420→
+   421→   421→      {/* Header */}
+   422→   422→      <div className="relative overflow-hidden rounded-xl border border-border bg-card p-5">
+   423→   423→        <div className="absolute -right-16 -top-16 size-48 rounded-full bg-amber/10 blur-3xl" />
+   424→   424→        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+   425→   425→          <div className="relative shrink-0">
+   426→   426→            <div className="grid size-20 place-items-center overflow-hidden rounded-2xl border border-border bg-muted">
+   427→   427→              {tech.user.avatar ? <img src={tech.user.avatar} alt={tech.user.name} className="size-full object-cover" /> : <span className="font-display text-2xl">{tech.user.name[0]}</span>}
+   428→   428→            </div>
+   429→   429→            {tech.verified && <div className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-card bg-amber text-black"><BadgeCheck className="size-4" /></div>}
+   430→   430→          </div>
+   431→   431→          <div className="flex-1">
+   432→   432→            <div className="flex flex-wrap items-center gap-2">
+   433→   433→              <h1 className="font-display text-xl font-semibold">{tech.user.name}</h1>
+   434→   434→              <span className="rounded-full bg-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber">{tech.level}</span>
+   435→   435→            </div>
+   436→   436→            <div className="mt-1 flex items-center gap-2 text-sm">
+   437→   437→              <StarRating value={tech.rating} />
+   438→   438→              <span className="font-semibold">{tech.rating.toFixed(2)}</span>
+   439→   439→              <span className="text-muted-foreground">· {tech.reviewCount} reviews · {tech.completedJobs} jobs</span>
+   440→   440→            </div>
+   441→   441→            <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
+   442→   442→          </div>
+   443→   443→          <div className="flex flex-col items-end gap-1">
+   444→   444→            <div className="font-display text-2xl font-bold text-amber">${tech.hourlyRate}<span className="text-xs text-muted-foreground">/hr</span></div>
+   445→   445→            <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins)} avg response</div>
+   446→   446→          </div>
+   447→   447→        </div>
+   448→   448→      </div>
+   449→   449→
+   450→   450→      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+   451→   451→        <div className="space-y-4">
+   452→   452→          {/* Specialties */}
+   453→   453→          <div className="rounded-xl border border-border bg-card p-4">
+   454→   454→            <h3 className="font-display text-sm font-semibold">Specialties</h3>
+   455→   455→            <div className="mt-3 flex flex-wrap gap-2">
+   456→   456→              {tech.specialties.map((s) => (
+   457→   457→                <span key={s.id} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs">
+   458→   458→                  <MekIcon name={iconForCategory(s.category)} className="size-3.5 text-amber" />
+   459→   459→                  {s.label}
+   460→   460→                </span>
+   461→   461→              ))}
+   462→   462→            </div>
+   463→   463→          </div>
+   464→   464→
+   465→   465→          {/* Certifications */}
+   466→   466→          <div className="rounded-xl border border-border bg-card p-4">
+   467→   467→            <h3 className="font-display text-sm font-semibold">Certifications</h3>
+   468→   468→            <div className="mt-3 space-y-2">
+   469→   469→              {tech.certifications.map((c) => (
+   470→   470→                <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
+   471→   471→                  <div className={`grid size-9 place-items-center rounded-lg border ${c.verified ? "border-emerald-glow/30 bg-emerald-glow/10" : "border-border bg-muted"}`}>
+   472→   472→                    <ShieldCheck className={`size-4 ${c.verified ? "text-emerald-glow" : "text-muted-foreground"}`} />
+   473→   473→                  </div>
+   474→   474→                  <div className="min-w-0 flex-1">
+   475→   475→                    <p className="text-sm font-medium">{c.name}</p>
+   476→   476→                    <p className="text-[11px] text-muted-foreground">{c.issuer} · {c.year}</p>
+   477→   477→                  </div>
+   478→   478→                  {c.verified ? <span className="rounded bg-emerald-glow/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-glow">Verified</span> : <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Pending</span>}
+   479→   479→                </div>
+   480→   480→              ))}
+   481→   481→            </div>
+   482→   482→          </div>
+   483→   483→
+   484→   484→          {/* Reviews */}
+   485→   485→          <div className="rounded-xl border border-border bg-card p-4">
+   486→   486→            <h3 className="font-display text-sm font-semibold">Recent Reviews</h3>
+   487→   487→            <div className="mt-3 space-y-3">
+   488→   488→              {(tech as any).reviews?.slice(0, 3).map((r: any) => (
+   489→   489→                <div key={r.id} className="rounded-lg border border-border bg-background p-3">
+   490→   490→                  <div className="flex items-center justify-between">
+   491→   491→                    <div className="flex items-center gap-2">
+   492→   492→                      <div className="grid size-7 place-items-center overflow-hidden rounded-full border border-border bg-muted">
+   493→   493→                        {r.fromUser?.avatar ? <img src={r.fromUser.avatar} alt="" className="size-full object-cover" /> : <span className="text-[10px]">{r.fromUser?.name?.[0]}</span>}
+   494→   494→                      </div>
+   495→   495→                      <span className="text-xs font-medium">{r.fromUser?.name}</span>
+   496→   496→                    </div>
+   497→   497→                    <StarRating value={r.rating} size={11} />
+   498→   498→                  </div>
+   499→   499→                  {r.comment && <p className="mt-1.5 text-sm text-muted-foreground">"{r.comment}"</p>}
+   500→   500→                </div>
+   501→   501→              )) ?? <p className="text-sm text-muted-foreground">No reviews yet.</p>}
+   502→   502→            </div>
+   503→   503→          </div>
+   504→   504→        </div>
+   505→   505→
+   506→   506→        {/* Right: booking card */}
+   507→   507→        <div className="space-y-4">
+   508→   508→          <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
+   509→   509→            <h3 className="font-display text-sm font-semibold">Request this Technician</h3>
+   510→   510→            <div className="mt-3 space-y-2 text-sm">
+   511→   511→              <Row label="Hourly rate" value={`$${tech.hourlyRate}/hr`} />
+   512→   512→              <Row label="Travel fee" value={`$${tech.travelFeeBase}`} />
+   513→   513→              <Row label="Est. arrival" value={fmtDuration(tech.responseMins)} />
+   514→   514→              <Row label="Experience" value={`${tech.experienceYears} yrs`} />
+   515→   515→              <Row label="Level" value={tech.level} />
+   516→   516→            </div>
+   517→   517→            <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
+   518→   518→              <ShieldCheck className="mr-1 inline size-3.5 text-amber" />
+   519→   519→              MEKANIX guarantee: free re-diagnosis if fault persists within 7 days.
+   520→   520→            </div>
+   521→   521→            <Button onClick={request} disabled={requesting} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
+   522→   522→              {requesting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
+   523→   523→              Request Now
+   524→   524→            </Button>
+   525→   525→            <p className="mt-2 text-center text-[10px] text-muted-foreground">No charge until work is approved.</p>
+   526→   526→          </div>
+   527→   527→        </div>
+   528→   528→      </div>
+   529→   529→    </div>
+   530→   530→  );
+   531→   531→}
+   532→   532→
+   533→   533→function Row({ label, value }: { label: string; value: string }) {
+   534→   534→  return (
+   535→   535→    <div className="flex items-center justify-between border-b border-border/60 py-1.5 last:border-0">
+   536→   536→      <span className="text-muted-foreground">{label}</span>
+   537→   537→      <span className="font-medium">{value}</span>
+   538→   538→    </div>
+   539→   539→  );
+   540→   540→}
+   541→   541→
+   542→   542→// ─── Shared step header ───
+   543→   543→function StepHeader({ step, total, title, subtitle, onBack }: { step: number; total: number; title: string; subtitle?: string; onBack: () => void }) {
+   544→   544→  return (
+   545→   545→    <div className="flex items-center gap-3">
+   546→   546→      <Button variant="ghost" size="icon" className="size-8" onClick={onBack}><ChevronLeft className="size-4" /></Button>
+   547→   547→      <div className="flex-1">
+   548→   548→        <div className="flex items-center gap-2">
+   549→   549→          <span className="font-mono text-[10px] uppercase tracking-widest text-amber">Step {step} / {total}</span>
+   550→   550→          <div className="h-px flex-1 bg-border" />
+   551→   551→        </div>
+   552→   552→        <h1 className="mt-1 font-display text-xl font-semibold tracking-tight">{title}</h1>
+   553→   553→        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+   554→   554→      </div>
+   555→   555→    </div>
+   556→   556→  );
+   557→   557→}
+   558→   558→
