@@ -378,3 +378,21 @@ Stage Summary:
 - Lint clean, no browser errors.
 - Splash: icons restored, logo inverted (no white disk), clean layout
 - Mechanic login: works end-to-end (register → approve → login → dashboard)
+
+---
+Task ID: 123
+Agent: orchestrator
+Task: Fix vehicles page translations + restore vehicle-db
+
+Work Log:
+- Fixed vehicles.tsx: rewrote with proper i18n keys (vehicles.title, vehicles.subtitle, vehicles.addMachine, vehicles.empty.*, vehicles.add.*)
+- Restored src/lib/vehicle-db.ts: Iranian vehicle database with 35+ passenger makes + 30+ heavy makes
+- All dialog fields now translated: "ثبت ماشین", "نوع ماشین", "برند" (مثلاً ولوو), "مدل" (مثلاً VNL 760), "سال تولید", "پلاک / شناسه", "برچسب محل" (مثلاً حیاط شمالی), "ساعات کار موتور", "یادداشت", "ذخیره ماشین", "انصراف"
+- Vehicle card type labels translated via typeLabel()
+- Added loading state in TechnicianApp for !user
+
+Stage Summary:
+- Lint clean, no browser errors.
+- Vehicles page: fully translated (ناوگان من / افزودن ماشین / ثبت ماشین)
+- Vehicle DB: restored with Iranian makes (Farda Motor T5, Kerman Motor, Iran Khodro, Saipa, etc.)
+- Add vehicle dialog: searchable make/model dropdowns from vehicle DB
