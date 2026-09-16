@@ -361,3 +361,20 @@ Stage Summary:
 - Lint clean, no browser errors.
 - Splash: clean, professional, well-spaced. 8.5/10 VLM.
 - Mechanic registration + login: fully working end-to-end.
+
+---
+Task ID: 122
+Agent: orchestrator
+Task: Fix splash (restore icons, keep logo invert, dynamic logo) + fix mechanic login
+
+Work Log:
+- Restored Phone + UserRound icons on splash buttons (were removed in previous redesign)
+- Logo: kept CSS invert approach (logo is dark on transparent bg — invert(1) makes it white on black, no white disk needed)
+- Logo animation: restored motion.img with fade+slide (was static img)
+- Mechanic login fix: TechnicianApp was showing "No technician profile" too quickly because useActiveUser hadn't loaded yet. Added intermediate state: if !user (still loading), show "در حال بارگذاری..." instead of error.
+- Verified: register (APP-2821) → login (660123) → dashboard loads with داشبورد/درخواست‌ها/درآمد
+
+Stage Summary:
+- Lint clean, no browser errors.
+- Splash: icons restored, logo inverted (no white disk), clean layout
+- Mechanic login: works end-to-end (register → approve → login → dashboard)

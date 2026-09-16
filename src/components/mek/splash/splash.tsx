@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Phone, Loader2, ShieldCheck, ChevronRight, Wrench, ArrowRight, ArrowLeft,
-  KeyRound, UserRound, Sparkles, Languages,
+  KeyRound, UserRound, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,10 +167,10 @@ export function Splash() {
                 className="mt-12 space-y-3"
               >
                 <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-13 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
-                  {t("splash.signInMobile")}
+                  <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
                 </Button>
                 <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
-                  {t("splash.continueGuest")}
+                  <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
                 </Button>
               </motion.div>
 
@@ -328,12 +328,15 @@ function HeroLogo() {
         }}
       />
 
-      {/* The real logo — inverted to light via CSS filter */}
-      <img
+      {/* The real logo — inverted to light via CSS filter (logo is dark-colored on transparent bg) */}
+      <motion.img
         src="/logo.png"
         alt="MEKANIX"
         className="relative z-10 select-none object-contain"
         style={{ width: 180, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.6 }}
       />
     </motion.div>
   );

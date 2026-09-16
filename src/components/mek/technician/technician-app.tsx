@@ -37,8 +37,17 @@ export function TechnicianApp() {
       </div>
     );
   }
+  if (!user) {
+    return (
+      <div className="grid min-h-[60vh] place-items-center">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground mb-2" dir="rtl">در حال بارگذاری...</p>
+        </div>
+      </div>
+    );
+  }
   if (!user?.technician) {
-    return <EmptyState icon={Wrench} title="No technician profile" description="Reseed demo data to continue." className="m-6" />;
+    return <EmptyState icon={Wrench} title="No technician profile" description="Please register as a mechanic first." className="m-6" />;
   }
 
   const nav: NavItem[] = [
