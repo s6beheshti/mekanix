@@ -5,7 +5,7 @@ import { Star, Loader2 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { api, type Technician } from "@/lib/api";
 import { SectionHeader, EmptyState, StarRating } from "@/components/mek/shared/primitives";
-import { fmtRelative } from "@/lib/format";
+import { fmtRelative, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 
 export function TechnicianReviews({ user }: { user: DemoUser }) {
@@ -33,17 +33,17 @@ export function TechnicianReviews({ user }: { user: DemoUser }) {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div className="rounded-xl border border-border bg-card p-5 text-center">
-          <p className="font-display text-5xl font-bold text-amber">{avg.toFixed(1)}</p>
+          <p className="font-display text-5xl font-bold text-amber">{isFa ? toPersianDigits(avg.toFixed(1)) : avg.toFixed(1)}</p>
           <div className="mt-2 flex justify-center"><StarRating value={avg} size={18} /></div>
-          <p className="mt-1 text-xs text-muted-foreground">{tech?.reviewCount} {t("common.reviews")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{isFa ? toPersianDigits(tech?.reviewCount ?? 0) : (tech?.reviewCount ?? 0)} {t("common.reviews")}</p>
           <div className="mt-4 space-y-1.5">
             {dist.map((d) => (
               <div key={d.star} className="flex items-center gap-2 text-[11px]">
-                <span className="flex w-8 items-center gap-0.5"><Star className="size-3 fill-amber text-amber" />{d.star}</span>
+                <span className="flex w-8 items-center gap-0.5"><Star className="size-3 fill-amber text-amber" />{isFa ? toPersianDigits(d.star) : d.star}</span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                   <div className="h-full rounded-full bg-amber" style={{ width: `${d.pct}%` }} />
                 </div>
-                <span className="w-6 text-right text-muted-foreground">{d.count}</span>
+                <span className="w-6 text-right text-muted-foreground">{isFa ? toPersianDigits(d.count) : d.count}</span>
               </div>
             ))}
           </div>

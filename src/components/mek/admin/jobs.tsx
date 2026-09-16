@@ -5,8 +5,8 @@ import { api } from "@/lib/api";
 import { AdminTable, type Column } from "@/components/mek/shared/admin-table";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
-import { fmtDate, fmtMoney } from "@/lib/format";
-import { useApp } from "@/lib/store";
+import { fmtDate, toPersianDigits } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 
 type JobRow = {
   id: string; code: string; status: string;
@@ -17,7 +17,7 @@ type JobRow = {
 };
 
 export function AdminJobs() {
-  const { setRole } = useApp();
+  const { t, isFa, money, lang } = useT();
   const [rows, setRows] = useState<JobRow[] | null>(null);
 
   useEffect(() => {
@@ -25,23 +25,23 @@ export function AdminJobs() {
   }, []);
 
   const columns: Column<JobRow>[] = [
-    { key: "code", header: "Code", cell: (r) => <span className="font-mono text-[11px]">{r.code}</span>, sortValue: (r) => r.code },
-    { key: "title", header: "Job", cell: (r) => (<div><p className="font-medium">{r.request.title}</p><p className="text-[11px] text-muted-foreground">{r.request.vehicle.make} {r.request.vehicle.model}</p></div>), sortValue: (r) => r.request.title },
-    { key: "customer", header: "Customer", cell: (r) => r.request.customer.user.name, sortValue: (r) => r.request.customer.user.name },
-    { key: "tech", header: "Technician", cell: (r) => r.technician?.user.name ?? <span className="text-muted-foreground">unassigned</span>, sortValue: (r) => r.technician?.user.name ?? "" },
-    { key: "urgency", header: "Urgency", cell: (r) => <UrgencyBadge urgency={r.request.urgency} /> },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-    { key: "total", header: "Total", cell: (r) => r.invoice ? <span className="tabular-nums text-amber">{fmtMoney(r.invoice.total)}</span> : <span className="text-muted-foreground">—</span>, sortValue: (r) => r.invoice?.total ?? 0 },
-    { key: "date", header: "Created", cell: (r) => <span className="text-muted-foreground">{fmtDate(r.createdAt)}</span>, sortValue: (r) => new Date(r.createdAt).getTime() },
+    { key: "code", header: t("admin.jobs.col.code"), cell: (r) => <span className="font-mono text-[11px]">{isFa ? toPersianDigits(r.code) : r.code}</span>, sortValue: (r) => r.code },
+    { key: "title", header: t("admin.jobs.col.title"), cell: (r) => (<div><p className="font-medium">{r.request.title}</p><p className="text-[11px] text-muted-foreground">{r.request.vehicle.make} {r.request.vehicle.model}</p></div>), sortValue: (r) => r.request.title },
+    { key: "customer", header: t("admin.jobs.col.customer"), cell: (r) => r.request.customer.user.name, sortValue: (r) => r.request.customer.user.name },
+    { key: "tech", header: t("admin.jobs.col.technician"), cell: (r) => r.technician?.user.name ?? <span className="text-muted-foreground">{t("admin.jobs.unassigned")}</span>, sortValue: (r) => r.technician?.user.name ?? "" },
+    { key: "urgency", header: t("admin.jobs.col.urgency"), cell: (r) => <UrgencyBadge urgency={r.request.urgency} /> },
+    { key: "status", header: t("admin.jobs.col.status"), cell: (r) => <StatusBadge status={r.status} /> },
+    { key: "total", header: t("admin.jobs.col.total"), cell: (r) => r.invoice ? <span className="tabular-nums text-amber">{money(r.invoice.total)}</span> : <span className="text-muted-foreground">—</span>, sortValue: (r) => r.invoice?.total ?? 0 },
+    { key: "date", header: t("admin.jobs.col.created"), cell: (r) => <span className="text-muted-foreground">{fmtDate(r.createdAt, undefined, lang)}</span>, sortValue: (r) => new Date(r.createdAt).getTime() },
   ];
 
   return (
-    <div className="space-y-4">
-      <SectionHeader title="Jobs" subtitle="All service jobs across the platform" />
+    <div className="space-y-4" dir={isFa ? "rtl" : "ltr"}>
+      <SectionHeader title={t("admin.jobs.title")} subtitle={t("admin.jobs.subtitle2")} />
       {rows === null ? (
         <div className="grid h-40 place-items-center"><Loader2 className="size-6 animate-spin text-amber" /></div>
       ) : rows.length === 0 ? (
-        <EmptyState icon={Briefcase} title="No jobs yet" />
+        <EmptyState icon={Briefcase} title={t("admin.jobs.empty")} />
       ) : (
         <AdminTable data={rows} columns={columns} searchable searchKeys={["code", "request"]} pageSize={12} emptyIcon={Briefcase} />
       )}

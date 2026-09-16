@@ -11,6 +11,7 @@ import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { MekIcon } from "@/components/mek/shared/icons";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
+import { toPersianDigits } from "@/lib/format";
 
 export function MechanicApplicationForm({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { t, isFa, cat } = useT();
@@ -84,10 +85,10 @@ export function MechanicApplicationForm({ open, onOpenChange }: { open: boolean;
             </motion.div>
             <h3 className="mt-4 font-display text-xl font-semibold">{t("mech.received")}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t("mech.refCode")} <span className="font-mono font-medium text-amber">{code}</span>
+              {t("mech.refCode")} <span className="font-mono font-medium text-amber">{isFa ? toPersianDigits(code) : code}</span>
             </p>
             <div className="mt-3 rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 p-3 text-sm text-emerald-glow">
-              {isFa ? "✓ درخواست شما تأیید شد! اکنون می‌توانید وارد پورتال مکانیک شوید." : "✓ Your application is approved! You can now log in to the mechanic portal."}
+              {t("splash.applicationApproved")}
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 text-[11px]">
               {[
@@ -108,7 +109,7 @@ export function MechanicApplicationForm({ open, onOpenChange }: { open: boolean;
                 onOpenChange(false);
                 window.dispatchEvent(new CustomEvent("mekanix-go-mechanic-login", { detail: { phone } }));
               }} className="flex-1 bg-amber text-black hover:bg-amber/90">
-                {isFa ? "ورود به پورتال مکانیک" : "Go to Mechanic Login"}
+                {t("splash.goToMechanicLogin")}
               </Button>
             </div>
           </motion.div>

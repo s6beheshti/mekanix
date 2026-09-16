@@ -8,7 +8,7 @@ import {
 import { useTheme } from "next-themes";
 import { Logo } from "./brand/logo";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NotificationCenter } from "./shared/notification-center";
 import { useActiveUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
@@ -76,21 +76,21 @@ export function AppShell({
       } catch {}
     };
     tick();
-    const t = setInterval(tick, 15000);
+    const notifInterval = setInterval(tick, 15000);
     return () => {
       active = false;
-      clearInterval(t);
+      clearInterval(notifInterval);
     };
   }, [user]);
 
   const reseed = async () => {
-    toast.loading("Reseeding demo data…", { id: "reseed" });
+    toast.loading(t("common.reseedLoading"), { id: "reseed" });
     try {
       await fetch("/api/seed", { method: "POST" });
-      toast.success("Demo data reseeded", { id: "reseed", description: "Reloading…" });
+      toast.success(t("common.reseedSuccess"), { id: "reseed", description: t("common.reseedReloading") });
       setTimeout(() => window.location.reload(), 800);
     } catch {
-      toast.error("Reseed failed", { id: "reseed" });
+      toast.error(t("common.reseedFail"), { id: "reseed" });
     }
   };
 
@@ -172,7 +172,7 @@ export function AppShell({
                     <RefreshCw className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Reseed demo data</TooltipContent>
+                <TooltipContent>{t("common.reseed")}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
 
@@ -188,6 +188,7 @@ export function AppShell({
                 </Button>
               </SheetTrigger>
               <SheetContent className="w-full p-0 sm:max-w-md" side="right">
+                <SheetTitle className="sr-only">{t("common.notifications")}</SheetTitle>
                 {user && <NotificationCenter userId={user.id} />}
               </SheetContent>
             </Sheet>
@@ -207,7 +208,7 @@ export function AppShell({
                     <LogOut className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Sign out</TooltipContent>
+                <TooltipContent>{t("common.signOut")}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -261,6 +262,7 @@ export function AppShell({
       {/* Mobile nav */}
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <SheetContent side="left" className="w-72 p-0">
+          <SheetTitle className="sr-only">{t("common.mobileNav")}</SheetTitle>
           <div className="flex h-14 items-center justify-between border-b border-border px-4">
             <Logo size={26} />
             <Button variant="ghost" size="icon" className="size-8" onClick={() => setMobileNavOpen(false)}>
@@ -274,14 +276,15 @@ export function AppShell({
   );
 }
 
-const ROLE_META: { key: Role; label: string; icon: any }[] = [
-  { key: "CUSTOMER", label: "Customer", icon: UserIcon },
-  { key: "TECHNICIAN", label: "Technician", icon: Wrench },
-  { key: "ADMIN", label: "Admin", icon: ShieldCheck },
+const ROLE_META: { key: Role; labelKey: string; icon: any }[] = [
+  { key: "CUSTOMER", labelKey: "common.roleCustomer", icon: UserIcon },
+  { key: "TECHNICIAN", labelKey: "common.roleTechnician", icon: Wrench },
+  { key: "ADMIN", labelKey: "common.roleAdmin", icon: ShieldCheck },
 ];
 
 function RoleSwitcher() {
   const { role, setRole } = useApp();
+  const { t } = useT();
   return (
     <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5">
       {ROLE_META.map((r) => (
@@ -297,7 +300,7 @@ function RoleSwitcher() {
             <motion.div layoutId="role-pill" className="absolute inset-0 rounded-md bg-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />
           )}
           <r.icon className="relative size-3.5" />
-          <span className="relative hidden sm:inline">{r.label}</span>
+          <span className="relative hidden sm:inline">{t(r.labelKey)}</span>
         </button>
       ))}
     </div>

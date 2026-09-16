@@ -8,17 +8,36 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Globe, Sliders, Shield, Webhook, Building2, Percent } from "lucide-react";
 import { toast } from "sonner";
+import { useT } from "@/lib/use-t";
 
 export function AdminSettings() {
+  const { t, isFa } = useT();
+
+  const toggles = [
+    { label: t("admin.settings.toggle.acceptCustomers"), desc: t("admin.settings.toggle.acceptCustomersDesc"), def: true },
+    { label: t("admin.settings.toggle.acceptTechs"), desc: t("admin.settings.toggle.acceptTechsDesc"), def: true },
+    { label: t("admin.settings.toggle.autoMatch"), desc: t("admin.settings.toggle.autoMatchDesc"), def: true },
+    { label: t("admin.settings.toggle.emergency"), desc: t("admin.settings.toggle.emergencyDesc"), def: true },
+    { label: t("admin.settings.toggle.maintenance"), desc: t("admin.settings.toggle.maintenanceDesc"), def: false },
+  ];
+
+  const integrations = [
+    { name: t("admin.settings.integ.stripe"), status: t("admin.settings.integ.connected"), tone: "emerald" },
+    { name: t("admin.settings.integ.twilio"), status: t("admin.settings.integ.connected"), tone: "emerald" },
+    { name: t("admin.settings.integ.maps"), status: t("admin.settings.integ.configure"), tone: "amber" },
+    { name: t("admin.settings.integ.fcm"), status: t("admin.settings.integ.configure"), tone: "amber" },
+    { name: t("admin.settings.integ.ai"), status: t("admin.settings.integ.configure"), tone: "amber" },
+  ];
+
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <SectionHeader title="Platform Settings" subtitle="Global configuration for MEKANIX" />
+    <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
+      <SectionHeader title={t("admin.settings.title")} subtitle={t("admin.settings.subtitle")} />
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Globe className="size-4 text-amber" /> Regions & Localization</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Globe className="size-4 text-amber" /> {t("admin.settings.regions")}</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs">Default Country</Label>
+            <Label className="text-xs">{t("admin.settings.defaultCountry")}</Label>
             <Select defaultValue="US">
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -30,7 +49,7 @@ export function AdminSettings() {
             </Select>
           </div>
           <div>
-            <Label className="text-xs">Default Currency</Label>
+            <Label className="text-xs">{t("admin.settings.defaultCurrency")}</Label>
             <Select defaultValue="USD">
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -41,18 +60,18 @@ export function AdminSettings() {
             </Select>
           </div>
           <div>
-            <Label className="text-xs">Default Language</Label>
+            <Label className="text-xs">{t("admin.settings.defaultLanguage")}</Label>
             <Select defaultValue="en">
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="en">English</SelectItem>
+                <SelectItem value="fa">فارسی</SelectItem>
                 <SelectItem value="ar">العربية</SelectItem>
-                <SelectItem value="de">Deutsch</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label className="text-xs">Time Zone</Label>
+            <Label className="text-xs">{t("admin.settings.timeZone")}</Label>
             <Select defaultValue="pst">
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -66,37 +85,31 @@ export function AdminSettings() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Percent className="size-4 text-amber" /> Fees & Tax</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Percent className="size-4 text-amber" /> {t("admin.settings.feesTax")}</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs">Platform Commission (%)</Label>
+            <Label className="text-xs">{t("admin.settings.commissionRate")}</Label>
             <Input defaultValue="12" type="number" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs">Default Tax Rate (%)</Label>
+            <Label className="text-xs">{t("admin.settings.defaultTaxRate")}</Label>
             <Input defaultValue="9" type="number" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs">Cancellation Fee ($)</Label>
+            <Label className="text-xs">{t("admin.settings.cancellationFee")}</Label>
             <Input defaultValue="15" type="number" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs">Warranty Months</Label>
+            <Label className="text-xs">{t("admin.settings.warrantyMonthsLabel")}</Label>
             <Input defaultValue="6" type="number" className="mt-1" />
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Sliders className="size-4 text-amber" /> Platform Toggles</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Sliders className="size-4 text-amber" /> {t("admin.settings.platformToggles")}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {[
-            { label: "Accept new customers", desc: "Allow new customer registrations", def: true },
-            { label: "Accept new technicians", desc: "Allow new technician applications", def: true },
-            { label: "Auto-match requests", desc: "Automatically match requests to nearest tech", def: true },
-            { label: "Emergency dispatch 24/7", desc: "Enable off-hours emergency dispatch", def: true },
-            { label: "Maintenance mode", desc: "Take platform offline for updates", def: false },
-          ].map((s, i) => (
+          {toggles.map((s, i) => (
             <div key={i} className="flex items-center justify-between">
               <div><p className="text-sm font-medium">{s.label}</p><p className="text-[11px] text-muted-foreground">{s.desc}</p></div>
               <Switch defaultChecked={s.def} />
@@ -106,46 +119,40 @@ export function AdminSettings() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Webhook className="size-4 text-amber" /> Integrations</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Webhook className="size-4 text-amber" /> {t("admin.settings.integrations")}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {[
-            { name: "Stripe Payments", status: "Connected", tone: "emerald" },
-            { name: "Twilio SMS", status: "Connected", tone: "emerald" },
-            { name: "Mapbox / Google Maps", status: "Configure", tone: "amber" },
-            { name: "Push Notifications (FCM)", status: "Configure", tone: "amber" },
-            { name: "AI Diagnosis Service", status: "Configure", tone: "amber" },
-          ].map((i) => (
+          {integrations.map((i) => (
             <div key={i.name} className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
               <div className="flex items-center gap-2">
                 <div className="grid size-8 place-items-center rounded-lg border border-border bg-muted"><Webhook className="size-4 text-muted-foreground" /></div>
                 <span className="text-sm font-medium">{i.name}</span>
               </div>
-              <Button variant="outline" size="sm" onClick={() => toast.info(`Opening ${i.name} config`)}>{i.status}</Button>
+              <Button variant="outline" size="sm" onClick={() => toast.info(t("admin.settings.integ.openConfig").replace("{name}", i.name))}>{i.status}</Button>
             </div>
           ))}
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Building2 className="size-4 text-amber" /> Branding</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Building2 className="size-4 text-amber" /> {t("admin.settings.branding")}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <Label className="text-xs">Platform Name</Label>
+            <Label className="text-xs">{t("admin.settings.platformName")}</Label>
             <Input defaultValue="MEKANIX" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs">Support Email</Label>
+            <Label className="text-xs">{t("admin.settings.supportEmail")}</Label>
             <Input defaultValue="ops@mekanix.io" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs">Support Phone</Label>
+            <Label className="text-xs">{t("admin.settings.supportPhone")}</Label>
             <Input defaultValue="+1-415-000-0000" className="mt-1" />
           </div>
         </CardContent>
       </Card>
 
       <div className="flex justify-end">
-        <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => toast.success("Platform settings saved")}>Save Settings</Button>
+        <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => toast.success(t("admin.settings.saved"))}>{t("admin.settings.save")}</Button>
       </div>
     </div>
   );

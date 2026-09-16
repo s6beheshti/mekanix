@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { fmtRelative } from "@/lib/format";
+import { fmtRelative, toPersianDigits } from "@/lib/format";
 import { toast } from "sonner";
 import { MekIcon } from "@/components/mek/shared/icons";
+import { useT } from "@/lib/use-t";
 
 type Application = {
   id: string; code: string; fullName: string; phone: string; email: string | null;
@@ -20,6 +21,7 @@ type Application = {
 };
 
 export function AdminApplications() {
+  const { t, isFa, lang } = useT();
   const [rows, setRows] = useState<Application[] | null>(null);
   const [selected, setSelected] = useState<Application | null>(null);
   const [notes, setNotes] = useState("");
@@ -36,7 +38,7 @@ export function AdminApplications() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       });
-      toast.success(`${app.fullName} approved — technician account created`);
+      toast.success(t("admin.applications.approved").replace("{name}", app.fullName));
       setSelected(null);
       setNotes("");
       load();
@@ -55,7 +57,7 @@ export function AdminApplications() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       });
-      toast.success(`${app.fullName} rejected`);
+      toast.success(t("admin.applications.rejected").replace("{name}", app.fullName));
       setSelected(null);
       setNotes("");
       load();
@@ -70,8 +72,8 @@ export function AdminApplications() {
   const reviewed = (rows ?? []).filter((r) => r.status !== "PENDING");
 
   return (
-    <div className="space-y-5">
-      <SectionHeader title="Mechanic Applications" subtitle="Review and approve technician applicants" />
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      <SectionHeader title={t("admin.applications.title")} subtitle={t("admin.applications.subtitle")} />
 
       {rows === null ? (
         <div className="grid h-40 place-items-center"><Loader2 className="size-6 animate-spin text-amber" /></div>
@@ -80,14 +82,14 @@ export function AdminApplications() {
           {/* Pending */}
           <section>
             <h3 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold">
-              <Clock className="size-4 text-amber" /> Pending Review
-              {pending.length > 0 && <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">{pending.length}</span>}
+              <Clock className="size-4 text-amber" /> {t("admin.applications.pending")}
+              {pending.length > 0 && <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">{isFa ? toPersianDigits(pending.length) : pending.length}</span>}
             </h3>
             {pending.length === 0 ? (
-              <EmptyState icon={CheckCircle2} title="No pending applications" description="All caught up." />
+              <EmptyState icon={CheckCircle2} title={t("admin.applications.noPending")} description={t("admin.applications.noPendingDesc")} />
             ) : (
               <div className="space-y-2">
-                {pending.map((app, i) => (
+                {pending.map((app) => (
                   <ApplicationCard key={app.id} app={app} onReview={() => { setSelected(app); setNotes(""); }} />
                 ))}
               </div>
@@ -97,7 +99,7 @@ export function AdminApplications() {
           {/* Reviewed */}
           {reviewed.length > 0 && (
             <section>
-              <h3 className="mb-2 font-display text-sm font-semibold">Reviewed</h3>
+              <h3 className="mb-2 font-display text-sm font-semibold">{t("admin.applications.reviewed")}</h3>
               <div className="space-y-2">
                 {reviewed.map((app) => (
                   <ApplicationCard key={app.id} app={app} onReview={() => { setSelected(app); setNotes(app.adminNotes ?? ""); }} />
@@ -120,29 +122,29 @@ export function AdminApplications() {
               </DialogHeader>
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant={selected.status === "APPROVED" ? "default" : selected.status === "REJECTED" ? "destructive" : "secondary"} className={selected.status === "APPROVED" ? "bg-emerald-glow/15 text-emerald-glow" : ""}>{selected.status}</Badge>
-                  <span className="font-mono">{selected.code}</span>
-                  <span>· {fmtRelative(selected.createdAt)}</span>
+                  <Badge variant={selected.status === "APPROVED" ? "default" : selected.status === "REJECTED" ? "destructive" : "secondary"} className={selected.status === "APPROVED" ? "bg-emerald-glow/15 text-emerald-glow" : ""}>{t(`appst.${selected.status}`, selected.status)}</Badge>
+                  <span className="font-mono">{isFa ? toPersianDigits(selected.code) : selected.code}</span>
+                  <span>· {fmtRelative(selected.createdAt, lang)}</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-lg border border-border bg-background p-2.5">
-                    <p className="text-[10px] uppercase text-muted-foreground">Phone</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">{t("admin.applications.col.phone")}</p>
                     <p className="font-medium">{selected.phone}</p>
                   </div>
                   <div className="rounded-lg border border-border bg-background p-2.5">
-                    <p className="text-[10px] uppercase text-muted-foreground">Experience</p>
-                    <p className="font-medium">{selected.experienceYears} years</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">{t("admin.applications.col.experience")}</p>
+                    <p className="font-medium">{t("admin.applications.experienceYears").replace("{n}", isFa ? toPersianDigits(selected.experienceYears) : String(selected.experienceYears))}</p>
                   </div>
                   {selected.email && (
                     <div className="rounded-lg border border-border bg-background p-2.5">
-                      <p className="text-[10px] uppercase text-muted-foreground">Email</p>
+                      <p className="text-[10px] uppercase text-muted-foreground">{t("admin.applications.col.email")}</p>
                       <p className="truncate font-medium">{selected.email}</p>
                     </div>
                   )}
                   {selected.city && (
                     <div className="rounded-lg border border-border bg-background p-2.5">
-                      <p className="text-[10px] uppercase text-muted-foreground">City</p>
+                      <p className="text-[10px] uppercase text-muted-foreground">{t("mech.cityLabel")}</p>
                       <p className="font-medium">{selected.city}</p>
                     </div>
                   )}
@@ -152,9 +154,9 @@ export function AdminApplications() {
                   const specs = JSON.parse(selected.specialties) as string[];
                   return specs.length ? (
                     <div>
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Specialties</p>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("admin.applications.col.specialties")}</p>
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {specs.map((s) => <Badge key={s} variant="outline" className="capitalize">{s.replace("-", " ")}</Badge>)}
+                        {specs.map((s) => <Badge key={s} variant="outline" className="capitalize">{t(`cat.${s}`, s.replace("-", " "))}</Badge>)}
                       </div>
                     </div>
                   ) : null;
@@ -162,36 +164,36 @@ export function AdminApplications() {
 
                 {selected.bio && (
                   <div>
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Bio</p>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("mech.about")}</p>
                     <p className="mt-1 text-sm">{selected.bio}</p>
                   </div>
                 )}
 
                 {selected.vehicleOwned && (
                   <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 px-2.5 py-1 text-[11px] text-emerald-glow">
-                    <BadgeCheck className="size-3.5" /> Has own service vehicle
+                    <BadgeCheck className="size-3.5" /> {t("admin.applications.hasVehicle")}
                   </div>
                 )}
 
                 {selected.user?.technician && (
                   <div className="rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 p-2.5 text-sm">
-                    <p className="font-medium text-emerald-glow">Technician account created</p>
-                    <p className="text-[11px] text-muted-foreground">{selected.user.name} · verified</p>
+                    <p className="font-medium text-emerald-glow">{t("admin.applications.techAccount")}</p>
+                    <p className="text-[11px] text-muted-foreground">{t("admin.applications.techAccountDesc").replace("{name}", selected.user.name ?? "")}</p>
                   </div>
                 )}
 
                 <div>
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Admin notes (optional)…" rows={2} />
+                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("admin.applications.adminNotes")} rows={2} />
                 </div>
 
                 {selected.status === "PENDING" && (
                   <DialogFooter>
                     <Button variant="outline" className="text-destructive hover:bg-destructive/10" disabled={acting === selected.id} onClick={() => reject(selected)}>
-                      <XCircle className="mr-1.5 size-4" /> Reject
+                      <XCircle className="mr-1.5 size-4" /> {t("admin.applications.reject")}
                     </Button>
                     <Button className="bg-emerald-glow text-black hover:bg-emerald-glow/90" disabled={acting === selected.id} onClick={() => approve(selected)}>
                       {acting === selected.id ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 size-4" />}
-                      Approve & Create Account
+                      {t("admin.applications.approve")}
                     </Button>
                   </DialogFooter>
                 )}
@@ -205,6 +207,7 @@ export function AdminApplications() {
 }
 
 function ApplicationCard({ app, onReview }: { app: Application; onReview: () => void }) {
+  const { t, isFa, lang } = useT();
   const specs = (() => { try { return JSON.parse(app.specialties) as string[]; } catch { return []; } })();
   return (
     <motion.button
@@ -218,19 +221,19 @@ function ApplicationCard({ app, onReview }: { app: Application; onReview: () => 
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-muted-foreground">{app.code}</span>
-          <Badge variant={app.status === "APPROVED" ? "default" : app.status === "REJECTED" ? "destructive" : "secondary"} className={app.status === "APPROVED" ? "bg-emerald-glow/15 text-emerald-glow" : ""}>{app.status}</Badge>
+          <span className="font-mono text-[10px] text-muted-foreground">{isFa ? toPersianDigits(app.code) : app.code}</span>
+          <Badge variant={app.status === "APPROVED" ? "default" : app.status === "REJECTED" ? "destructive" : "secondary"} className={app.status === "APPROVED" ? "bg-emerald-glow/15 text-emerald-glow" : ""}>{t(`appst.${app.status}`, app.status)}</Badge>
         </div>
         <p className="mt-0.5 truncate font-medium">{app.fullName}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-0.5"><Phone className="size-3" />{app.phone}</span>
           {app.city && <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" />{app.city}</span>}
-          <span>{app.experienceYears} yrs exp</span>
-          <span>· {fmtRelative(app.createdAt)}</span>
+          <span>{t("admin.applications.yrsExp").replace("{n}", isFa ? toPersianDigits(app.experienceYears) : String(app.experienceYears))}</span>
+          <span>· {fmtRelative(app.createdAt, lang)}</span>
         </div>
       </div>
       <div className="hidden items-center gap-1 sm:flex">
-        {specs.slice(0, 2).map((s) => <span key={s} className="rounded border border-border bg-background px-1.5 py-0.5 text-[9px] capitalize text-muted-foreground">{s.replace("-", " ")}</span>)}
+        {specs.slice(0, 2).map((s) => <span key={s} className="rounded border border-border bg-background px-1.5 py-0.5 text-[9px] text-muted-foreground">{t(`cat.${s}`, s.replace("-", " "))}</span>)}
       </div>
     </motion.button>
   );

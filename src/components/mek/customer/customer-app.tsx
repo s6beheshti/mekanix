@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus,
+  Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus, Crown,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/mek/app-shell";
 import { useApp } from "@/lib/store";
@@ -16,13 +16,16 @@ import { CustomerCompletion } from "./completion";
 import { CustomerHistory } from "./service-history";
 import { CustomerChat } from "./chat";
 import { CustomerSettings } from "./settings";
+import { CustomerVip } from "./vip";
 import { EmptyState } from "@/components/mek/shared/primitives";
 import { Bell as BellIcon } from "lucide-react";
 import { NotificationCenter } from "@/components/mek/shared/notification-center";
+import { useT } from "@/lib/use-t";
 
 export function CustomerApp() {
   const { view } = useApp();
   const { user, loading } = useActiveUser();
+  const { t } = useT();
   const [incomingRequest, setIncomingRequest] = useState(0);
 
   if (loading) {
@@ -34,16 +37,17 @@ export function CustomerApp() {
   }
   if (!user) {
     return (
-      <EmptyState icon={Wrench} title="No customer profile" description="Reseed the demo data to continue." className="m-6" />
+      <EmptyState icon={Wrench} title={t("common.noCustomerTitle")} description={t("common.noCustomerDesc")} className="m-6" />
     );
   }
 
   const nav: NavItem[] = [
-    { view: "home", label: "Home", icon: Home },
-    { view: "vehicles", label: "My Fleet", icon: Car },
-    { view: "service-history", label: "Service History", icon: History },
-    { view: "notifications", label: "Alerts", icon: Bell },
-    { view: "settings", label: "Settings", icon: Settings },
+    { view: "home", label: t("nav.home"), icon: Home },
+    { view: "vehicles", label: t("nav.vehicles"), icon: Car },
+    { view: "service-history", label: t("nav.serviceHistory"), icon: History },
+    { view: "vip", label: t("nav.vip"), icon: Crown },
+    { view: "notifications", label: t("nav.alerts"), icon: Bell },
+    { view: "settings", label: t("nav.settings"), icon: Settings },
   ];
 
   const render = () => {
@@ -60,6 +64,7 @@ export function CustomerApp() {
       case "completion": return <CustomerCompletion customer={user} />;
       case "service-history": return <CustomerHistory customer={user} />;
       case "chat": return <CustomerChat customer={user} />;
+      case "vip": return <CustomerVip userId={user.id} />;
       case "notifications": return (
         <div className="rounded-xl border border-border bg-card" style={{ height: "calc(100vh - 8rem)" }}>
           <NotificationCenter userId={user.id} />

@@ -9,7 +9,7 @@ import { api, type Job } from "@/lib/api";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
 import { StatusBadge } from "@/components/mek/shared/status-badge";
 import { EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
-import { fmtDate, fmtMoney, fmtRelative } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtRelative, toPersianDigits } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -77,7 +77,7 @@ export function CustomerHistory({ customer }: { customer: DemoUser }) {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-muted-foreground">{job.code}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
                   <StatusBadge status={job.status} />
                 </div>
                 <p className="mt-0.5 truncate text-sm font-medium">{job.request.title}</p>

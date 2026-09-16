@@ -5,7 +5,8 @@ import { MapPin, Gauge, Calendar, Trash2 } from "lucide-react";
 import type { Vehicle } from "@/lib/api";
 import { iconForMachineType } from "./icons";
 import { MekIcon } from "./icons";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, toPersianDigits } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 
 export function VehicleCard({
   vehicle,
@@ -20,11 +21,13 @@ export function VehicleCard({
   onDelete?: () => void;
   className?: string;
 }) {
+  const { t, isFa, type: typeLabel, lang } = useT();
   const iconName = iconForMachineType(vehicle.type);
   return (
     <motion.button
       type="button"
       onClick={onSelect}
+      dir={isFa ? "rtl" : "ltr"}
       whileHover={{ y: -2 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
       className={cn(
@@ -40,7 +43,7 @@ export function VehicleCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="rounded border border-border bg-background/60 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
-              {vehicle.type}
+              {typeLabel(vehicle.type)}
             </span>
             {vehicle.plate && (
               <span className="rounded border border-dashed border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
@@ -51,7 +54,7 @@ export function VehicleCard({
           <h3 className="mt-1 truncate font-display text-sm font-semibold">
             {vehicle.make} {vehicle.model}
           </h3>
-          <p className="text-[11px] text-muted-foreground">{vehicle.year}</p>
+          <p className="text-[11px] text-muted-foreground">{isFa ? toPersianDigits(vehicle.year) : vehicle.year}</p>
         </div>
         {onDelete && (
           <span
@@ -75,11 +78,11 @@ export function VehicleCard({
         )}
         {vehicle.engineHours != null && (
           <span className="inline-flex items-center gap-1">
-            <Gauge className="size-3 text-amber" /> {vehicle.engineHours.toLocaleString()} hrs
+            <Gauge className="size-3 text-amber" /> {isFa ? toPersianDigits(vehicle.engineHours.toLocaleString("en-US")) : vehicle.engineHours.toLocaleString()} {t("common.hrs")}
           </span>
         )}
         <span className="inline-flex items-center gap-1">
-          <Calendar className="size-3 text-amber" /> Added {fmtDate(vehicle.createdAt)}
+          <Calendar className="size-3 text-amber" /> {t("common.added")} {fmtDate(vehicle.createdAt, undefined, lang)}
         </span>
       </div>
     </motion.button>

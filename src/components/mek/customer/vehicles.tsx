@@ -33,7 +33,7 @@ export function CustomerVehicles({ customer }: { customer: DemoUser }) {
 
   const onDelete = async (id: string) => {
     await api.deleteVehicle(id);
-    toast.success(isFa ? "ماشین حذف شد" : "Vehicle removed");
+    toast.success(t("common.vehicleRemoved"));
     load();
   };
 
@@ -123,7 +123,7 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
       onOpenChange(false);
       reset();
     } catch (e: any) {
-      toast.error(e.message ?? "Failed to add machine");
+      toast.error(e.message ?? t("common.failedToAddMachine"));
     } finally {
       setSaving(false);
     }
@@ -168,13 +168,13 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
                   <div className="border-b border-border p-2">
                     <div className="relative">
                       <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input value={makeQuery} onChange={(e) => setMakeQuery(e.target.value)} placeholder={isFa ? "جستجو..." : "Search..."} className="h-8 pl-7 text-xs" autoFocus />
+                      <Input value={makeQuery} onChange={(e) => setMakeQuery(e.target.value)} placeholder={t("common.searchPlaceholder")} className="h-8 pl-7 text-xs" autoFocus />
                     </div>
                   </div>
                   <div className="max-h-40 overflow-y-auto">
                     {filteredMakes.length === 0 ? (
                       <button onClick={() => { setMake(makeQuery); setModel(""); setMakeOpen(false); setMakeQuery(""); }} className="w-full px-3 py-2 text-left text-xs hover:bg-accent">
-                        «{makeQuery}» ({isFa ? "دستی" : "manual"})
+                        «{makeQuery}» ({t("common.manual")})
                       </button>
                     ) : (
                       filteredMakes.map((m) => (
@@ -206,13 +206,13 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
                   <div className="border-b border-border p-2">
                     <div className="relative">
                       <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input value={modelQuery} onChange={(e) => setModelQuery(e.target.value)} placeholder={isFa ? "جستجو..." : "Search..."} className="h-8 pl-7 text-xs" autoFocus />
+                      <Input value={modelQuery} onChange={(e) => setModelQuery(e.target.value)} placeholder={t("common.searchPlaceholder")} className="h-8 pl-7 text-xs" autoFocus />
                     </div>
                   </div>
                   <div className="max-h-40 overflow-y-auto">
                     {filteredModels.length === 0 ? (
                       <button onClick={() => { setModel(modelQuery); setModelOpen(false); setModelQuery(""); }} className="w-full px-3 py-2 text-left text-xs hover:bg-accent">
-                        «{modelQuery}» ({isFa ? "دستی" : "manual"})
+                        «{modelQuery}» ({t("common.manual")})
                       </button>
                     ) : (
                       filteredModels.map((m) => (
@@ -233,7 +233,7 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
             </div>
             <div>
               <Label className="text-xs">{t("vehicles.add.plate")}</Label>
-              <Input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder={isFa ? "اختیاری" : "Optional"} className="mt-1" />
+              <Input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder={t("common.optional")} className="mt-1" />
             </div>
             <div>
               <Label className="text-xs">{t("vehicles.add.location")}</Label>
@@ -241,7 +241,7 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
             </div>
             <div>
               <Label className="text-xs">{t("vehicles.add.engineHours")}</Label>
-              <Input value={engineHours} onChange={(e) => setEngineHours(e.target.value)} type="number" placeholder={isFa ? "اختیاری" : "Optional"} className="mt-1" />
+              <Input value={engineHours} onChange={(e) => setEngineHours(e.target.value)} type="number" placeholder={t("common.optional")} className="mt-1" />
             </div>
           </div>
           <div>

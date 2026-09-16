@@ -8,7 +8,7 @@ import { api, type Job } from "@/lib/api";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
-import { fmtMoney, fmtDistance, fmtDuration, fmtRelative, haversine } from "@/lib/format";
+import { fmtMoney, fmtDistance, fmtDuration, fmtRelative, haversine, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -62,7 +62,7 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
       <div>
         <h3 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold">
           <Inbox className="size-4 text-amber" /> {t("tech.requests.new")}
-          {incoming.length > 0 && <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">{incoming.length}</span>}
+          {incoming.length > 0 && <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">{isFa ? toPersianDigits(incoming.length) : incoming.length}</span>}
         </h3>
         {jobs === null ? (
           <div className="space-y-2">{[0, 1].map((i) => <div key={i} className="h-32 rounded-xl bg-muted/60 mk-shimmer" />)}</div>
@@ -105,7 +105,7 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
 }
 
 function RequestCard({ job, userLat, userLng, acting, onAccept, onReject, onOpen }: { job: Job; userLat: number | null; userLng: number | null; acting: boolean; onAccept: () => void; onReject: () => void; onOpen: () => void }) {
-  const { t, isFa, money } = useT();
+  const { t, isFa, money, type: typeLabel } = useT();
   const dist = userLat != null && userLng != null && job.request.lat
     ? haversine({ lat: userLat, lng: userLng }, { lat: job.request.lat, lng: job.request.lng })
     : null;
@@ -120,9 +120,9 @@ function RequestCard({ job, userLat, userLng, acting, onAccept, onReject, onOpen
       <div className="flex items-start justify-between gap-3">
         <button onClick={onOpen} className="min-w-0 flex-1 text-left">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-muted-foreground">{job.code}</span>
+            <span className="font-mono text-[10px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
             <UrgencyBadge urgency={job.request.urgency} />
-            <span className="rounded border border-border bg-background px-1.5 py-0.5 text-[9px] uppercase text-muted-foreground">{job.request.vehicle.type}</span>
+            <span className="rounded border border-border bg-background px-1.5 py-0.5 text-[9px] uppercase text-muted-foreground">{typeLabel(job.request.vehicle.type)}</span>
           </div>
           <p className="mt-1 font-display text-sm font-semibold">{job.request.title}</p>
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{job.request.description}</p>
@@ -152,7 +152,7 @@ function RequestCard({ job, userLat, userLng, acting, onAccept, onReject, onOpen
 }
 
 function ActiveRow({ job, onClick }: { job: Job; onClick: () => void }) {
-  const { t, isFa, money } = useT();
+  const { t, isFa, money, type: typeLabel } = useT();
   return (
     <button onClick={onClick} className="group flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left mk-card-hover hover:border-amber/40">
       <div className="grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-background">
@@ -160,7 +160,7 @@ function ActiveRow({ job, onClick }: { job: Job; onClick: () => void }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-muted-foreground">{job.code}</span>
+          <span className="font-mono text-[10px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
           <StatusBadge status={job.status} />
         </div>
         <p className="mt-0.5 truncate text-sm font-medium">{job.request.title}</p>

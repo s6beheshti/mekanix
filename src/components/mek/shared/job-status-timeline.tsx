@@ -3,8 +3,11 @@ import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { JOB_STATUS_FLOW } from "@/lib/constants";
 import { Check } from "lucide-react";
+import { useT } from "@/lib/use-t";
+import { toPersianDigits } from "@/lib/format";
 
 export function JobStatusTimeline({ status, compact = false }: { status: string; compact?: boolean }) {
+  const { t, isFa } = useT();
   const flow = JOB_STATUS_FLOW.filter((s) => s.key !== "CANCELLED");
   const current = flow.find((s) => s.key === status);
   const currentStep = current?.step ?? 0;
@@ -12,7 +15,7 @@ export function JobStatusTimeline({ status, compact = false }: { status: string;
   if (status === "CANCELLED") {
     return (
       <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        This job was cancelled.
+        {t("track.jobCancelled")}
       </div>
     );
   }
@@ -30,12 +33,13 @@ export function JobStatusTimeline({ status, compact = false }: { status: string;
   }
 
   return (
-    <div className="relative">
+    <div className="relative" dir={isFa ? "rtl" : "ltr"}>
       <div className="absolute left-[15px] top-2 bottom-2 w-px bg-border" />
       <ol className="space-y-3">
         {flow.map((s, i) => {
           const done = i < currentStep;
           const active = i === currentStep;
+          const stepNum = isFa ? toPersianDigits(i + 1) : String(i + 1);
           return (
             <motion.li
               key={s.key}
@@ -57,14 +61,14 @@ export function JobStatusTimeline({ status, compact = false }: { status: string;
                 ) : active ? (
                   <span className="size-2 rounded-full bg-amber mk-status-pulse" />
                 ) : (
-                  <span className="font-mono text-[10px]">{i + 1}</span>
+                  <span className="font-mono text-[10px]">{stepNum}</span>
                 )}
               </div>
               <div className="pt-1">
                 <p className={cn("text-sm font-medium", active ? "text-foreground" : done ? "text-foreground" : "text-muted-foreground")}>
-                  {s.label}
+                  {t(`status.${s.key}`, s.label)}
                 </p>
-                <p className="text-[11px] text-muted-foreground">{s.hint}</p>
+                <p className="text-[11px] text-muted-foreground">{t(`status.${s.key}.hint`, s.hint)}</p>
               </div>
             </motion.li>
           );

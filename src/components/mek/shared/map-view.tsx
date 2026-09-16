@@ -1,7 +1,7 @@
 "use client";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { haversine, fmtDistance } from "@/lib/format";
+import { haversine, fmtDistance, fmtDuration } from "@/lib/format";
 
 // Premium abstract map. Designed so a real provider (Mapbox/Google) can
 // replace the inner <MapCanvas> later without changing the API.
@@ -164,9 +164,9 @@ function WrenchSvg({ className }: { className?: string }) {
   );
 }
 
-export function routeInfo(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+export function routeInfo(a: { lat: number; lng: number }, b: { lat: number; lng: number }, lang: "en" | "fa" = "en") {
   const km = haversine(a, b);
   // assume ~35 km/h urban avg
   const mins = Math.max(3, Math.round((km / 35) * 60));
-  return { km, mins, label: `${fmtDistance(km)} · ${mins} min` };
+  return { km, mins, label: `${fmtDistance(km, lang)} · ${fmtDuration(mins, lang)}` };
 }

@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Phone, MessageSquare, ShieldAlert, X, MapPin, Navigation, Clock, Star, Loader2, CheckCircle2, BadgeCheck, ChevronRight, RefreshCw,
+  Phone, MessageSquare, ShieldAlert, X, MapPin, Navigation, Clock, Star, Loader2, CheckCircle2, BadgeCheck, ChevronRight, RefreshCw, Lock, CreditCard,
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
@@ -11,7 +11,7 @@ import { MapView, routeInfo, type MapPoint } from "@/components/mek/shared/map-v
 import { JobStatusTimeline } from "@/components/mek/shared/job-status-timeline";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { fmtDistance, fmtDuration, fmtRelative } from "@/lib/format";
+import { fmtDistance, fmtDuration, fmtRelative, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 import {
@@ -19,14 +19,17 @@ import {
 } from "@/components/ui/dialog";
 import { StarRating } from "@/components/mek/shared/primitives";
 import { Textarea } from "@/components/ui/textarea";
+import { PaymentGatewayDialog } from "@/components/mek/shared/payment-gateway";
 
 export function CustomerTracking({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
-  const { t, isFa } = useT();
+  const { t, isFa, type: typeLabel, money } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [prepayOpen, setPrepayOpen] = useState(false);
+  const [prepayBusy, setPrepayBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!params.jobId) return;
@@ -73,7 +76,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
     { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? t("track.yourLocation") },
     ...(techLoc ? [{ id: "tech", lat: techLoc.lat, lng: techLoc.lng, kind: "technician" as const, label: job.technician.user.name }] : []),
   ];
-  const info = techLoc ? routeInfo({ lat: techLoc.lat, lng: techLoc.lng }, custLoc) : null;
+  const info = techLoc ? routeInfo({ lat: techLoc.lat, lng: techLoc.lng }, custLoc, isFa ? "fa" : "en") : null;
   const isComplete = job.status === "COMPLETED";
   const isCancelled = job.status === "CANCELLED";
 
@@ -85,7 +88,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
           <Button variant="ghost" size="icon" className="size-8" onClick={() => go("home")}><X className="size-4" /></Button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[11px] text-muted-foreground">{job.code}</span>
+              <span className="font-mono text-[11px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
               <UrgencyBadge urgency={job.request.urgency} />
             </div>
             <h1 className="font-display text-base font-semibold">{job.request.title}</h1>
@@ -114,7 +117,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
               </div>
               {job.status === "EN_ROUTE" && (
                 <div className="text-right">
-                  <p className="font-display text-lg font-bold text-amber">{job.etaMins}<span className="text-[10px] text-muted-foreground"> {t("track.min")}</span></p>
+                  <p className="font-display text-lg font-bold text-amber">{isFa ? toPersianDigits(job.etaMins) : job.etaMins}<span className="text-[10px] text-muted-foreground"> {t("track.min")}</span></p>
                   <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("track.estArrival")}</p>
                 </div>
               )}
@@ -137,11 +140,11 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
             <h3 className="font-display text-sm font-semibold">{t("track.machine")}</h3>
             <div className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-background p-3">
               <div className="grid size-10 place-items-center rounded-lg border border-border bg-muted">
-                <span className="font-mono text-[10px] uppercase">{job.request.vehicle.type}</span>
+                <span className="font-mono text-[10px] uppercase">{typeLabel(job.request.vehicle.type)}</span>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{job.request.vehicle.make} {job.request.vehicle.model}</p>
-                <p className="text-[11px] text-muted-foreground">{job.request.vehicle.year}{job.request.vehicle.plate ? ` · ${job.request.vehicle.plate}` : ""}</p>
+                <p className="text-[11px] text-muted-foreground">{isFa ? toPersianDigits(job.request.vehicle.year) : job.request.vehicle.year}{job.request.vehicle.plate ? ` · ${job.request.vehicle.plate}` : ""}</p>
               </div>
               <MapPin className="size-4 text-muted-foreground" />
             </div>
@@ -161,16 +164,37 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
                 <p className="font-medium">{job.technician.user.name}</p>
                 <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <StarRating value={job.technician.rating ?? 0} size={11} />
-                  <span>{(job.technician as any).rating?.toFixed?.(1) ?? "—"}</span>
+                  <span>{isFa ? toPersianDigits((job.technician as any).rating?.toFixed?.(1) ?? "—") : ((job.technician as any).rating?.toFixed?.(1) ?? "—")}</span>
                   <span>· {job.technician.user.phone ?? "—"}</span>
                 </div>
               </div>
               {job.technician && <BadgeCheck className="size-4 text-amber" />}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1.5 size-4" /> {t("track.chat")}</Button>
-              <Button variant="outline" onClick={() => toast.success(t("track.connectingCall"))}><Phone className="mr-1.5 size-4" /> {t("track.call")}</Button>
+              {job.prepayPaid ? (
+                <>
+                  <Button variant="outline" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1.5 size-4" /> {t("track.chat")}</Button>
+                  <Button variant="outline" onClick={() => toast.success(t("track.connectingCall"))}><Phone className="mr-1.5 size-4" /> {t("track.call")}</Button>
+                </>
+              ) : (
+                <Button
+                  className="col-span-2 bg-amber text-black hover:bg-amber/90"
+                  onClick={() => setPrepayOpen(true)}
+                >
+                  <Lock className="mr-2 size-4" /> {t("fees.unlockCommunication")}
+                </Button>
+              )}
             </div>
+
+            {/* Prepay required banner */}
+            {!job.prepayPaid && (
+              <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
+                <p className="flex items-center gap-1.5 font-medium text-amber">
+                  <Lock className="size-3" /> {t("fees.prepayTitle")}
+                </p>
+                <p className="mt-1">{t("fees.prepayDesc")}</p>
+              </div>
+            )}
           </div>
 
           {/* Diagnosis / estimate ready */}
@@ -245,6 +269,43 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Pre-service payment gateway */}
+      {job && (() => {
+        const machineType = job.request.vehicle.type;
+        const heavy = machineType !== "CAR";
+        const inspectionFee = heavy ? (job.technician as any).inspectionFeeHeavy ?? 20 : (job.technician as any).inspectionFee ?? 7;
+        const travelFee = (job.technician as any).travelFeeBase ?? 3;
+        const total = inspectionFee + travelFee;
+        return (
+          <PaymentGatewayDialog
+            open={prepayOpen}
+            onOpenChange={(v) => { setPrepayOpen(v); if (!v) load(); }}
+            amount={total}
+            purpose="prepay"
+            description={t("fees.prepayTitle")}
+            onSuccess={async (_paymentId) => {
+              setPrepayBusy(true);
+              try {
+                const res = await fetch("/api/prepay", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ jobId: job.id, method: "card" }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                setJob(data.job);
+                toast.success(t("fees.prepayPaid"));
+                setPrepayOpen(false);
+              } catch (e: any) {
+                toast.error(e.message ?? t("pay.gateway.failed"));
+              } finally {
+                setPrepayBusy(false);
+              }
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

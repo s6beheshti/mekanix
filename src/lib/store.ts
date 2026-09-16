@@ -21,7 +21,8 @@ export type CustomerView =
   | "service-history"
   | "chat"
   | "notifications"
-  | "settings";
+  | "settings"
+  | "vip";
 
 export type TechView =
   | "dashboard"

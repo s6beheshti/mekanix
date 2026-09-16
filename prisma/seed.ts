@@ -97,7 +97,9 @@ async function main() {
         rating: t.rating,
         reviewCount: Math.floor(t.completed * 0.4),
         hourlyRate: t.rate,
-        travelFeeBase: 15 + i * 2,
+        travelFeeBase: 3 + i * 0.5, // USD, ~180k-450k IRR — Sanjaq-like
+        inspectionFee: 7 + (i % 3) * 2, // USD passenger, ~420k-660k IRR
+        inspectionFeeHeavy: 20 + (i % 4) * 5, // USD heavy, ~1.2M-1.8M IRR
         status: t.available ? "ONLINE" : "OFFLINE",
         availableNow: t.available,
         verified: true,
@@ -106,6 +108,17 @@ async function main() {
         lng: t.lng,
         heading: Math.random() * 360,
         responseMins: 8 + Math.floor(Math.random() * 12),
+      },
+    });
+    // create wallet for each technician
+    await db.wallet.create({
+      data: {
+        technicianId: tech.id,
+        balance: 50 + i * 25, // seed some withdrawable balance
+        pendingBalance: 20 + i * 10, // seed some held balance
+        totalEarned: 200 + i * 80,
+        totalCommission: 20 + i * 8,
+        totalWithdrawn: 100 + i * 30,
       },
     });
     for (const [cat, label] of t.specialties) {
@@ -118,6 +131,16 @@ async function main() {
       data: { technicianId: tech.id, name: ["San Francisco – Downtown", "SoMa District", "Mission Bay", "Bayview", "Financial District", "Sunset", "Richmond", "Marina"][i % 8], lat: t.lat, lng: t.lng, radiusKm: 18 + (i % 4) * 6 },
     });
     techRecs.push({ user: u, tech, ...t });
+  }
+
+  // ── VIP Plans ──
+  const vipPlans = [
+    { slug: "silver", name: "Silver", priceUSD: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
+    { slug: "gold", name: "Gold", priceUSD: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
+    { slug: "platinum", name: "Platinum", priceUSD: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
+  ];
+  for (const p of vipPlans) {
+    await db.vipPlan.create({ data: p });
   }
 
   // ── Service Categories ──

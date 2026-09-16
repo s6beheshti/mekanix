@@ -1,0 +1,695 @@
+     1→     1→"use client";
+     2→     2→import { useEffect, useRef, useState } from "react";
+     3→     3→import { motion, AnimatePresence } from "framer-motion";
+     4→     4→import {
+     5→     5→  ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Upload, Search, Star,
+     6→     6→  BadgeCheck, Clock, Zap, ShieldCheck, Navigation as NavIcon, ArrowLeft,
+     7→     7→} from "lucide-react";
+     8→     8→import type { DemoUser } from "@/lib/use-active-user";
+     9→     9→import { useApp } from "@/lib/store";
+    10→    10→import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
+    11→    11→import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, typesForMode } from "@/lib/constants";
+    12→    12→import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
+    13→    13→import { VehicleCard } from "@/components/mek/shared/vehicle-card";
+    14→    14→import { TechnicianCard } from "@/components/mek/shared/technician-card";
+    15→    15→import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
+    16→    16→import { UrgencyBadge } from "@/components/mek/shared/status-badge";
+    17→    17→import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
+    18→    18→import { fmtDuration, haversine } from "@/lib/format";
+    19→    19→import { Button } from "@/components/ui/button";
+    20→    20→import { Input } from "@/components/ui/input";
+    21→    21→import { Label } from "@/components/ui/label";
+    22→    22→import { Textarea } from "@/components/ui/textarea";
+    23→    23→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    24→    24→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+    25→    25→import { toast } from "sonner";
+    26→    26→import { X } from "lucide-react";
+    27→    27→import { useT } from "@/lib/use-t";
+    28→    28→
+    29→    29→// ─── Step 1: Select Machine ───
+    30→    30→export function RequestType({ customer }: { customer: DemoUser }) {
+    31→    31→  const { go, params, machineMode } = useApp();
+    32→    32→  const { t, isFa, type: typeLabel } = useT();
+    33→    33→  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+    34→    34→  const [selectedType, setSelectedType] = useState<string | null>(params.type ?? null);
+    35→    35→
+    36→    36→  const allowedTypes = typesForMode(machineMode);
+    37→    37→
+    38→    38→  useEffect(() => {
+    39→    39→    if (customer.customer)
+    40→    40→      api.listVehicles(customer.customer.id)
+    41→    41→        .then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))))
+    42→    42→        .catch(() => setVehicles([]));
+    43→    43→  }, [customer, machineMode]);
+    44→    44→
+    45→    45→  const saved = vehicles ?? [];
+    46→    46→  const hasSaved = saved.length > 0;
+    47→    47→
+    48→    48→  const proceed = (vehicle?: Vehicle, type?: string) => {
+    49→    49→    go("describe", { vehicleId: vehicle?.id, type: type ?? vehicle?.type ?? selectedType ?? (machineMode === "heavy" ? "TRUCK" : "CAR") });
+    50→    50→  };
+    51→    51→
+    52→    52→  const visibleMachineTypes = MACHINE_TYPES.filter((m) => allowedTypes.includes(m.slug));
+    53→    53→
+    54→    54→  return (
+    55→    55→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+    56→    56→      <StepHeader
+    57→    57→        step={1}
+    58→    58→        total={3}
+    59→    59→        title={t("req.selectMachine")}
+    60→    60→        subtitle={t("req.selectMachineSub")}
+    61→    61→        onBack={() => go("home")}
+    62→    62→      />
+    63→    63→
+    64→    64→      {hasSaved && (
+    65→    65→        <section>
+    66→    66→          <SectionHeader title={t("req.savedFleet")} subtitle={t("req.savedFleetSub")} />
+    67→    67→          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    68→    68→            {saved.map((v) => (
+    69→    69→              <VehicleCard key={v.id} vehicle={v} selected={params.vehicleId === v.id} onSelect={() => proceed(v)} />
+    70→    70→            ))}
+    71→    71→          </div>
+    72→    72→        </section>
+    73→    73→      )}
+    74→    74→
+    75→    75→      <section>
+    76→    76→        <SectionHeader
+    77→    77→          title={hasSaved ? t("req.pickType") : t("req.whatNeeds")}
+    78→    78→          subtitle={t("req.whatNeedsSub")}
+    79→    79→        />
+    80→    80→        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    81→    81→          {visibleMachineTypes.map((m) => (
+    82→    82→            <motion.button
+    83→    83→              key={m.slug}
+    84→    84→              whileHover={{ y: -2 }}
+    85→    85→              onClick={() => { setSelectedType(m.slug); proceed(undefined, m.slug); }}
+    86→    86→              className={`group relative overflow-hidden rounded-xl border bg-card p-4 text-center mk-card-hover ${selectedType === m.slug ? "border-amber mk-amber-glow" : "border-border hover:border-amber/40"}`}
+    87→    87→            >
+    88→    88→              <div className={`mx-auto grid size-12 place-items-center rounded-xl border ${selectedType === m.slug ? "border-amber/40 bg-amber/10" : "border-border bg-background"}`}>
+    89→    89→                <MekIcon name={m.icon} className={`size-6 ${selectedType === m.slug ? "text-amber" : "text-muted-foreground"}`} />
+    90→    90→              </div>
+    91→    91→              <p className="mt-2 font-display text-sm font-semibold">{typeLabel(m.slug)}</p>
+    92→    92→            </motion.button>
+    93→    93→          ))}
+    94→    94→        </div>
+    95→    95→      </section>
+    96→    96→    </div>
+    97→    97→  );
+    98→    98→}
+    99→    99→
+   100→   100→// ─── Step 2: Describe Problem ───
+   101→   101→export function DescribeProblem({ customer }: { customer: DemoUser }) {
+   102→   102→  const { go, params, machineMode, auth, exitToSplash } = useApp();
+   103→   103→  const { t, isFa, cat, type: typeLabel, money } = useT();
+   104→   104→  const lang = isFa ? "fa" : "en";
+   105→   105→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   106→   106→  const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
+   107→   107→  const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
+   108→   108→  const [category, setCategory] = useState<string>("");
+   109→   109→  const [urgency, setUrgency] = useState<string>(params.urgency ?? "NORMAL");
+   110→   110→  const [title, setTitle] = useState("");
+   111→   111→  const [description, setDescription] = useState("");
+   112→   112→  const [address, setAddress] = useState("Pier 38, San Francisco, CA");
+   113→   113→  const [media, setMedia] = useState<string[]>([]);
+   114→   114→  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+   115→   115→  const [submitting, setSubmitting] = useState(false);
+   116→   116→  const [guestBlock, setGuestBlock] = useState(false);
+   117→   117→
+   118→   118→  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+   119→   119→  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+   120→   120→
+   121→   121→  const allowedTypes = typesForMode(machineMode);
+   122→   122→
+   123→   123→  useEffect(() => {
+   124→   124→    if (customer.customer)
+   125→   125→      api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))));
+   126→   126→  }, [customer, machineMode]);
+   127→   127→
+   128→   128→  const readFileAsDataURL = (file: File): Promise<string> =>
+   129→   129→    new Promise((resolve, reject) => {
+   130→   130→      const reader = new FileReader();
+   131→   131→      reader.onload = () => resolve(String(reader.result));
+   132→   132→      reader.onerror = () => reject(reader.error);
+   133→   133→      reader.readAsDataURL(file);
+   134→   134→    });
+   135→   135→
+   136→   136→  const onFilesSelected = async (files: FileList | null) => {
+   137→   137→    if (!files || files.length === 0) return;
+   138→   138→    try {
+   139→   139→      const urls = await Promise.all(Array.from(files).slice(0, 6).map(readFileAsDataURL));
+   140→   140→      setMedia((m) => [...m, ...urls].slice(0, 12));
+   141→   141→      toast.success(isFa ? "عکس ضمیمه شد" : t("req.field.photoAttached"));
+   142→   142→    } catch {
+   143→   143→      toast.error(isFa ? "بارگذاری عکس ناموفق بود" : "Could not attach photo");
+   144→   144→    }
+   145→   145→  };
+   146→   146→
+   147→   147→  const submit = async () => {
+   148→   148→    if (auth.isGuest) { setGuestBlock(true); return; }
+   149→   149→    if (!category) { toast.error(t("req.error.category")); return; }
+   150→   150→    if (!title.trim()) { toast.error(t("req.error.title")); return; }
+   151→   151→    if (!vehicleId && !type) { toast.error(t("req.error.machine")); return; }
+   152→   152→    setSubmitting(true);
+   153→   153→    try {
+   154→   154→      const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
+   155→   155→      const lng = -122.4194 + (Math.random() - 0.5) * 0.03;
+   156→   156→      const sr = await api.createRequest({
+   157→   157→        customerId: customer.customer!.id,
+   158→   158→        vehicleId: vehicleId ?? vehicles[0]?.id,
+   159→   159→        category,
+   160→   160→        urgency,
+   161→   161→        title: title.trim(),
+   162→   162→        description: description.trim(),
+   163→   163→        mediaUrls: media,
+   164→   164→        address,
+   165→   165→        lat,
+   166→   166→        lng,
+   167→   167→      });
+   168→   168→      toast.success(t("req.created").replace("{code}", sr.code));
+   169→   169→      go("matching", { requestId: sr.id });
+   170→   170→    } catch (e: any) {
+   171→   171→      toast.error(e.message ?? "Failed to create request");
+   172→   172→    } finally {
+   173→   173→      setSubmitting(false);
+   174→   174→    }
+   175→   175→  };
+   176→   176→
+   177→   177→  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
+   178→   178→
+   179→   179→  return (
+   180→   180→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+   181→   181→      <StepHeader
+   182→   182→        step={2}
+   183→   183→        total={3}
+   184→   184→        title={t("req.describe")}
+   185→   185→        subtitle={t("req.describeSub")}
+   186→   186→        onBack={() => go("request-type")}
+   187→   187→      />
+   188→   188→
+   189→   189→      <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
+   190→   190→        <div className="space-y-5">
+   191→   191→          {/* Machine */}
+   192→   192→          <div className="rounded-xl border border-border bg-card p-4">
+   193→   193→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.machine")}</Label>
+   194→   194→            {selectedVehicle ? (
+   195→   195→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 p-3">
+   196→   196→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   197→   197→                  <MekIcon name={iconForMachineType(selectedVehicle.type)} className="size-5 text-amber" />
+   198→   198→                </div>
+   199→   199→                <div className="min-w-0 flex-1">
+   200→   200→                  <p className="truncate text-sm font-medium">{selectedVehicle.make} {selectedVehicle.model}</p>
+   201→   201→                  <p className="text-[11px] text-muted-foreground">{typeLabel(selectedVehicle.type)} · {selectedVehicle.year}</p>
+   202→   202→                </div>
+   203→   203→                <Button variant="ghost" size="sm" onClick={() => { setVehicleId(undefined); }}>{t("req.field.change")}</Button>
+   204→   204→              </div>
+   205→   205→            ) : (
+   206→   206→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-3">
+   207→   207→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   208→   208→                  <MekIcon name={iconForMachineType(type)} className="size-5 text-amber" />
+   209→   209→                </div>
+   210→   210→                <span className="text-sm font-medium">{typeLabel(type)}</span>
+   211→   211→              </div>
+   212→   212→            )}
+   213→   213→            {vehicles.length > 0 && !selectedVehicle && (
+   214→   214→              <Select onValueChange={setVehicleId} value={vehicleId ?? ""}>
+   215→   215→                <SelectTrigger className="mt-2"><SelectValue placeholder={t("req.field.linkSaved")} /></SelectTrigger>
+   216→   216→                <SelectContent>
+   217→   217→                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.make} {v.model} · {typeLabel(v.type)}</SelectItem>)}
+   218→   218→                </SelectContent>
+   219→   219→              </Select>
+   220→   220→            )}
+   221→   221→          </div>
+   222→   222→
+   223→   223→          {/* Category */}
+   224→   224→          <div className="rounded-xl border border-border bg-card p-4">
+   225→   225→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.category")}</Label>
+   226→   226→            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+   227→   227→              {SERVICE_CATEGORIES.map((c) => (
+   228→   228→                <button
+   229→   229→                  key={c.slug}
+   230→   230→                  onClick={() => setCategory(c.slug)}
+   231→   231→                  className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-colors ${category === c.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
+   232→   232→                >
+   233→   233→                  <MekIcon name={c.icon} className={`size-4 shrink-0 ${category === c.slug ? "text-amber" : "text-muted-foreground"}`} />
+   234→   234→                  <span className="text-[11px] font-medium leading-tight">{cat(c.slug)}</span>
+   235→   235→                </button>
+   236→   236→              ))}
+   237→   237→            </div>
+   238→   238→          </div>
+   239→   239→
+   240→   240→          {/* Title + description */}
+   241→   241→          <div className="rounded-xl border border-border bg-card p-4">
+   242→   242→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.summary")}</Label>
+   243→   243→            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("req.field.summaryPlaceholder")} className="mt-2" maxLength={120} />
+   244→   244→            <Label className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.symptoms")}</Label>
+   245→   245→            <Textarea
+   246→   246→              value={description}
+   247→   247→              onChange={(e) => setDescription(e.target.value)}
+   248→   248→              placeholder={t("req.field.symptomsPlaceholder")}
+   249→   249→              rows={4}
+   250→   250→              className="mt-2"
+   251→   251→              maxLength={1000}
+   252→   252→            />
+   253→   253→            <p className="mt-1 text-right text-[10px] text-muted-foreground">
+   254→   254→              {isFa ? description.length.toLocaleString("fa-IR") : description.length}/1000
+   255→   255→            </p>
+   256→   256→          </div>
+   257→   257→
+   258→   258→          {/* Media */}
+   259→   259→          <div className="rounded-xl border border-border bg-card p-4">
+   260→   260→            <div className="flex items-center justify-between">
+   261→   261→              <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.attach")}</Label>
+   262→   262→              <div className="flex gap-1">
+   263→   263→                {/* Camera capture — direct to camera on mobile */}
+   264→   264→                <Button
+   265→   265→                  variant="outline"
+   266→   266→                  size="sm"
+   267→   267→                  type="button"
+   268→   268→                  onClick={() => cameraInputRef.current?.click()}
+   269→   269→                >
+   270→   270→                  <Camera className="mr-1 size-3.5" /> {t("req.field.addPhoto")}
+   271→   271→                </Button>
+   272→   272→                <input
+   273→   273→                  ref={cameraInputRef}
+   274→   274→                  type="file"
+   275→   275→                  accept="image/*"
+   276→   276→                  capture="environment"
+   277→   277→                  multiple
+   278→   278→                  className="hidden"
+   279→   279→                  onChange={(e) => {
+   280→   280→                    onFilesSelected(e.target.files);
+   281→   281→                    e.target.value = "";
+   282→   282→                  }}
+   283→   283→                />
+   284→   284→                {/* Gallery upload */}
+   285→   285→                <Button
+   286→   286→                  variant="ghost"
+   287→   287→                  size="sm"
+   288→   288→                  type="button"
+   289→   289→                  onClick={() => galleryInputRef.current?.click()}
+   290→   290→                >
+   291→   291→                  <Upload className="size-3.5" />
+   292→   292→                </Button>
+   293→   293→                <input
+   294→   294→                  ref={galleryInputRef}
+   295→   295→                  type="file"
+   296→   296→                  accept="image/*,video/*"
+   297→   297→                  multiple
+   298→   298→                  className="hidden"
+   299→   299→                  onChange={(e) => {
+   300→   300→                    onFilesSelected(e.target.files);
+   301→   301→                    e.target.value = "";
+   302→   302→                  }}
+   303→   303→                />
+   304→   304→                {/* Voice recorder */}
+   305→   305→                <VoiceRecorder
+   306→   306→                  lang={lang}
+   307→   307→                  onRecorded={(blob) => {
+   308→   308→                    setVoiceNote(URL.createObjectURL(blob));
+   309→   309→                    toast.success(isFa ? "صدای ضبط شد" : "Voice recorded");
+   310→   310→                  }}
+   311→   311→                />
+   312→   312→              </div>
+   313→   313→            </div>
+   314→   314→
+   315→   315→            {(media.length > 0 || voiceNote) && (
+   316→   316→              <div className="mt-3 flex flex-wrap gap-2">
+   317→   317→                {voiceNote && (
+   318→   318→                  <div className="relative flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/5 p-2">
+   319→   319→                    <audio src={voiceNote} controls className="h-8 w-40" />
+   320→   320→                    <button
+   321→   321→                      onClick={() => setVoiceNote(null)}
+   322→   322→                      className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
+   323→   323→                      aria-label={isFa ? "حذف صدا" : "Remove voice"}
+   324→   324→                    >
+   325→   325→                      <X className="size-2.5" />
+   326→   326→                    </button>
+   327→   327→                  </div>
+   328→   328→                )}
+   329→   329→                {media.map((url, i) => (
+   330→   330→                  <div key={i} className="relative">
+   331→   331→                    <img src={url} alt="" className="size-16 rounded-lg border border-border object-cover" />
+   332→   332→                    <button
+   333→   333→                      onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))}
+   334→   334→                      className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
+   335→   335→                      aria-label={isFa ? "حذف عکس" : "Remove photo"}
+   336→   336→                    >
+   337→   337→                      <X className="size-2.5" />
+   338→   338→                    </button>
+   339→   339→                  </div>
+   340→   340→                ))}
+   341→   341→              </div>
+   342→   342→            )}
+   343→   343→          </div>
+   344→   344→        </div>
+   345→   345→
+   346→   346→        {/* Right column: urgency + location + submit */}
+   347→   347→        <div className="space-y-5">
+   348→   348→          <div className="rounded-xl border border-border bg-card p-4">
+   349→   349→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.urgency")}</Label>
+   350→   350→            <div className="mt-3 space-y-2">
+   351→   351→              {URGENCY.map((u) => (
+   352→   352→                <button
+   353→   353→                  key={u.slug}
+   354→   354→                  onClick={() => setUrgency(u.slug)}
+   355→   355→                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${urgency === u.slug ? "border-amber bg-amber/5" : "border-border hover:bg-accent"}`}
+   356→   356→                >
+   357→   357→                  <UrgencyBadge urgency={u.slug} />
+   358→   358→                  <div className="min-w-0 flex-1">
+   359→   359→                    <p className="text-sm font-medium">{t(`urgency.${u.slug}`)}</p>
+   360→   360→                    <p className="text-[11px] text-muted-foreground">{t(`urgency.${u.slug}.desc`)}</p>
+   361→   361→                  </div>
+   362→   362→                </button>
+   363→   363→              ))}
+   364→   364→            </div>
+   365→   365→          </div>
+   366→   366→
+   367→   367→          <div className="rounded-xl border border-border bg-card p-4">
+   368→   368→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.location")}</Label>
+   369→   369→            <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+   370→   370→              <MapPin className="size-4 text-amber" />
+   371→   371→              <Input value={address} onChange={(e) => setAddress(e.target.value)} className="border-0 px-0 focus-visible:ring-0" />
+   372→   372→            </div>
+   373→   373→            <div className="mt-3 h-24 overflow-hidden rounded-lg border border-border bg-[oklch(0.16_0.008_260)]">
+   374→   374→              <div className="size-full mk-grid-bg opacity-40" />
+   375→   375→            </div>
+   376→   376→          </div>
+   377→   377→
+   378→   378→          <div className="sticky bottom-3">
+   379→   379→            <Button onClick={submit} disabled={submitting} className="w-full bg-amber text-black hover:bg-amber/90">
+   380→   380→              {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
+   381→   381→              {submitting ? t("req.finding") : t("req.findTechnicians")}
+   382→   382→            </Button>
+   383→   383→          </div>
+   384→   384→        </div>
+   385→   385→      </div>
+   386→   386→
+   387→   387→      {/* Guest sign-in prompt */}
+   388→   388→      <Dialog open={guestBlock} onOpenChange={setGuestBlock}>
+   389→   389→        <DialogContent className="max-w-sm">
+   390→   390→          <DialogHeader>
+   391→   391→            <DialogTitle className="flex items-center gap-2 font-display">
+   392→   392→              <ShieldCheck className="size-4 text-amber" /> {t("req.guest.title")}
+   393→   393→            </DialogTitle>
+   394→   394→          </DialogHeader>
+   395→   395→          <p className="text-sm text-muted-foreground">
+   396→   396→            {t("req.guest.body")}
+   397→   397→          </p>
+   398→   398→          <DialogFooter className="gap-2 sm:gap-2">
+   399→   399→            <Button variant="ghost" onClick={() => setGuestBlock(false)}>{t("req.guest.later")}</Button>
+   400→   400→            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>{t("req.guest.signInNow")}</Button>
+   401→   401→          </DialogFooter>
+   402→   402→        </DialogContent>
+   403→   403→      </Dialog>
+   404→   404→    </div>
+   405→   405→  );
+   406→   406→}
+   407→   407→
+   408→   408→// ─── Step 3: Matching ───
+   409→   409→export function Matching({ customer }: { customer: DemoUser }) {
+   410→   410→  const { go, params } = useApp();
+   411→   411→  const { t, isFa, money } = useT();
+   412→   412→  const lang = isFa ? "fa" : "en";
+   413→   413→  const [techs, setTechs] = useState<Technician[] | null>(null);
+   414→   414→  const [phase, setPhase] = useState<"searching" | "results">("searching");
+   415→   415→  const [selected, setSelected] = useState<string | null>(null);
+   416→   416→
+   417→   417→  useEffect(() => {
+   418→   418→    const lat = 37.7749, lng = -122.4194;
+   419→   419→    api.listTechnicians({ lat, lng }).then((tList) => {
+   420→   420→      // simulate searching delay
+   421→   421→      setTimeout(() => {
+   422→   422→        setTechs(tList);
+   423→   423→        setPhase("results");
+   424→   424→      }, 1900);
+   425→   425→    });
+   426→   426→  }, []);
+   427→   427→
+   428→   428→  const ranked = (techs ?? []).map((tk) => {
+   429→   429→    const km = tk.lat && tk.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: tk.lat, lng: tk.lng }) : 99;
+   430→   430→    const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
+   431→   431→    const score = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+   432→   432→    // Inspection fee ~ 30min at hourly rate; travel fee scales with distance
+   433→   433→    const inspectionFee = Math.round((tk.hourlyRate * 0.5) * 100) / 100;
+   434→   434→    const travelFee = Math.round((tk.travelFeeBase + km * 0.5) * 100) / 100;
+   435→   435→    return { tech: tk, km, eta, score, inspectionFee, travelFee };
+   436→   436→  }).sort((a, b) => b.score - a.score);
+   437→   437→
+   438→   438→  const onSelect = (techId: string) => {
+   439→   439→    setSelected(techId);
+   440→   440→    go("technician-profile", { requestId: params.requestId, technicianId: techId });
+   441→   441→  };
+   442→   442→
+   443→   443→  return (
+   444→   444→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+   445→   445→      <StepHeader
+   446→   446→        step={3}
+   447→   447→        total={3}
+   448→   448→        title={t("req.matching")}
+   449→   449→        subtitle={t("req.matchingSub")}
+   450→   450→        onBack={() => go("describe")}
+   451→   451→      />
+   452→   452→
+   453→   453→      <AnimatePresence mode="wait">
+   454→   454→        {phase === "searching" ? (
+   455→   455→          <motion.div key="searching" exit={{ opacity: 0 }} className="grid place-items-center py-16">
+   456→   456→            <div className="relative">
+   457→   457→              <motion.div
+   458→   458→                animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+   459→   459→                transition={{ duration: 2, repeat: Infinity }}
+   460→   460→                className="absolute inset-0 rounded-full bg-amber"
+   461→   461→              />
+   462→   462→              <div className="relative grid size-20 place-items-center rounded-full border-2 border-amber/30 bg-amber/10">
+   463→   463→                <Search className="size-8 text-amber" />
+   464→   464→              </div>
+   465→   465→            </div>
+   466→   466→            <p className="mt-6 font-display text-lg font-semibold">{t("req.searching")}</p>
+   467→   467→            <p className="text-sm text-muted-foreground">{t("req.searchingSub")}</p>
+   468→   468→            <div className="mt-4 flex flex-wrap justify-center gap-6 text-[11px] text-muted-foreground">
+   469→   469→              <span className="inline-flex items-center gap-1"><NavIcon className="size-3 text-amber" /> {t("req.search.distance")}</span>
+   470→   470→              <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> {t("req.search.rating")}</span>
+   471→   471→              <span className="inline-flex items-center gap-1"><BadgeCheck className="size-3 text-amber" /> {t("req.search.certs")}</span>
+   472→   472→              <span className="inline-flex items-center gap-1"><Clock className="size-3 text-amber" /> {t("req.search.eta")}</span>
+   473→   473→            </div>
+   474→   474→          </motion.div>
+   475→   475→        ) : (
+   476→   476→          <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+   477→   477→            {ranked.length === 0 ? (
+   478→   478→              <EmptyState
+   479→   479→                icon={Search}
+   480→   480→                title={t("req.noMatch")}
+   481→   481→                description={t("req.noMatchDesc")}
+   482→   482→                action={<Button onClick={() => go("describe")} variant="outline">{t("req.backToDetails")}</Button>}
+   483→   483→              />
+   484→   484→            ) : (
+   485→   485→              <div className="grid gap-3 lg:grid-cols-2">
+   486→   486→                {ranked.map((r, i) => (
+   487→   487→                  <TechnicianCard
+   488→   488→                    key={r.tech.id}
+   489→   489→                    tech={r.tech}
+   490→   490→                    distanceKm={r.km}
+   491→   491→                    etaMins={r.eta}
+   492→   492→                    rank={i + 1}
+   493→   493→                    inspectionFee={r.inspectionFee}
+   494→   494→                    travelFee={r.travelFee}
+   495→   495→                    selected={selected === r.tech.id}
+   496→   496→                    onSelect={() => onSelect(r.tech.id)}
+   497→   497→                  />
+   498→   498→                ))}
+   499→   499→              </div>
+   500→   500→            )}
+   501→   501→          </motion.div>
+   502→   502→        )}
+   503→   503→      </AnimatePresence>
+   504→   504→    </div>
+   505→   505→  );
+   506→   506→}
+   507→   507→
+   508→   508→// ─── Technician Profile ───
+   509→   509→export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
+   510→   510→  const { go, params, back } = useApp();
+   511→   511→  const { t, isFa, money, cat } = useT();
+   512→   512→  const lang = isFa ? "fa" : "en";
+   513→   513→  const [tech, setTech] = useState<Technician | null>(null);
+   514→   514→  const [requesting, setRequesting] = useState(false);
+   515→   515→
+   516→   516→  useEffect(() => {
+   517→   517→    if (params.technicianId) api.getTechnician(params.technicianId).then(setTech);
+   518→   518→  }, [params.technicianId]);
+   519→   519→
+   520→   520→  const request = async () => {
+   521→   521→    setRequesting(true);
+   522→   522→    try {
+   523→   523→      // assign the technician to the request + create a job in REQUESTED state
+   524→   524→      const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
+   525→   525→      if (!sr) throw new Error(t("req.techProfile.requestNotFound"));
+   526→   526→      const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
+   527→   527→        method: "POST",
+   528→   528→        headers: { "Content-Type": "application/json" },
+   529→   529→        body: JSON.stringify({ technicianId: params.technicianId }),
+   530→   530→      });
+   531→   531→      const job = await jobRes.json();
+   532→   532→      if (!job?.id) throw new Error(t("req.techProfile.assignFailed"));
+   533→   533→      toast.success(t("req.techProfile.notified").replace("{name}", tech?.user.name ?? ""));
+   534→   534→      go("track", { jobId: job.id });
+   535→   535→    } catch (e: any) {
+   536→   536→      toast.error(e.message ?? t("req.techProfile.assignFailed"));
+   537→   537→    } finally {
+   538→   538→      setRequesting(false);
+   539→   539→    }
+   540→   540→  };
+   541→   541→
+   542→   542→  if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
+   543→   543→
+   544→   544→  return (
+   545→   545→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+   546→   546→      <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+   547→   547→        <ArrowLeft className="size-4" /> {t("req.backToResults")}
+   548→   548→      </button>
+   549→   549→
+   550→   550→      {/* Header */}
+   551→   551→      <div className="relative overflow-hidden rounded-xl border border-border bg-card p-5">
+   552→   552→        <div className="absolute -right-16 -top-16 size-48 rounded-full bg-amber/10 blur-3xl" />
+   553→   553→        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+   554→   554→          <div className="relative shrink-0">
+   555→   555→            <div className="grid size-20 place-items-center overflow-hidden rounded-2xl border border-border bg-muted">
+   556→   556→              {tech.user.avatar ? <img src={tech.user.avatar} alt={tech.user.name} className="size-full object-cover" /> : <span className="font-display text-2xl">{tech.user.name[0]}</span>}
+   557→   557→            </div>
+   558→   558→            {tech.verified && <div className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-card bg-amber text-black"><BadgeCheck className="size-4" /></div>}
+   559→   559→          </div>
+   560→   560→          <div className="flex-1">
+   561→   561→            <div className="flex flex-wrap items-center gap-2">
+   562→   562→              <h1 className="font-display text-xl font-semibold">{tech.user.name}</h1>
+   563→   563→              <span className="rounded-full bg-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber">{tech.level}</span>
+   564→   564→            </div>
+   565→   565→            <div className="mt-1 flex items-center gap-2 text-sm">
+   566→   566→              <StarRating value={tech.rating} />
+   567→   567→              <span className="font-semibold">{isFa ? tech.rating.toFixed(2).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.rating.toFixed(2)}</span>
+   568→   568→              <span className="text-muted-foreground">· {tech.reviewCount} {t("common.reviews")} · {tech.completedJobs} {t("common.jobs")}</span>
+   569→   569→            </div>
+   570→   570→            <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
+   571→   571→          </div>
+   572→   572→          <div className="flex flex-col items-end gap-1">
+   573→   573→            <div className="font-display text-2xl font-bold text-amber">{money(tech.hourlyRate)}<span className="text-xs text-muted-foreground">/hr</span></div>
+   574→   574→            <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
+   575→   575→          </div>
+   576→   576→        </div>
+   577→   577→      </div>
+   578→   578→
+   579→   579→      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+   580→   580→        <div className="space-y-4">
+   581→   581→          {/* Specialties */}
+   582→   582→          <div className="rounded-xl border border-border bg-card p-4">
+   583→   583→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.specialties")}</h3>
+   584→   584→            <div className="mt-3 flex flex-wrap gap-2">
+   585→   585→              {tech.specialties.map((s) => (
+   586→   586→                <span key={s.id} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs">
+   587→   587→                  <MekIcon name={iconForCategory(s.category)} className="size-3.5 text-amber" />
+   588→   588→                  {cat(s.category)}
+   589→   589→                </span>
+   590→   590→              ))}
+   591→   591→            </div>
+   592→   592→          </div>
+   593→   593→
+   594→   594→          {/* Certifications */}
+   595→   595→          <div className="rounded-xl border border-border bg-card p-4">
+   596→   596→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.certifications")}</h3>
+   597→   597→            <div className="mt-3 space-y-2">
+   598→   598→              {tech.certifications.map((c) => (
+   599→   599→                <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
+   600→   600→                  <div className={`grid size-9 place-items-center rounded-lg border ${c.verified ? "border-emerald-glow/30 bg-emerald-glow/10" : "border-border bg-muted"}`}>
+   601→   601→                    <ShieldCheck className={`size-4 ${c.verified ? "text-emerald-glow" : "text-muted-foreground"}`} />
+   602→   602→                  </div>
+   603→   603→                  <div className="min-w-0 flex-1">
+   604→   604→                    <p className="text-sm font-medium">{c.name}</p>
+   605→   605→                    <p className="text-[11px] text-muted-foreground">{c.issuer} · {c.year}</p>
+   606→   606→                  </div>
+   607→   607→                  {c.verified ? <span className="rounded bg-emerald-glow/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-glow">{t("common.verified")}</span> : <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t("common.pending")}</span>}
+   608→   608→                </div>
+   609→   609→              ))}
+   610→   610→            </div>
+   611→   611→          </div>
+   612→   612→
+   613→   613→          {/* Reviews */}
+   614→   614→          <div className="rounded-xl border border-border bg-card p-4">
+   615→   615→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.recentReviews")}</h3>
+   616→   616→            <div className="mt-3 space-y-3">
+   617→   617→              {(tech as any).reviews?.slice(0, 3).map((r: any) => (
+   618→   618→                <div key={r.id} className="rounded-lg border border-border bg-background p-3">
+   619→   619→                  <div className="flex items-center justify-between">
+   620→   620→                    <div className="flex items-center gap-2">
+   621→   621→                      <div className="grid size-7 place-items-center overflow-hidden rounded-full border border-border bg-muted">
+   622→   622→                        {r.fromUser?.avatar ? <img src={r.fromUser.avatar} alt="" className="size-full object-cover" /> : <span className="text-[10px]">{r.fromUser?.name?.[0]}</span>}
+   623→   623→                      </div>
+   624→   624→                      <span className="text-xs font-medium">{r.fromUser?.name}</span>
+   625→   625→                    </div>
+   626→   626→                    <StarRating value={r.rating} size={11} />
+   627→   627→                  </div>
+   628→   628→                  {r.comment && <p className="mt-1.5 text-sm text-muted-foreground">"{r.comment}"</p>}
+   629→   629→                </div>
+   630→   630→              )) ?? <p className="text-sm text-muted-foreground">{t("req.techProfile.noReviews")}</p>}
+   631→   631→            </div>
+   632→   632→          </div>
+   633→   633→        </div>
+   634→   634→
+   635→   635→        {/* Right: booking card */}
+   636→   636→        <div className="space-y-4">
+   637→   637→          <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
+   638→   638→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
+   639→   639→            <div className="mt-3 space-y-2 text-sm">
+   640→   640→              <Row label={t("req.techProfile.hourlyRate")} value={`${money(tech.hourlyRate)}/hr`} />
+   641→   641→              <Row label={t("req.techProfile.travelFee")} value={money(tech.travelFeeBase)} />
+   642→   642→              <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
+   643→   643→              <Row label={t("req.techProfile.experience")} value={`${isFa ? String(tech.experienceYears).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.experienceYears} ${isFa ? "سال" : "yrs"}`} />
+   644→   644→              <Row label={t("req.techProfile.level")} value={tech.level} />
+   645→   645→              <Row label={t("fees.totalEstimate")} value={money(tech.hourlyRate * 0.5 + tech.travelFeeBase)} />
+   646→   646→            </div>
+   647→   647→            <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
+   648→   648→              <ShieldCheck className="mr-1 inline size-3.5 text-amber" />
+   649→   649→              {t("req.techProfile.guarantee")}
+   650→   650→            </div>
+   651→   651→            <Button onClick={request} disabled={requesting} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
+   652→   652→              {requesting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
+   653→   653→              {t("req.techProfile.requestNow")}
+   654→   654→            </Button>
+   655→   655→            <p className="mt-2 text-center text-[10px] text-muted-foreground">{t("req.techProfile.noCharge")}</p>
+   656→   656→          </div>
+   657→   657→        </div>
+   658→   658→      </div>
+   659→   659→    </div>
+   660→   660→  );
+   661→   661→}
+   662→   662→
+   663→   663→function Row({ label, value }: { label: string; value: string }) {
+   664→   664→  return (
+   665→   665→    <div className="flex items-center justify-between border-b border-border/60 py-1.5 last:border-0">
+   666→   666→      <span className="text-muted-foreground">{label}</span>
+   667→   667→      <span className="font-medium">{value}</span>
+   668→   668→    </div>
+   669→   669→  );
+   670→   670→}
+   671→   671→
+   672→   672→// ─── Shared step header ───
+   673→   673→function StepHeader({ step, total, title, subtitle, onBack }: { step: number; total: number; title: string; subtitle?: string; onBack: () => void }) {
+   674→   674→  const { t, isFa } = useT();
+   675→   675→  const stepLabel = isFa
+   676→   676→    ? `${t("req.step")} ${String(step).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])} ${t("req.stepOf")} ${String(total).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])}`
+   677→   677→    : `${t("req.step")} ${step} ${t("req.stepOf")} ${total}`;
+   678→   678→  return (
+   679→   679→    <div className="flex items-center gap-3">
+   680→   680→      <Button variant="ghost" size="icon" className="size-8" onClick={onBack}>
+   681→   681→        <ChevronLeft className="size-4 rtl:hidden" />
+   682→   682→        <ChevronRight className="size-4 hidden rtl:block" />
+   683→   683→      </Button>
+   684→   684→      <div className="flex-1">
+   685→   685→        <div className="flex items-center gap-2">
+   686→   686→          <span className="font-mono text-[10px] uppercase tracking-widest text-amber">{stepLabel}</span>
+   687→   687→          <div className="h-px flex-1 bg-border" />
+   688→   688→        </div>
+   689→   689→        <h1 className="mt-1 font-display text-xl font-semibold tracking-tight">{title}</h1>
+   690→   690→        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+   691→   691→      </div>
+   692→   692→    </div>
+   693→   693→  );
+   694→   694→}
+   695→   695→

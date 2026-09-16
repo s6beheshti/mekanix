@@ -5,7 +5,7 @@ import { Loader2, ShieldCheck, Star, Wrench, CheckCircle2, ArrowLeft } from "luc
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
 import { api, type Job } from "@/lib/api";
-import { fmtDate, parseMedia } from "@/lib/format";
+import { fmtDate, parseMedia, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,7 +79,7 @@ export function CustomerCompletion({ customer }: { customer: DemoUser }) {
             <CheckCircle2 className="size-7 text-emerald-glow" />
           </motion.div>
           <h1 className="mt-3 font-display text-xl font-semibold">{t("completion.title")}</h1>
-          <p className="text-sm text-muted-foreground">{job.code} · {job.request.vehicle.make} {job.request.vehicle.model}</p>
+          <p className="text-sm text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code} · {job.request.vehicle.make} {job.request.vehicle.model}</p>
         </div>
       </motion.div>
 
@@ -108,7 +108,7 @@ export function CustomerCompletion({ customer }: { customer: DemoUser }) {
             <div className="mt-2 space-y-1.5">
               {parts.map((p) => (
                 <div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                  <span className="font-medium">{p.name} <span className="text-[11px] text-muted-foreground">×{p.quantity}</span></span>
+                  <span className="font-medium">{p.name} <span className="text-[11px] text-muted-foreground">×{isFa ? toPersianDigits(p.quantity) : p.quantity}</span></span>
                   {p.sku && <span className="font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                 </div>
               ))}

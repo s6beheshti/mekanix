@@ -8,10 +8,11 @@ import { MekIcon } from "@/components/mek/shared/icons";
 import { Logo } from "@/components/mek/brand/logo";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { toPersianDigits } from "@/lib/format";
 
 export function ModeSelect() {
   const { auth, setMachineMode, exitToSplash, lang, setLang } = useApp();
-  const { t, isFa } = useT();
+  const { t, isFa, type: typeLabel } = useT();
 
   const choose = (mode: MachineMode) => {
     setMachineMode(mode);
@@ -118,11 +119,11 @@ export function ModeSelect() {
             <div className="relative mt-5 flex flex-wrap gap-1.5">
               {mode.types.slice(0, 6).map((tp) => (
                 <span key={tp} className="rounded-md border border-border bg-background/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
-                  {tp}
+                  {typeLabel(tp)}
                 </span>
               ))}
               {mode.types.length > 6 && (
-                <span className="rounded-md px-1.5 py-0.5 text-[9px] text-muted-foreground">+{mode.types.length - 6}</span>
+                <span className="rounded-md px-1.5 py-0.5 text-[9px] text-muted-foreground">+{isFa ? toPersianDigits(mode.types.length - 6) : (mode.types.length - 6)}</span>
               )}
             </div>
           </motion.button>

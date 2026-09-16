@@ -5,7 +5,7 @@ import { Star, MapPin, Clock, BadgeCheck, ChevronRight } from "lucide-react";
 import type { Technician } from "@/lib/api";
 import { StarRating } from "./primitives";
 import { TECH_LEVELS } from "@/lib/constants";
-import { fmtDistance, fmtDuration, haversine } from "@/lib/format";
+import { fmtDistance, fmtDuration, haversine, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 
 export function TechnicianCard({
@@ -73,9 +73,9 @@ export function TechnicianCard({
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
             <StarRating value={tech.rating} size={11} />
-            <span className="font-medium text-foreground">{tech.rating.toFixed(1)}</span>
+            <span className="font-medium text-foreground">{isFa ? toPersianDigits(tech.rating.toFixed(1)) : tech.rating.toFixed(1)}</span>
             <span>·</span>
-            <span>{tech.completedJobs} {t("common.jobs")}</span>
+            <span>{isFa ? toPersianDigits(tech.completedJobs) : tech.completedJobs} {t("common.jobs")}</span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {tech.specialties.slice(0, 2).map((s) => (
@@ -122,7 +122,7 @@ export function TechnicianCard({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-display text-sm font-semibold">{money(tech.hourlyRate)}<span className="text-[10px] text-muted-foreground">/hr</span></span>
+          <span className="font-display text-sm font-semibold">{money(tech.hourlyRate)}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></span>
           <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
       </div>

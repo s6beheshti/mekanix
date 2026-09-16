@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Bell, CheckCheck, BellOff } from "lucide-react";
 import { api, type Notification } from "@/lib/api";
 import { NOTIFICATION_TYPES } from "@/lib/constants";
-import { fmtRelative } from "@/lib/format";
+import { fmtRelative, toPersianDigits } from "@/lib/format";
 import { MekIcon } from "./icons";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,7 +72,7 @@ export function NotificationCenter({ userId }: { userId: string }) {
           <h2 className="font-display text-sm font-semibold">{t("notif.title")}</h2>
           {unread > 0 && (
             <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">
-              {t("notif.unreadCount").replace("{n}", String(unread))}
+              {t("notif.unreadCount").replace("{n}", isFa ? toPersianDigits(unread) : String(unread))}
             </span>
           )}
         </div>

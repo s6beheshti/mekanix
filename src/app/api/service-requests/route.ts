@@ -33,11 +33,34 @@ export async function POST(req: Request) {
   const body = await req.json();
   // generate a human-friendly code
   const code = `SR-${Math.floor(2000 + Math.random() * 8000)}`;
+
+  // If no vehicleId provided (e.g. new customer without saved vehicles), create
+  // a lightweight ad-hoc vehicle record so the request can be submitted.
+  // The type defaults to CAR for passenger mode, TRUCK for heavy.
+  let vehicleId = body.vehicleId;
+  if (!vehicleId && body.customerId) {
+    const adHocVehicle = await db.vehicle.create({
+      data: {
+        customerId: body.customerId,
+        type: (body.machineType as any) ?? "CAR",
+        make: body.make ?? "Unspecified",
+        model: body.model ?? "Ad-hoc",
+        year: new Date().getFullYear(),
+        plate: null,
+        location: body.address ?? null,
+        lat: body.lat ?? null,
+        lng: body.lng ?? null,
+        notes: "Created at request time",
+      },
+    });
+    vehicleId = adHocVehicle.id;
+  }
+
   const sr = await db.serviceRequest.create({
     data: {
       code,
       customerId: body.customerId,
-      vehicleId: body.vehicleId,
+      vehicleId,
       category: body.category,
       urgency: body.urgency ?? "NORMAL",
       title: body.title,

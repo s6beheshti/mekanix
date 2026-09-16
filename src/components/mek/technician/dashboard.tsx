@@ -10,7 +10,7 @@ import { api, type Job, type Payment } from "@/lib/api";
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
-import { fmtMoney, fmtRelative, fmtDuration } from "@/lib/format";
+import { fmtRelative, fmtDuration, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -86,8 +86,8 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={t("tech.dashboard.today")} value={money(todayEarnings)} icon={Wallet} tone="amber" sub={t("tech.dashboard.earnings")} />
         <StatCard label={t("tech.dashboard.thisWeek")} value={money(weekEarnings)} icon={TrendingUp} tone="emerald" sub={t("tech.dashboard.revenue")} />
-        <StatCard label={t("tech.dashboard.rating")} value={(user.technician.rating ?? 0).toFixed(1)} icon={Star} tone="violet" sub={`${user.technician.reviewCount} ${t("common.reviews")}`} />
-        <StatCard label={t("tech.dashboard.completed")} value={user.technician.completedJobs} icon={Zap} tone="blue" sub={t("tech.dashboard.lifetimeJobs")} />
+        <StatCard label={t("tech.dashboard.rating")} value={isFa ? toPersianDigits((user.technician.rating ?? 0).toFixed(1)) : (user.technician.rating ?? 0).toFixed(1)} icon={Star} tone="violet" sub={`${isFa ? toPersianDigits(user.technician.reviewCount) : user.technician.reviewCount} ${t("common.reviews")}`} />
+        <StatCard label={t("tech.dashboard.completed")} value={isFa ? toPersianDigits(user.technician.completedJobs) : user.technician.completedJobs} icon={Zap} tone="blue" sub={t("tech.dashboard.lifetimeJobs")} />
       </div>
 
       {/* Incoming requests */}
@@ -141,7 +141,7 @@ function JobRow({ job, onClick }: { job: Job; onClick: () => void }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-muted-foreground">{job.code}</span>
+          <span className="font-mono text-[10px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
           <UrgencyBadge urgency={job.request.urgency} />
         </div>
         <p className="mt-0.5 truncate text-sm font-medium">{job.request.title}</p>

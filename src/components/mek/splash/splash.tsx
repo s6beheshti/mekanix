@@ -14,6 +14,7 @@ import { COUNTRIES } from "@/lib/constants";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { MechanicApplicationForm } from "./mechanic-application";
+import { toPersianDigits } from "@/lib/format";
 
 type Stage = "entry" | "phone" | "otp";
 
@@ -46,7 +47,7 @@ export function Splash() {
       if (!res.ok) throw new Error(data.error);
       setSentCode(data.code);
       setStage("otp");
-      toast.success(t("splash.codeSent") + (data.code ? ` · ${data.code}` : ""));
+      toast.success(t("splash.codeSent") + (data.code ? ` · ${isFa ? toPersianDigits(data.code) : data.code}` : ""));
     } catch (e: any) {
       toast.error(e.message ?? "Failed to send code");
     } finally {
@@ -73,7 +74,7 @@ export function Splash() {
       // If logging in as mechanic, check that the user has a technician profile
       if (loginTarget === "mechanic") {
         if (!data.user.technician) {
-          toast.error(isFa ? "شما مکانیک ثبت‌شده نیستید. ابتدا ثبت‌نام کنید." : "You are not a registered mechanic. Please apply first.");
+          toast.error(t("splash.notRegisteredMechanic"));
           setLoginTarget("customer");
           setStage("entry");
           return;
@@ -197,7 +198,7 @@ export function Splash() {
                   onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-3 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
                 >
-                  <Wrench className="size-4" /> {isFa ? "ورود مکانیک‌ها" : "Mechanic Portal"}
+                  <Wrench className="size-4" /> {t("splash.mechanicPortal")}
                 </button>
                 <button
                   onClick={() => setApplyOpen(true)}
@@ -221,12 +222,10 @@ export function Splash() {
               <BackBtn onClick={() => setStage("entry")} label={t("splash.back")} />
               <div className="mt-2 text-center">
                 <h2 className="font-display text-2xl font-semibold">
-                  {loginTarget === "mechanic" ? (isFa ? "ورود مکانیک" : "Mechanic Login") : t("splash.signIn")}
+                  {loginTarget === "mechanic" ? t("splash.mechanicLogin") : t("splash.signIn")}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {loginTarget === "mechanic"
-                    ? (isFa ? "برای ورود به پورتال مکانیک، شماره موبایل خود را وارد کنید" : "Enter your mobile to access the mechanic portal")
-                    : t("splash.enterMobile")}
+                  {loginTarget === "mechanic" ? t("splash.mechanicLoginDesc") : t("splash.enterMobile")}
                 </p>
               </div>
 
@@ -278,7 +277,7 @@ export function Splash() {
                 </p>
                 {sentCode && (
                   <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber/30 bg-amber/10 px-2.5 py-0.5 text-[11px] text-amber">
-                    <Sparkles className="size-3" /> {t("splash.demoCode")}: {sentCode}
+                    <Sparkles className="size-3" /> {t("splash.demoCode")}: {isFa ? toPersianDigits(sentCode) : sentCode}
                   </div>
                 )}
               </div>

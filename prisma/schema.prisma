@@ -36,6 +36,8 @@ model User {
   payments       Payment[]
   otps           OtpCode[]
   mechanicApplication MechanicApplication?
+  vipSubscriptions UserVipSubscription[]
+  gatewayLogs   PaymentGatewayLog[]
 
   @@index([role])
   @@index([phone])
@@ -78,9 +80,10 @@ model Technician {
   completedJobs  Int     @default(0)
   rating         Float   @default(0)
   reviewCount    Int     @default(0)
-  hourlyRate     Float   @default(45)
-  travelFeeBase  Float   @default(15000)
-  inspectionFee  Float   @default(200000)
+  hourlyRate     Float   @default(15) // USD; ~900k IRR — realistic Iranian mobile mechanic rate
+  travelFeeBase  Float   @default(3) // USD; ~180k IRR base travel fee (within-city)
+  inspectionFee  Float   @default(7) // USD passenger; ~420k IRR — Sanjaq-like Iranian market
+  inspectionFeeHeavy Float @default(20) // USD heavy machinery; ~1.2M IRR
   status         TechStatus @default(OFFLINE)
   verified       Boolean @default(false)
   level          TechLevel @default(BRONZE)
@@ -98,6 +101,7 @@ model Technician {
   jobsAssigned   Job[]       @relation("jobTech")
   requestsMatched ServiceRequest[] @relation("reqMatchTech")
   reviews        Review[]    @relation("revTech")
+  wallet         Wallet?
 
   @@index([status, availableNow])
 }
@@ -257,6 +261,7 @@ model Job {
   reviews    Review[]  @relation("revJob")
   tracking   TrackingEvent[]
   warranty   Warranty?
+  walletTransactions WalletTransaction[]
 
   @@index([status])
   @@index([technicianId])
@@ -344,8 +349,8 @@ enum InvoiceStatus {
 model Payment {
   id         String  @id @default(cuid())
   code       String  @unique
-  invoiceId  String  @unique
-  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId  String?  @unique
+  invoice    Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   userId     String
   user       User    @relation(fields: [userId], references: [id])
   amount     Float
@@ -485,3 +490,176 @@ enum ApplicationStatus {
   REJECTED
   ON_HOLD
 }
+
+// ───────────────────────── Wallets & Withdrawals ─────────────────────────
+// Every Technician has a Wallet. Pre-service payments (inspection + travel fee)
+// land here, with 10% platform commission deducted immediately. Net earnings
+// are held for 12 hours from job completion before becoming withdrawable.
+
+model Wallet {
+  id            String   @id @default(cuid())
+  technicianId  String   @unique
+  technician    Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  balance       Float    @default(0) // current withdrawable balance (USD)
+  pendingBalance Float   @default(0) // held balance (in 12h escrow, USD)
+  totalEarned   Float    @default(0) // lifetime gross earnings (USD)
+  totalCommission Float  @default(0) // lifetime platform commission (USD)
+  totalWithdrawn Float   @default(0) // lifetime withdrawn amount (USD)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions  WalletTransaction[]
+  withdrawals   WithdrawalRequest[]
+}
+
+enum TxnKind {
+  PREPAY        // customer paid inspection + travel fee
+  COMMISSION    // 10% platform cut (debit from technician balance)
+  PAYOUT        // withdrawal to bank card
+  REFUND        // refund to customer
+  ADJUSTMENT    // manual admin adjustment
+}
+
+enum TxnStatus {
+  PENDING       // held in escrow (12h countdown)
+  AVAILABLE     // released, withdrawable
+  PROCESSING    // payout in progress
+  COMPLETED
+  FAILED
+}
+
+model WalletTransaction {
+  id            String   @id @default(cuid())
+  walletId      String
+  wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  jobId         String?
+  job           Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  kind          TxnKind
+  status        TxnStatus @default(PENDING)
+  grossAmount   Float    @default(0) // amount paid by customer (USD)
+  commissionAmount Float @default(0) // 10% platform cut (USD)
+  netAmount     Float    @default(0) // amount credited to technician (USD)
+  holdUntil     DateTime? // when funds become AVAILABLE (12h after job completion)
+  releasedAt    DateTime? // when actually released
+  description   String?
+  createdAt     DateTime @default(now())
+
+  @@index([walletId, status])
+  @@index([jobId])
+}
+
+enum WithdrawalStatus {
+  REQUESTED     // mechanic requested
+  APPROVED      // admin approved, queued for payout
+  PAID          // sent to bank, completed
+  REJECTED      // admin rejected
+}
+
+model WithdrawalRequest {
+  id            String   @id @default(cuid())
+  code          String   @unique // WD-...
+  walletId      String
+  wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount        Float    // USD
+  method        String   @default("card") // card | bank | wallet-to-wallet
+  cardNumber   String?  // masked Iranian card number (shetab)
+  bankName     String?
+  shebaNumber  String?  // Iranian IBAN (IR...)
+  status        WithdrawalStatus @default(REQUESTED)
+  requestedAt   DateTime @default(now())
+  processedAt   DateTime?
+  adminNotes   String?
+  reviewerId   String?
+  txnId         String? // linked WalletTransaction (PAYOUT) once paid
+
+  @@index([walletId, status])
+  @@index([status])
+}
+
+// ───────────────────────── VIP Membership ─────────────────────────
+// Tiered VIP subscription. Customers pay for premium perks (priority matching,
+// discounted inspection fees, extended warranty, dedicated support).
+
+model VipPlan {
+  id            String   @id @default(cuid())
+  slug          String   @unique // silver | gold | platinum
+  name          String   // display name (en) — UI uses i18n key vip.plan.<slug>
+  priceUSD      Float    // one-time price per duration
+  durationDays  Int      // validity period
+  discountPct   Float    @default(0) // % off inspection fees
+  priorityBoost Int      @default(0) // matching priority boost
+  warrantyMonths Int     @default(6)
+  dedicatedSupport Boolean @default(false)
+  freeInspectionsPerMonth Int @default(0)
+  active        Boolean  @default(true)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions UserVipSubscription[]
+}
+
+enum VipStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING_PAYMENT
+}
+
+model UserVipSubscription {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId        String
+  plan          VipPlan  @relation(fields: [planId], references: [id])
+  status        VipStatus @default(PENDING_PAYMENT)
+  startedAt     DateTime?
+  expiresAt     DateTime? // null = lifetime
+  paymentId     String? // linked Payment
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+// ───────────────────────── Payment Gateway (Shaparak simulator) ─────────────────────────
+// Stores raw payment attempts for audit. In production this maps to Zarinpal/IDPay.
+
+enum GatewayType {
+  SHAPARAK_SIM  // built-in simulator
+  ZARINPAL
+  IDPAY
+  WALLET       // wallet-to-wallet (no external gateway)
+}
+
+enum GatewayStatus {
+  INITIATED
+  REDIRECTED
+  VERIFIED
+  FAILED
+  CANCELLED
+}
+
+model PaymentGatewayLog {
+  id            String   @id @default(cuid())
+  code          String   @unique // PG-...
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  amount        Float    // USD
+  currency      String   @default("USD")
+  gateway       GatewayType @default(SHAPARAK_SIM)
+  status        GatewayStatus @default(INITIATED)
+  purpose       String   // vip | prepay | invoice | wallet_topup
+  referenceId   String?  // external gateway reference
+  cardNumber   String?  // masked card used
+  mobile        String?
+  description   String?
+  callbackPayload String? // JSON callback
+  initiatedAt   DateTime @default(now())
+  verifiedAt    DateTime?
+  paymentId     String? // linked Payment on success
+
+  @@index([userId, status])
+  @@index([status])
+}
+

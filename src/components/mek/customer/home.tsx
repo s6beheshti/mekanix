@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
-import { fmtRelative, fmtDate } from "@/lib/format";
+import { fmtRelative, fmtDate, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Link as LinkIcon, CircleDot } from "lucide-react";
 
@@ -50,7 +50,7 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
           <div>
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-[11px] font-medium text-amber">
               <span className="size-1.5 rounded-full bg-amber mk-status-pulse" />
-              {machineMode === "heavy" ? t("mode.heavy") : t("mode.passenger")} {t("home.heroMode")} · {vehicles?.length ?? 0} {t("home.heroMachines")}
+              {machineMode === "heavy" ? t("mode.heavy") : t("mode.passenger")} {t("home.heroMode")} · {isFa ? toPersianDigits(vehicles?.length ?? 0) : (vehicles?.length ?? 0)} {t("home.heroMachines")}
             </motion.div>
             {auth.isGuest && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/5 px-3 py-1.5 text-[11px] text-amber">
@@ -99,10 +99,10 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
               </span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <MiniMetric label={t("home.metric.activeJobs")} value={activeJobs?.length ?? "—"} icon={Wrench} tone="amber" />
-              <MiniMetric label={t("home.metric.inFleet")} value={vehicles?.length ?? "—"} icon={Car} tone="blue" />
-              <MiniMetric label={t("home.metric.completed")} value={history?.length ?? "—"} icon={ShieldCheck} tone="emerald" />
-              <MiniMetric label={t("home.metric.response")} value="15m" icon={Zap} tone="violet" />
+              <MiniMetric label={t("home.metric.activeJobs")} value={activeJobs == null ? "—" : (isFa ? toPersianDigits(activeJobs.length) : activeJobs.length)} icon={Wrench} tone="amber" />
+              <MiniMetric label={t("home.metric.inFleet")} value={vehicles == null ? "—" : (isFa ? toPersianDigits(vehicles.length) : vehicles.length)} icon={Car} tone="blue" />
+              <MiniMetric label={t("home.metric.completed")} value={history == null ? "—" : (isFa ? toPersianDigits(history.length) : history.length)} icon={ShieldCheck} tone="emerald" />
+              <MiniMetric label={t("home.metric.response")} value={isFa ? "۱۵ دقیقه" : "15m"} icon={Zap} tone="violet" />
             </div>
             <div className="mt-3 rounded-lg border border-border bg-card/60 p-2.5">
               <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{t("home.coverageZone")}</p>
@@ -237,7 +237,7 @@ function ActiveJobCard({ job, onClick }: { job: Job; onClick: () => void }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-muted-foreground">{job.code}</span>
+            <span className="font-mono text-[10px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
             <UrgencyBadge urgency={job.request.urgency} />
           </div>
           <p className="mt-1 truncate font-display text-sm font-semibold">{job.request.title}</p>

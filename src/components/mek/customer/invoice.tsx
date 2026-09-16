@@ -8,7 +8,7 @@ import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
 import { api, type Invoice, type Job, type Payment } from "@/lib/api";
 import { PAYMENT_METHODS } from "@/lib/constants";
-import { fmtMoney, fmtDate } from "@/lib/format";
+import { fmtDate, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -76,7 +76,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
             </div>
             <div>
               <h1 className="font-display text-base font-semibold">{t("invoice.title")}</h1>
-              <p className="font-mono text-[11px] text-muted-foreground">{invoice?.code ?? t("invoice.draft")} · {job.code}</p>
+              <p className="font-mono text-[11px] text-muted-foreground">{isFa ? toPersianDigits(invoice?.code ?? t("invoice.draft")) : (invoice?.code ?? t("invoice.draft"))} · {isFa ? toPersianDigits(job.code) : job.code}</p>
             </div>
           </div>
           {invoice && (
@@ -116,7 +116,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
                           <span className="font-medium">{p.name}</span>
                           {p.sku && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{p.quantity}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{isFa ? toPersianDigits(p.quantity) : p.quantity}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{money(p.unitPrice)}</td>
                         <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.unitPrice * p.quantity)}</td>
                       </tr>
@@ -142,12 +142,12 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         {invoice && (
           <div className="border-t border-border bg-muted/20 p-5">
             <div className="mx-auto max-w-xs space-y-1.5 text-sm">
-              <Line label={t("invoice.labor")} value={`${invoice.laborHours}h × ${money(invoice.laborRate)}`} amount={invoice.laborTotal} moneyFn={money} />
+              <Line label={t("invoice.labor")} value={`${isFa ? toPersianDigits(invoice.laborHours) : invoice.laborHours}${t("common.hourShort")} × ${money(invoice.laborRate)}`} amount={invoice.laborTotal} moneyFn={money} />
               <Line label={t("invoice.partsMaterials")} amount={invoice.partsTotal} moneyFn={money} />
               <Line label={t("invoice.travelFee")} amount={invoice.travelFee} moneyFn={money} />
               <div className="border-t border-border pt-1.5" />
               <Line label={t("invoice.subtotal")} amount={invoice.subtotal} muted moneyFn={money} />
-              <Line label={t("invoice.tax", undefined).replace("{rate}", String(Math.round(invoice.taxRate * 100)))} amount={invoice.taxTotal} muted moneyFn={money} />
+              <Line label={t("invoice.tax", undefined).replace("{rate}", isFa ? toPersianDigits(Math.round(invoice.taxRate * 100)) : String(Math.round(invoice.taxRate * 100)))} amount={invoice.taxTotal} muted moneyFn={money} />
               {invoice.discount > 0 && <Line label={t("invoice.discount")} amount={-invoice.discount} muted tone="emerald" moneyFn={money} />}
               <div className="flex items-center justify-between border-t border-border pt-2">
                 <span className="font-display text-base font-semibold">{t("invoice.total")}</span>

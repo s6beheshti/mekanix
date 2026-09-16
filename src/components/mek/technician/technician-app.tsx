@@ -17,9 +17,11 @@ import { TechnicianChat } from "./chat";
 import { NotificationCenter } from "@/components/mek/shared/notification-center";
 import { EmptyState } from "@/components/mek/shared/primitives";
 import { api, type Job } from "@/lib/api";
+import { useT } from "@/lib/use-t";
 
 export function TechnicianApp() {
   const { view } = useApp();
+  const { t } = useT();
   const { user, loading } = useActiveUser();
   const [incomingCount, setIncomingCount] = useState(0);
 
@@ -41,23 +43,23 @@ export function TechnicianApp() {
     return (
       <div className="grid min-h-[60vh] place-items-center">
         <div className="text-center">
-          <p className="text-sm text-muted-foreground mb-2" dir="rtl">در حال بارگذاری...</p>
+          <p className="text-sm text-muted-foreground mb-2" dir="rtl">{t("common.loading")}</p>
         </div>
       </div>
     );
   }
   if (!user?.technician) {
-    return <EmptyState icon={Wrench} title="No technician profile" description="Please register as a mechanic first." className="m-6" />;
+    return <EmptyState icon={Wrench} title={t("common.noTechnicianTitle")} description={t("common.noTechnicianDesc")} className="m-6" />;
   }
 
   const nav: NavItem[] = [
-    { view: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { view: "requests", label: "Requests", icon: Inbox, badge: incomingCount },
-    { view: "earnings", label: "Earnings", icon: Wallet },
-    { view: "schedule", label: "Schedule", icon: CalendarClock },
-    { view: "reviews", label: "Reviews", icon: Star },
-    { view: "notifications", label: "Alerts", icon: Bell },
-    { view: "profile", label: "Profile", icon: UserIcon },
+    { view: "dashboard", label: t("nav.dashboard"), icon: LayoutDashboard },
+    { view: "requests", label: t("nav.requests"), icon: Inbox, badge: incomingCount },
+    { view: "earnings", label: t("nav.earnings"), icon: Wallet },
+    { view: "schedule", label: t("nav.schedule"), icon: CalendarClock },
+    { view: "reviews", label: t("nav.reviews"), icon: Star },
+    { view: "notifications", label: t("nav.alerts"), icon: Bell },
+    { view: "profile", label: t("nav.profile"), icon: UserIcon },
   ];
 
   const render = () => {

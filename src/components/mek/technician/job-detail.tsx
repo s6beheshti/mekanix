@@ -12,7 +12,7 @@ import { MapView, routeInfo, type MapPoint } from "@/components/mek/shared/map-v
 import { JobStatusTimeline } from "@/components/mek/shared/job-status-timeline";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
-import { fmtMoney, fmtDistance, fmtDuration, fmtRelative } from "@/lib/format";
+import { fmtDistance, fmtDuration, fmtRelative, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ const NEXT_ACTION_KEYS: Record<string, { key: string; icon: any }> = {
 
 export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const { go, params, back } = useApp();
-  const { t, isFa, money, cat } = useT();
+  const { t, isFa, money, cat, type: typeLabel } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [advancing, setAdvancing] = useState(false);
@@ -147,7 +147,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const canAdvance = job.status !== "COMPLETED" && job.status !== "CANCELLED" && next !== job.status;
   const techLoc = { lat: user.technician?.lat ?? 37.77, lng: user.technician?.lng ?? -122.42 };
   const custLoc = { lat: job.request.lat, lng: job.request.lng };
-  const info = routeInfo(techLoc, custLoc);
+  const info = routeInfo(techLoc, custLoc, isFa ? "fa" : "en");
   const points: MapPoint[] = [
     { id: "tech", lat: techLoc.lat, lng: techLoc.lng, kind: "technician", label: t("tech.dashboard.youOnline").split(" ")[0] },
     { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? t("tech.jobDetail.customer") },
@@ -162,7 +162,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
           <Button variant="ghost" size="icon" className="size-8" onClick={back}><ArrowLeft className="size-4" /></Button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[11px] text-muted-foreground">{job.code}</span>
+              <span className="font-mono text-[11px] text-muted-foreground">{isFa ? toPersianDigits(job.code) : job.code}</span>
               <UrgencyBadge urgency={job.request.urgency} />
             </div>
             <h1 className="font-display text-base font-semibold">{job.request.title}</h1>
@@ -220,7 +220,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{job.request.vehicle.make} {job.request.vehicle.model}</p>
-                  <p className="text-[11px] text-muted-foreground">{job.request.vehicle.type} · {job.request.vehicle.year}{job.request.vehicle.plate ? ` · ${job.request.vehicle.plate}` : ""}</p>
+                  <p className="text-[11px] text-muted-foreground">{typeLabel(job.request.vehicle.type)} · {isFa ? toPersianDigits(job.request.vehicle.year) : job.request.vehicle.year}{job.request.vehicle.plate ? ` · ${job.request.vehicle.plate}` : ""}</p>
                 </div>
               </div>
               <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px]">
@@ -283,7 +283,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   {job.parts.map((p) => (
                     <div key={p.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-                      <span className="text-[11px] text-muted-foreground">×{p.quantity}</span>
+                      <span className="text-[11px] text-muted-foreground">×{isFa ? toPersianDigits(p.quantity) : p.quantity}</span>
                       <span className="tabular-nums text-amber">{money(p.unitPrice)}</span>
                       <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 className="size-3" />
@@ -320,7 +320,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 {job.invoice && <StatusBadge status={job.invoice.status === "PAID" ? "COMPLETED" : "WAITING_APPROVAL"} />}
               </div>
               <div className="mt-3 space-y-1.5 text-sm">
-                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * job.technician.hourlyRate} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * job.technician.hourlyRate} moneyFn={money} />
                 <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0)} moneyFn={money} />
                 <EstLine label={t("tech.jobDetail.travelFee")} amount={job.technician.travelFeeBase} moneyFn={money} />
                 <div className="border-t border-border pt-1.5" />
@@ -342,8 +342,8 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 </div>
               )}
               {job.invoice && (
-                <Button onClick={() => toast.success(t("invoice.issued").replace("{code}", job.invoice!.code))} variant="outline" size="sm" className="mt-2 w-full">
-                  <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", job.invoice.code)}
+                <Button onClick={() => toast.success(t("invoice.issued").replace("{code}", isFa ? toPersianDigits(job.invoice!.code) : job.invoice!.code))} variant="outline" size="sm" className="mt-2 w-full">
+                  <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", isFa ? toPersianDigits(job.invoice.code) : job.invoice.code)}
                 </Button>
               )}
             </div>

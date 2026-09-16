@@ -4,7 +4,8 @@ import {
   AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
   BarChart, Bar, Cell, RadialBarChart, RadialBar, PieChart, Pie,
 } from "recharts";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, toPersianDigits } from "@/lib/format";
+import type { Lang } from "@/lib/i18n";
 
 const AMBER = "oklch(0.78 0.16 68)";
 const EMERALD = "oklch(0.74 0.16 160)";
@@ -25,15 +26,19 @@ export function RevenueAreaChart({
   data,
   className,
   height = 180,
+  lang = "en",
 }: {
   data: { date: string; revenue: number; jobs: number }[];
   className?: string;
   height?: number;
+  lang?: Lang;
 }) {
+  // Localize X-axis date labels when lang === "fa" (converts digits in MM/DD strings).
+  const localizedData = data.map((d) => ({ ...d, date: lang === "fa" ? toPersianDigits(d.date) : d.date }));
   return (
     <div className={cn("w-full", className)} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
+        <AreaChart data={localizedData} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
           <defs>
             <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={AMBER} stopOpacity={0.45} />
@@ -42,8 +47,8 @@ export function RevenueAreaChart({
           </defs>
           <CartesianGrid stroke="oklch(1 0 0 / 6%)" vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 10, fill: "oklch(0.68 0.012 260)" }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 10, fill: "oklch(0.68 0.012 260)" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => fmtMoney(v)} />
+          <YAxis tick={{ fontSize: 10, fill: "oklch(0.68 0.012 260)" }} axisLine={false} tickLine={false} tickFormatter={(v) => (lang === "fa" ? toPersianDigits(String(v)) : String(v))} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => fmtMoney(v, lang === "fa" ? "IRR" : "USD", lang)} />
           <Area type="monotone" dataKey="revenue" stroke={AMBER} strokeWidth={2} fill="url(#rev)" />
         </AreaChart>
       </ResponsiveContainer>
@@ -110,13 +115,17 @@ export function SatisfactionRadial({
   value,
   className,
   size = 120,
+  lang = "en",
 }: {
   value: number;
   className?: string;
   size?: number;
+  lang?: Lang;
 }) {
   const pct = (value / 5) * 100;
   const data = [{ name: "sat", value: pct, fill: AMBER }];
+  const display = value.toFixed(1);
+  const maxDisplay = lang === "fa" ? toPersianDigits("5.0") : "5.0";
   return (
     <div className={cn("relative", className)} style={{ width: size, height: size }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -126,8 +135,8 @@ export function SatisfactionRadial({
       </ResponsiveContainer>
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center">
-          <p className="font-display text-xl font-bold text-amber">{value.toFixed(1)}</p>
-          <p className="text-[9px] uppercase tracking-wide text-muted-foreground">/ 5.0</p>
+          <p className="font-display text-xl font-bold text-amber">{lang === "fa" ? toPersianDigits(display) : display}</p>
+          <p className="text-[9px] uppercase tracking-wide text-muted-foreground">/ {maxDisplay}</p>
         </div>
       </div>
     </div>

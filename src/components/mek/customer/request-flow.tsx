@@ -15,7 +15,7 @@ import { TechnicianCard } from "@/components/mek/shared/technician-card";
 import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
-import { fmtDuration, haversine } from "@/lib/format";
+import { fmtDuration, haversine, toPersianDigits } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -138,9 +138,9 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     try {
       const urls = await Promise.all(Array.from(files).slice(0, 6).map(readFileAsDataURL));
       setMedia((m) => [...m, ...urls].slice(0, 12));
-      toast.success(isFa ? "عکس ضمیمه شد" : t("req.field.photoAttached"));
+      toast.success(t("req.field.photoAttached"));
     } catch {
-      toast.error(isFa ? "بارگذاری عکس ناموفق بود" : "Could not attach photo");
+      toast.error(t("req.attachFailed"));
     }
   };
 
@@ -149,13 +149,20 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     if (!category) { toast.error(t("req.error.category")); return; }
     if (!title.trim()) { toast.error(t("req.error.title")); return; }
     if (!vehicleId && !type) { toast.error(t("req.error.machine")); return; }
+    if (!customer.customer?.id) {
+      // Should not happen because OTP verify + session route auto-create Customer,
+      // but if it does, fail gracefully with a clear message instead of a TypeError.
+      toast.error(t("req.error.noCustomer"));
+      return;
+    }
     setSubmitting(true);
     try {
       const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
       const lng = -122.4194 + (Math.random() - 0.5) * 0.03;
       const sr = await api.createRequest({
-        customerId: customer.customer!.id,
+        customerId: customer.customer.id,
         vehicleId: vehicleId ?? vehicles[0]?.id,
+        machineType: type, // helps API create an ad-hoc vehicle if needed
         category,
         urgency,
         title: title.trim(),
@@ -168,7 +175,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
       toast.success(t("req.created").replace("{code}", sr.code));
       go("matching", { requestId: sr.id });
     } catch (e: any) {
-      toast.error(e.message ?? "Failed to create request");
+      toast.error(e.message ?? t("req.createFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -251,7 +258,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
               maxLength={1000}
             />
             <p className="mt-1 text-right text-[10px] text-muted-foreground">
-              {isFa ? description.length.toLocaleString("fa-IR") : description.length}/1000
+              {t("req.charsMax").replace("{n}", isFa ? toPersianDigits(description.length) : String(description.length)).replace("{max}", isFa ? toPersianDigits(1000) : "1000")}
             </p>
           </div>
 
@@ -306,7 +313,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
                   lang={lang}
                   onRecorded={(blob) => {
                     setVoiceNote(URL.createObjectURL(blob));
-                    toast.success(isFa ? "صدای ضبط شد" : "Voice recorded");
+                    toast.success(t("req.voiceRecorded"));
                   }}
                 />
               </div>
@@ -320,7 +327,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
                     <button
                       onClick={() => setVoiceNote(null)}
                       className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
-                      aria-label={isFa ? "حذف صدا" : "Remove voice"}
+                      aria-label={t("req.removeVoice")}
                     >
                       <X className="size-2.5" />
                     </button>
@@ -332,7 +339,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
                     <button
                       onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))}
                       className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
-                      aria-label={isFa ? "حذف عکس" : "Remove photo"}
+                      aria-label={t("req.removePhoto")}
                     >
                       <X className="size-2.5" />
                     </button>
@@ -413,6 +420,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
   const [techs, setTechs] = useState<Technician[] | null>(null);
   const [phase, setPhase] = useState<"searching" | "results">("searching");
   const [selected, setSelected] = useState<string | null>(null);
+  const [showOtherRegions, setShowOtherRegions] = useState(false);
 
   useEffect(() => {
     const lat = 37.7749, lng = -122.4194;
@@ -425,15 +433,28 @@ export function Matching({ customer }: { customer: DemoUser }) {
     });
   }, []);
 
-  const ranked = (techs ?? []).map((tk) => {
+  const allRanked = (techs ?? []).map((tk) => {
     const km = tk.lat && tk.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: tk.lat, lng: tk.lng }) : 99;
     const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
-    const score = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
-    // Inspection fee ~ 30min at hourly rate; travel fee scales with distance
-    const inspectionFee = Math.round((tk.hourlyRate * 0.5) * 100) / 100;
-    const travelFee = Math.round((tk.travelFeeBase + km * 0.5) * 100) / 100;
-    return { tech: tk, km, eta, score, inspectionFee, travelFee };
-  }).sort((a, b) => b.score - a.score);
+    // Score: weighted combination of rating, distance, verified, completed jobs.
+    const proximityScore = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+    // Value score: rating/cost ratio — higher rating + lower total cost = better value.
+    const inspectionFee = tk.inspectionFee ?? (tk.hourlyRate * 0.5);
+    const inspectionFeeHeavy = tk.inspectionFeeHeavy ?? (tk.hourlyRate * 1.5);
+    const travelFee = (tk.travelFeeBase ?? 0) + km * 0.5;
+    const totalCost = inspectionFee + travelFee;
+    const valueScore = (tk.rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
+    return { tech: tk, km, eta, score: proximityScore, valueScore, inspectionFee, inspectionFeeHeavy, travelFee };
+  });
+
+  // Nearest & fastest: top 3 by proximity score (closest + fastest).
+  const nearest = [...allRanked].sort((a, b) => b.score - a.score).slice(0, 3);
+  // Other regions: sorted by value score — those not in top-3 nearest.
+  const nearestIds = new Set(nearest.map((r) => r.tech.id));
+  const otherRegions = allRanked
+    .filter((r) => !nearestIds.has(r.tech.id))
+    .sort((a, b) => b.valueScore - a.valueScore)
+    .slice(0, 5);
 
   const onSelect = (techId: string) => {
     setSelected(techId);
@@ -473,8 +494,8 @@ export function Matching({ customer }: { customer: DemoUser }) {
             </div>
           </motion.div>
         ) : (
-          <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {ranked.length === 0 ? (
+          <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+            {allRanked.length === 0 ? (
               <EmptyState
                 icon={Search}
                 title={t("req.noMatch")}
@@ -482,21 +503,87 @@ export function Matching({ customer }: { customer: DemoUser }) {
                 action={<Button onClick={() => go("describe")} variant="outline">{t("req.backToDetails")}</Button>}
               />
             ) : (
-              <div className="grid gap-3 lg:grid-cols-2">
-                {ranked.map((r, i) => (
-                  <TechnicianCard
-                    key={r.tech.id}
-                    tech={r.tech}
-                    distanceKm={r.km}
-                    etaMins={r.eta}
-                    rank={i + 1}
-                    inspectionFee={r.inspectionFee}
-                    travelFee={r.travelFee}
-                    selected={selected === r.tech.id}
-                    onSelect={() => onSelect(r.tech.id)}
-                  />
-                ))}
-              </div>
+              <>
+                {/* Primary: Nearest & fastest */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="grid size-7 place-items-center rounded-md border border-amber/30 bg-amber/10">
+                      <Clock className="size-3.5 text-amber" />
+                    </div>
+                    <div>
+                      <h3 className="font-display text-sm font-semibold">{t("req.search.nearest")}</h3>
+                      <p className="text-[11px] text-muted-foreground">{t("req.search.nearestDesc")}</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {nearest.map((r, i) => (
+                      <TechnicianCard
+                        key={r.tech.id}
+                        tech={r.tech}
+                        distanceKm={r.km}
+                        etaMins={r.eta}
+                        rank={i + 1}
+                        inspectionFee={r.inspectionFee}
+                        travelFee={r.travelFee}
+                        selected={selected === r.tech.id}
+                        onSelect={() => onSelect(r.tech.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Secondary: Other regions (best value) */}
+                {otherRegions.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setShowOtherRegions((v) => !v)}
+                      className="flex w-full items-center gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-amber/40"
+                    >
+                      <div className="grid size-7 place-items-center rounded-md border border-violet-400/30 bg-violet-400/10">
+                        <Star className="size-3.5 text-violet-300" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-display text-sm font-semibold">{t("req.search.otherRegions")}</h3>
+                        <p className="text-[11px] text-muted-foreground">{t("req.search.otherRegionsDesc")}</p>
+                      </div>
+                      <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                        {isFa ? (otherRegions.length).toString().replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[+d]) : otherRegions.length}
+                      </span>
+                      <ChevronRight className={`size-4 text-muted-foreground transition-transform ${showOtherRegions ? "rotate-90" : ""}`} />
+                    </button>
+
+                    {showOtherRegions && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-3"
+                      >
+                        <div className="mb-3 rounded-lg border border-violet-400/20 bg-violet-400/5 p-2.5 text-[11px] text-muted-foreground">
+                          <p className="flex items-center gap-1.5 font-medium text-violet-300">
+                            <BadgeCheck className="size-3" /> {t("req.search.costComparison")}
+                          </p>
+                        </div>
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {otherRegions.map((r, i) => (
+                            <TechnicianCard
+                              key={r.tech.id}
+                              tech={r.tech}
+                              distanceKm={r.km}
+                              etaMins={r.eta}
+                              rank={undefined}
+                              inspectionFee={r.inspectionFee}
+                              travelFee={r.travelFee}
+                              selected={selected === r.tech.id}
+                              onSelect={() => onSelect(r.tech.id)}
+                            />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </motion.div>
         )}
@@ -564,13 +651,13 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
             </div>
             <div className="mt-1 flex items-center gap-2 text-sm">
               <StarRating value={tech.rating} />
-              <span className="font-semibold">{isFa ? tech.rating.toFixed(2).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.rating.toFixed(2)}</span>
-              <span className="text-muted-foreground">· {tech.reviewCount} {t("common.reviews")} · {tech.completedJobs} {t("common.jobs")}</span>
+              <span className="font-semibold">{isFa ? toPersianDigits(tech.rating.toFixed(2)) : tech.rating.toFixed(2)}</span>
+              <span className="text-muted-foreground">· {isFa ? toPersianDigits(tech.reviewCount) : tech.reviewCount} {t("common.reviews")} · {isFa ? toPersianDigits(tech.completedJobs) : tech.completedJobs} {t("common.jobs")}</span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="font-display text-2xl font-bold text-amber">{money(tech.hourlyRate)}<span className="text-xs text-muted-foreground">/hr</span></div>
+            <div className="font-display text-2xl font-bold text-amber">{money(tech.hourlyRate)}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></div>
             <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
           </div>
         </div>
@@ -637,10 +724,10 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
           <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
             <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
             <div className="mt-3 space-y-2 text-sm">
-              <Row label={t("req.techProfile.hourlyRate")} value={`${money(tech.hourlyRate)}/hr`} />
+              <Row label={t("req.techProfile.hourlyRate")} value={`${money(tech.hourlyRate)}/${t("common.hr")}`} />
               <Row label={t("req.techProfile.travelFee")} value={money(tech.travelFeeBase)} />
               <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
-              <Row label={t("req.techProfile.experience")} value={`${isFa ? String(tech.experienceYears).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.experienceYears} ${isFa ? "سال" : "yrs"}`} />
+              <Row label={t("req.techProfile.experience")} value={`${isFa ? toPersianDigits(tech.experienceYears) : tech.experienceYears} ${t("common.yrs")}`} />
               <Row label={t("req.techProfile.level")} value={tech.level} />
               <Row label={t("fees.totalEstimate")} value={money(tech.hourlyRate * 0.5 + tech.travelFeeBase)} />
             </div>

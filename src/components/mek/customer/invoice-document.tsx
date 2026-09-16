@@ -8,11 +8,13 @@ import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
 import { api, type Invoice } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { fmtMoney, fmtDate, fmtDateTime } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
+import { toPersianDigits } from "@/lib/format";
 
 export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const { params, back } = useApp();
+  const { t, isFa, money } = useT();
   const [inv, setInv] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,22 +32,23 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   }, [params.jobId]);
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
-  if (!inv) return <div className="p-6">No invoice found.</div>;
+  if (!inv) return <div className="p-6">{t("invoice.document.noInvoice")}</div>;
 
   const job = (inv as any).job;
   const parts = job?.parts ?? [];
   const tech = job?.technician;
   const cust = job?.request?.customer;
+  const fmtHours = (n: number) => (isFa ? toPersianDigits(n) : String(n));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
       <div className="flex items-center justify-between print:hidden">
         <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" /> Back
+          <ArrowLeft className="size-4" /> {t("invoice.back")}
         </button>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => toast.info("Downloading PDF…")}><Download className="mr-1.5 size-3.5" /> Download</Button>
-          <Button size="sm" className="bg-amber text-black hover:bg-amber/90" onClick={() => window.print()}><Printer className="mr-1.5 size-3.5" /> Print</Button>
+          <Button variant="outline" size="sm" onClick={() => toast.info(t("invoice.document.downloadPdf"))}><Download className="mr-1.5 size-3.5" /> {t("invoice.document.downloadBtn")}</Button>
+          <Button size="sm" className="bg-amber text-black hover:bg-amber/90" onClick={() => window.print()}><Printer className="mr-1.5 size-3.5" /> {t("invoice.document.printBtn")}</Button>
         </div>
       </div>
 
@@ -56,7 +59,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
       >
         {/* Watermark */}
         <div className="pointer-events-none absolute -right-10 top-10 rotate-12 select-none opacity-[0.04]">
-          <span className="font-display text-[120px] font-black">PAID</span>
+          <span className="font-display text-[120px] font-black">{t("invoice.document.invoiceWatermark")}</span>
         </div>
 
         {/* Header */}
@@ -67,34 +70,34 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
             </div>
             <div>
               <p className="font-display text-xl font-bold tracking-tight">MEKANIX</p>
-              <p className="text-[11px] text-muted-foreground">Field Repair & Maintenance</p>
+              <p className="text-[11px] text-muted-foreground">{t("invoice.document.fieldRepair")}</p>
               <p className="font-mono text-[10px] text-muted-foreground">ops@mekanix.io · +1-415-000-0000</p>
             </div>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Invoice</p>
-            <p className="font-display text-lg font-bold">{inv.code}</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{t("invoice.document.invoiceLabel")}</p>
+            <p className="font-display text-lg font-bold">{isFa ? toPersianDigits(inv.code) : inv.code}</p>
             <span className={`mt-1 inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${inv.status === "PAID" ? "border-emerald-glow/30 bg-emerald-glow/10 text-emerald-glow" : inv.status === "SENT" ? "border-amber/30 bg-amber/10 text-amber" : "border-border text-muted-foreground"}`}>
-              {inv.status}
+              {t(`invst.${inv.status}`, inv.status)}
             </span>
-            <p className="mt-1 text-[11px] text-muted-foreground">Issued {fmtDate(inv.createdAt)}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{t("invoice.document.issued")} {new Date(inv.createdAt).toLocaleDateString(isFa ? "fa-IR" : "en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
           </div>
         </div>
 
         {/* Bill to + tech */}
         <div className="grid grid-cols-2 gap-6 py-6">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Bill To</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{t("invoice.document.billToLabel")}</p>
             <p className="mt-1 font-display text-sm font-semibold">{cust?.user?.name ?? customer.name}</p>
             {cust?.company && <p className="text-[12px] text-muted-foreground">{cust.company}</p>}
             <p className="text-[11px] text-muted-foreground">{cust?.user?.phone}</p>
             <p className="text-[11px] text-muted-foreground">{cust?.user?.email}</p>
           </div>
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Service By</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{t("invoice.document.serviceByLabel")}</p>
             <p className="mt-1 font-display text-sm font-semibold">{tech?.user?.name ?? "—"}</p>
-            {tech && <p className="text-[11px] text-muted-foreground">{tech.level} · verified</p>}
-            <p className="text-[11px] text-muted-foreground">Job {job?.code}</p>
+            {tech && <p className="text-[11px] text-muted-foreground">{tech.level} · {t("invoice.document.verified")}</p>}
+            <p className="text-[11px] text-muted-foreground">{t("invoice.document.job")} {isFa ? toPersianDigits(job?.code) : job?.code}</p>
             <p className="text-[11px] text-muted-foreground">{job?.request?.vehicle?.make} {job?.request?.vehicle?.model}</p>
           </div>
         </div>
@@ -102,7 +105,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
         {/* Diagnosis */}
         {job?.diagnosis && (
           <div className="rounded-lg border border-border bg-background p-4">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Diagnosis</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{t("invoice.document.diagnosisLabel")}</p>
             <p className="mt-1 text-sm">{job.diagnosis}</p>
           </div>
         )}
@@ -112,21 +115,21 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-4 py-2.5 text-left font-medium">Description</th>
-                <th className="px-4 py-2.5 text-right font-medium">Qty</th>
-                <th className="px-4 py-2.5 text-right font-medium">Unit</th>
-                <th className="px-4 py-2.5 text-right font-medium">Amount</th>
+                <th className="px-4 py-2.5 text-left font-medium">{t("invoice.document.descriptionCol")}</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t("invoice.document.qtyCol")}</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t("invoice.document.unitCol")}</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t("invoice.document.amountCol")}</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-t border-border">
                 <td className="px-4 py-2.5">
-                  <span className="font-medium">Labor</span>
-                  <span className="ml-2 text-[11px] text-muted-foreground">{inv.laborHours}h @ {fmtMoney(inv.laborRate)}/hr</span>
+                  <span className="font-medium">{t("invoice.document.laborRow")}</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">{t("invoice.document.laborLine").replace("{hours}", fmtHours(inv.laborHours)).replace("{rate}", money(inv.laborRate))}</span>
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{inv.laborHours}h</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(inv.laborRate)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(inv.laborTotal)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtHours(inv.laborHours)}{t("common.hourShort")}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(inv.laborRate)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(inv.laborTotal)}</td>
               </tr>
               {parts.map((p: any) => (
                 <tr key={p.id} className="border-t border-border">
@@ -134,16 +137,16 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
                     <span className="font-medium">{p.name}</span>
                     {p.sku && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{p.quantity}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(p.unitPrice)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(p.unitPrice * p.quantity)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(p.quantity) : p.quantity}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(p.unitPrice)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(p.unitPrice * p.quantity)}</td>
                 </tr>
               ))}
               <tr className="border-t border-border">
-                <td className="px-4 py-2.5"><span className="font-medium">Travel / Site visit</span></td>
-                <td className="px-4 py-2.5 text-right tabular-nums">1</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(inv.travelFee)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(inv.travelFee)}</td>
+                <td className="px-4 py-2.5"><span className="font-medium">{t("invoice.document.travelRow")}</span></td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(inv.travelFee)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(inv.travelFee)}</td>
               </tr>
             </tbody>
           </table>
@@ -152,16 +155,16 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
         {/* Totals */}
         <div className="mt-4 flex justify-end">
           <div className="w-full max-w-xs space-y-1.5 text-sm">
-            <Row label="Subtotal" amount={inv.subtotal} muted />
-            {inv.discount > 0 && <Row label="Discount" amount={-inv.discount} muted tone="emerald" />}
-            <Row label={`Tax (${Math.round(inv.taxRate * 100)}%)`} amount={inv.taxTotal} muted />
+            <Row label={t("invoice.document.subtotalLabel")} amount={inv.subtotal} muted moneyFn={money} />
+            {inv.discount > 0 && <Row label={t("invoice.document.discountLabel")} amount={-inv.discount} muted tone="emerald" moneyFn={money} />}
+            <Row label={t("invoice.document.taxLabel").replace("{rate}", isFa ? toPersianDigits(Math.round(inv.taxRate * 100)) : String(Math.round(inv.taxRate * 100)))} amount={inv.taxTotal} muted moneyFn={money} />
             <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="font-display text-base font-semibold">Total Due</span>
-              <span className="font-display text-xl font-bold text-amber">{fmtMoney(inv.total)}</span>
+              <span className="font-display text-base font-semibold">{t("invoice.document.totalDueLabel")}</span>
+              <span className="font-display text-xl font-bold text-amber">{money(inv.total)}</span>
             </div>
             {inv.payment && inv.payment.status === "SUCCEEDED" && (
               <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 px-3 py-1.5 text-[11px] text-emerald-glow">
-                <CheckCircle2 className="size-3.5" /> Paid {fmtDateTime(inv.payment.createdAt)} · {inv.payment.method}
+                <CheckCircle2 className="size-3.5" /> {t("invoice.document.paidOn").replace("{date}", new Date(inv.payment.createdAt).toLocaleDateString(isFa ? "fa-IR" : "en-US", { month: "long", day: "numeric", year: "numeric" })).replace("{method}", inv.payment.method)}
               </div>
             )}
           </div>
@@ -171,7 +174,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <ShieldCheck className="size-3.5 text-emerald-glow" />
-            6-month warranty on parts & labor · MEKANIX guarantee
+            {t("invoice.document.warrantyFooter")}
           </div>
           <p className="font-mono text-[10px] text-muted-foreground">{inv.notes ?? ""}</p>
         </div>
@@ -180,11 +183,11 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
         <div className="mt-6 flex justify-between text-[10px] text-muted-foreground">
           <div>
             <div className="mb-1 h-8 w-32 border-b border-dashed border-border" />
-            <p>Customer signature</p>
+            <p>{t("invoice.document.customerSigLabel")}</p>
           </div>
           <div className="text-right">
             <div className="mb-1 h-8 w-32 border-b border-dashed border-border" />
-            <p>Technician · {tech?.user?.name ?? ""}</p>
+            <p>{t("invoice.document.technicianSigLabel").replace("{name}", tech?.user?.name ?? "")}</p>
           </div>
         </div>
       </motion.div>
@@ -192,11 +195,11 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   );
 }
 
-function Row({ label, amount, muted, tone }: { label: string; amount: number; muted?: boolean; tone?: string }) {
+function Row({ label, amount, muted, tone, moneyFn }: { label: string; amount: number; muted?: boolean; tone?: string; moneyFn: (n: number) => string }) {
   return (
     <div className="flex items-center justify-between">
       <span className={muted ? "text-muted-foreground" : ""}>{label}</span>
-      <span className={`tabular-nums ${tone === "emerald" ? "text-emerald-glow" : muted ? "text-muted-foreground" : "font-medium"}`}>{fmtMoney(amount)}</span>
+      <span className={`tabular-nums ${tone === "emerald" ? "text-emerald-glow" : muted ? "text-muted-foreground" : "font-medium"}`}>{moneyFn(amount)}</span>
     </div>
   );
 }

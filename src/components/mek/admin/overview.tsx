@@ -2,20 +2,19 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Activity, Users, Wrench, DollarSign, Clock, Star, TrendingUp, MapPin, ChevronRight,
+  Activity, Wrench, DollarSign, Clock, Star, TrendingUp,
 } from "lucide-react";
 import { api, type DashboardStats } from "@/lib/api";
-import { StatCard, SectionHeader, EmptyState, LoadingBlock } from "@/components/mek/shared/primitives";
+import { StatCard, EmptyState, LoadingBlock } from "@/components/mek/shared/primitives";
 import { RevenueAreaChart, StatusBarChart, CategoryPieChart, SatisfactionRadial } from "@/components/mek/shared/charts";
 import { MapView, type MapPoint } from "@/components/mek/shared/map-view";
-import { fmtMoney, fmtRelative, pct } from "@/lib/format";
+import { fmtRelative, pct, toPersianDigits } from "@/lib/format";
 import { MekIcon, iconForCategory } from "@/components/mek/shared/icons";
 import { StatusBadge } from "@/components/mek/shared/status-badge";
-import { JOB_STATUS_FLOW } from "@/lib/constants";
 import { useT } from "@/lib/use-t";
 
 export function AdminOverview() {
-  const { t, isFa, money } = useT();
+  const { t, isFa, money, lang } = useT();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [techs, setTechs] = useState<any[]>([]);
 
@@ -37,6 +36,8 @@ export function AdminOverview() {
       label: x.user.name,
     }));
 
+  const fmtNum = (n: number) => (isFa ? toPersianDigits(n) : String(n));
+
   return (
     <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       <div className="flex items-center justify-between">
@@ -51,13 +52,13 @@ export function AdminOverview() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
-        <StatCard label={t("admin.overview.kpi.activeRequests")} value={stats.kpis.activeRequests} icon={Activity} tone="amber" />
-        <StatCard label={t("admin.overview.kpi.techsOnline")} value={stats.kpis.techniciansOnline} icon={Wrench} tone="emerald" />
-        <StatCard label={t("admin.overview.kpi.jobsInProgress")} value={stats.kpis.jobsInProgress} icon={TrendingUp} tone="violet" />
-        <StatCard label={t("admin.overview.kpi.completed30")} value={stats.kpis.completedJobs30d} icon={Activity} tone="blue" />
+        <StatCard label={t("admin.overview.kpi.activeRequests")} value={fmtNum(stats.kpis.activeRequests)} icon={Activity} tone="amber" />
+        <StatCard label={t("admin.overview.kpi.techsOnline")} value={fmtNum(stats.kpis.techniciansOnline)} icon={Wrench} tone="emerald" />
+        <StatCard label={t("admin.overview.kpi.jobsInProgress")} value={fmtNum(stats.kpis.jobsInProgress)} icon={TrendingUp} tone="violet" />
+        <StatCard label={t("admin.overview.kpi.completed30")} value={fmtNum(stats.kpis.completedJobs30d)} icon={Activity} tone="blue" />
         <StatCard label={t("admin.overview.kpi.revenue30")} value={money(stats.kpis.revenue30d)} icon={DollarSign} tone="amber" />
-        <StatCard label={t("admin.overview.kpi.avgResponse")} value={`${stats.kpis.avgResponseMins}m`} icon={Clock} tone="emerald" />
-        <StatCard label={t("admin.overview.kpi.satisfaction")} value={`${stats.kpis.customerSatisfaction}/5`} icon={Star} tone="violet" />
+        <StatCard label={t("admin.overview.kpi.avgResponse")} value={t("admin.overview.kpiAvgResponseSuffix").replace("{n}", fmtNum(stats.kpis.avgResponseMins))} icon={Clock} tone="emerald" />
+        <StatCard label={t("admin.overview.kpi.satisfaction")} value={t("admin.overview.kpiSatisfactionSuffix").replace("{n}", fmtNum(stats.kpis.customerSatisfaction))} icon={Star} tone="violet" />
       </div>
 
       {/* Revenue + status */}
@@ -69,7 +70,7 @@ export function AdminOverview() {
               <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber" /> {t("tech.earnings.earned")}</span>
             </div>
           </div>
-          <RevenueAreaChart data={stats.revenueSeries} height={220} className="mt-3" />
+          <RevenueAreaChart data={stats.revenueSeries} height={220} className="mt-3" lang={lang} />
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4">
@@ -90,7 +91,7 @@ export function AdminOverview() {
                   <MekIcon name={iconForCategory(c.category)} className="size-3 text-amber" />
                   {t(`cat.${c.category}`, c.category.replace("-", " "))}
                 </span>
-                <span className="text-muted-foreground">{c.count} · {money(c.revenue)}</span>
+                <span className="text-muted-foreground">{fmtNum(c.count)} · {money(c.revenue)}</span>
               </div>
             ))}
           </div>
@@ -99,15 +100,15 @@ export function AdminOverview() {
         <div className="rounded-xl border border-border bg-card p-4">
           <h3 className="font-display text-sm font-semibold">{t("admin.overview.satisfaction")}</h3>
           <div className="mt-3 grid place-items-center">
-            <SatisfactionRadial value={stats.kpis.customerSatisfaction} size={140} />
+            <SatisfactionRadial value={stats.kpis.customerSatisfaction} size={140} lang={lang} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-center text-[11px]">
             <div className="rounded-lg border border-border bg-background p-2">
-              <p className="font-display text-base font-bold text-emerald-glow">{pct(Math.round(stats.kpis.customerSatisfaction * 20), 100)}%</p>
+              <p className="font-display text-base font-bold text-emerald-glow">{t("admin.overview.kpiPositivePct").replace("{n}", fmtNum(pct(Math.round(stats.kpis.customerSatisfaction * 20), 100)))}</p>
               <p className="text-muted-foreground">{t("admin.overview.positive")}</p>
             </div>
             <div className="rounded-lg border border-border bg-background p-2">
-              <p className="font-display text-base font-bold text-amber">{stats.kpis.completedJobs30d}</p>
+              <p className="font-display text-base font-bold text-amber">{fmtNum(stats.kpis.completedJobs30d)}</p>
               <p className="text-muted-foreground">{t("admin.overview.completed30d")}</p>
             </div>
           </div>
@@ -116,7 +117,7 @@ export function AdminOverview() {
         <div className="rounded-xl border border-border bg-card p-4">
           <h3 className="font-display text-sm font-semibold">{t("admin.overview.geoActivity")}</h3>
           <MapView points={techPoints} height={220} showGrid />
-          <p className="mt-2 text-[11px] text-muted-foreground">{t("admin.overview.techsActive").replace("{n}", String(techPoints.length))}</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">{t("admin.overview.techsActive").replace("{n}", fmtNum(techPoints.length))}</p>
         </div>
       </div>
 
@@ -150,9 +151,9 @@ export function AdminOverview() {
                           <span className="font-medium">{tp.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{tp.jobs}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{fmtNum(tp.jobs)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
-                        <span className="inline-flex items-center gap-1"><Star className="size-3 fill-amber text-amber" />{tp.rating}</span>
+                        <span className="inline-flex items-center gap-1"><Star className="size-3 fill-amber text-amber" />{isFa ? toPersianDigits(tp.rating.toFixed(1)) : tp.rating.toFixed(1)}</span>
                       </td>
                       <td className="px-4 py-2.5 text-right font-medium text-amber tabular-nums">{money(tp.revenue)}</td>
                     </tr>
@@ -185,7 +186,7 @@ export function AdminOverview() {
                     <p className="truncate text-xs font-medium">{a.label}</p>
                     <p className="truncate text-[10px] text-muted-foreground">{a.sub}</p>
                   </div>
-                  <span className="font-mono text-[9px] text-muted-foreground">{fmtRelative(a.ts, isFa ? "fa" : "en")}</span>
+                  <span className="font-mono text-[9px] text-muted-foreground">{fmtRelative(a.ts, lang)}</span>
                 </motion.div>
               ))
             )}

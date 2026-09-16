@@ -1,0 +1,695 @@
+     1→"use client";
+     2→import { useEffect, useRef, useState } from "react";
+     3→import { motion, AnimatePresence } from "framer-motion";
+     4→import {
+     5→  ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Upload, Search, Star,
+     6→  BadgeCheck, Clock, Zap, ShieldCheck, Navigation as NavIcon, ArrowLeft,
+     7→} from "lucide-react";
+     8→import type { DemoUser } from "@/lib/use-active-user";
+     9→import { useApp } from "@/lib/store";
+    10→import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
+    11→import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, typesForMode } from "@/lib/constants";
+    12→import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
+    13→import { VehicleCard } from "@/components/mek/shared/vehicle-card";
+    14→import { TechnicianCard } from "@/components/mek/shared/technician-card";
+    15→import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
+    16→import { UrgencyBadge } from "@/components/mek/shared/status-badge";
+    17→import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
+    18→import { fmtDuration, haversine } from "@/lib/format";
+    19→import { Button } from "@/components/ui/button";
+    20→import { Input } from "@/components/ui/input";
+    21→import { Label } from "@/components/ui/label";
+    22→import { Textarea } from "@/components/ui/textarea";
+    23→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    24→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+    25→import { toast } from "sonner";
+    26→import { X } from "lucide-react";
+    27→import { useT } from "@/lib/use-t";
+    28→
+    29→// ─── Step 1: Select Machine ───
+    30→export function RequestType({ customer }: { customer: DemoUser }) {
+    31→  const { go, params, machineMode } = useApp();
+    32→  const { t, isFa, type: typeLabel } = useT();
+    33→  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+    34→  const [selectedType, setSelectedType] = useState<string | null>(params.type ?? null);
+    35→
+    36→  const allowedTypes = typesForMode(machineMode);
+    37→
+    38→  useEffect(() => {
+    39→    if (customer.customer)
+    40→      api.listVehicles(customer.customer.id)
+    41→        .then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))))
+    42→        .catch(() => setVehicles([]));
+    43→  }, [customer, machineMode]);
+    44→
+    45→  const saved = vehicles ?? [];
+    46→  const hasSaved = saved.length > 0;
+    47→
+    48→  const proceed = (vehicle?: Vehicle, type?: string) => {
+    49→    go("describe", { vehicleId: vehicle?.id, type: type ?? vehicle?.type ?? selectedType ?? (machineMode === "heavy" ? "TRUCK" : "CAR") });
+    50→  };
+    51→
+    52→  const visibleMachineTypes = MACHINE_TYPES.filter((m) => allowedTypes.includes(m.slug));
+    53→
+    54→  return (
+    55→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+    56→      <StepHeader
+    57→        step={1}
+    58→        total={3}
+    59→        title={t("req.selectMachine")}
+    60→        subtitle={t("req.selectMachineSub")}
+    61→        onBack={() => go("home")}
+    62→      />
+    63→
+    64→      {hasSaved && (
+    65→        <section>
+    66→          <SectionHeader title={t("req.savedFleet")} subtitle={t("req.savedFleetSub")} />
+    67→          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    68→            {saved.map((v) => (
+    69→              <VehicleCard key={v.id} vehicle={v} selected={params.vehicleId === v.id} onSelect={() => proceed(v)} />
+    70→            ))}
+    71→          </div>
+    72→        </section>
+    73→      )}
+    74→
+    75→      <section>
+    76→        <SectionHeader
+    77→          title={hasSaved ? t("req.pickType") : t("req.whatNeeds")}
+    78→          subtitle={t("req.whatNeedsSub")}
+    79→        />
+    80→        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    81→          {visibleMachineTypes.map((m) => (
+    82→            <motion.button
+    83→              key={m.slug}
+    84→              whileHover={{ y: -2 }}
+    85→              onClick={() => { setSelectedType(m.slug); proceed(undefined, m.slug); }}
+    86→              className={`group relative overflow-hidden rounded-xl border bg-card p-4 text-center mk-card-hover ${selectedType === m.slug ? "border-amber mk-amber-glow" : "border-border hover:border-amber/40"}`}
+    87→            >
+    88→              <div className={`mx-auto grid size-12 place-items-center rounded-xl border ${selectedType === m.slug ? "border-amber/40 bg-amber/10" : "border-border bg-background"}`}>
+    89→                <MekIcon name={m.icon} className={`size-6 ${selectedType === m.slug ? "text-amber" : "text-muted-foreground"}`} />
+    90→              </div>
+    91→              <p className="mt-2 font-display text-sm font-semibold">{typeLabel(m.slug)}</p>
+    92→            </motion.button>
+    93→          ))}
+    94→        </div>
+    95→      </section>
+    96→    </div>
+    97→  );
+    98→}
+    99→
+   100→// ─── Step 2: Describe Problem ───
+   101→export function DescribeProblem({ customer }: { customer: DemoUser }) {
+   102→  const { go, params, machineMode, auth, exitToSplash } = useApp();
+   103→  const { t, isFa, cat, type: typeLabel, money } = useT();
+   104→  const lang = isFa ? "fa" : "en";
+   105→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   106→  const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
+   107→  const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
+   108→  const [category, setCategory] = useState<string>("");
+   109→  const [urgency, setUrgency] = useState<string>(params.urgency ?? "NORMAL");
+   110→  const [title, setTitle] = useState("");
+   111→  const [description, setDescription] = useState("");
+   112→  const [address, setAddress] = useState("Pier 38, San Francisco, CA");
+   113→  const [media, setMedia] = useState<string[]>([]);
+   114→  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+   115→  const [submitting, setSubmitting] = useState(false);
+   116→  const [guestBlock, setGuestBlock] = useState(false);
+   117→
+   118→  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+   119→  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+   120→
+   121→  const allowedTypes = typesForMode(machineMode);
+   122→
+   123→  useEffect(() => {
+   124→    if (customer.customer)
+   125→      api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))));
+   126→  }, [customer, machineMode]);
+   127→
+   128→  const readFileAsDataURL = (file: File): Promise<string> =>
+   129→    new Promise((resolve, reject) => {
+   130→      const reader = new FileReader();
+   131→      reader.onload = () => resolve(String(reader.result));
+   132→      reader.onerror = () => reject(reader.error);
+   133→      reader.readAsDataURL(file);
+   134→    });
+   135→
+   136→  const onFilesSelected = async (files: FileList | null) => {
+   137→    if (!files || files.length === 0) return;
+   138→    try {
+   139→      const urls = await Promise.all(Array.from(files).slice(0, 6).map(readFileAsDataURL));
+   140→      setMedia((m) => [...m, ...urls].slice(0, 12));
+   141→      toast.success(isFa ? "عکس ضمیمه شد" : t("req.field.photoAttached"));
+   142→    } catch {
+   143→      toast.error(isFa ? "بارگذاری عکس ناموفق بود" : "Could not attach photo");
+   144→    }
+   145→  };
+   146→
+   147→  const submit = async () => {
+   148→    if (auth.isGuest) { setGuestBlock(true); return; }
+   149→    if (!category) { toast.error(t("req.error.category")); return; }
+   150→    if (!title.trim()) { toast.error(t("req.error.title")); return; }
+   151→    if (!vehicleId && !type) { toast.error(t("req.error.machine")); return; }
+   152→    setSubmitting(true);
+   153→    try {
+   154→      const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
+   155→      const lng = -122.4194 + (Math.random() - 0.5) * 0.03;
+   156→      const sr = await api.createRequest({
+   157→        customerId: customer.customer!.id,
+   158→        vehicleId: vehicleId ?? vehicles[0]?.id,
+   159→        category,
+   160→        urgency,
+   161→        title: title.trim(),
+   162→        description: description.trim(),
+   163→        mediaUrls: media,
+   164→        address,
+   165→        lat,
+   166→        lng,
+   167→      });
+   168→      toast.success(t("req.created").replace("{code}", sr.code));
+   169→      go("matching", { requestId: sr.id });
+   170→    } catch (e: any) {
+   171→      toast.error(e.message ?? "Failed to create request");
+   172→    } finally {
+   173→      setSubmitting(false);
+   174→    }
+   175→  };
+   176→
+   177→  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
+   178→
+   179→  return (
+   180→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+   181→      <StepHeader
+   182→        step={2}
+   183→        total={3}
+   184→        title={t("req.describe")}
+   185→        subtitle={t("req.describeSub")}
+   186→        onBack={() => go("request-type")}
+   187→      />
+   188→
+   189→      <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
+   190→        <div className="space-y-5">
+   191→          {/* Machine */}
+   192→          <div className="rounded-xl border border-border bg-card p-4">
+   193→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.machine")}</Label>
+   194→            {selectedVehicle ? (
+   195→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 p-3">
+   196→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   197→                  <MekIcon name={iconForMachineType(selectedVehicle.type)} className="size-5 text-amber" />
+   198→                </div>
+   199→                <div className="min-w-0 flex-1">
+   200→                  <p className="truncate text-sm font-medium">{selectedVehicle.make} {selectedVehicle.model}</p>
+   201→                  <p className="text-[11px] text-muted-foreground">{typeLabel(selectedVehicle.type)} · {selectedVehicle.year}</p>
+   202→                </div>
+   203→                <Button variant="ghost" size="sm" onClick={() => { setVehicleId(undefined); }}>{t("req.field.change")}</Button>
+   204→              </div>
+   205→            ) : (
+   206→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-3">
+   207→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   208→                  <MekIcon name={iconForMachineType(type)} className="size-5 text-amber" />
+   209→                </div>
+   210→                <span className="text-sm font-medium">{typeLabel(type)}</span>
+   211→              </div>
+   212→            )}
+   213→            {vehicles.length > 0 && !selectedVehicle && (
+   214→              <Select onValueChange={setVehicleId} value={vehicleId ?? ""}>
+   215→                <SelectTrigger className="mt-2"><SelectValue placeholder={t("req.field.linkSaved")} /></SelectTrigger>
+   216→                <SelectContent>
+   217→                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.make} {v.model} · {typeLabel(v.type)}</SelectItem>)}
+   218→                </SelectContent>
+   219→              </Select>
+   220→            )}
+   221→          </div>
+   222→
+   223→          {/* Category */}
+   224→          <div className="rounded-xl border border-border bg-card p-4">
+   225→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.category")}</Label>
+   226→            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+   227→              {SERVICE_CATEGORIES.map((c) => (
+   228→                <button
+   229→                  key={c.slug}
+   230→                  onClick={() => setCategory(c.slug)}
+   231→                  className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-colors ${category === c.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
+   232→                >
+   233→                  <MekIcon name={c.icon} className={`size-4 shrink-0 ${category === c.slug ? "text-amber" : "text-muted-foreground"}`} />
+   234→                  <span className="text-[11px] font-medium leading-tight">{cat(c.slug)}</span>
+   235→                </button>
+   236→              ))}
+   237→            </div>
+   238→          </div>
+   239→
+   240→          {/* Title + description */}
+   241→          <div className="rounded-xl border border-border bg-card p-4">
+   242→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.summary")}</Label>
+   243→            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("req.field.summaryPlaceholder")} className="mt-2" maxLength={120} />
+   244→            <Label className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.symptoms")}</Label>
+   245→            <Textarea
+   246→              value={description}
+   247→              onChange={(e) => setDescription(e.target.value)}
+   248→              placeholder={t("req.field.symptomsPlaceholder")}
+   249→              rows={4}
+   250→              className="mt-2"
+   251→              maxLength={1000}
+   252→            />
+   253→            <p className="mt-1 text-right text-[10px] text-muted-foreground">
+   254→              {isFa ? description.length.toLocaleString("fa-IR") : description.length}/1000
+   255→            </p>
+   256→          </div>
+   257→
+   258→          {/* Media */}
+   259→          <div className="rounded-xl border border-border bg-card p-4">
+   260→            <div className="flex items-center justify-between">
+   261→              <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.attach")}</Label>
+   262→              <div className="flex gap-1">
+   263→                {/* Camera capture — direct to camera on mobile */}
+   264→                <Button
+   265→                  variant="outline"
+   266→                  size="sm"
+   267→                  type="button"
+   268→                  onClick={() => cameraInputRef.current?.click()}
+   269→                >
+   270→                  <Camera className="mr-1 size-3.5" /> {t("req.field.addPhoto")}
+   271→                </Button>
+   272→                <input
+   273→                  ref={cameraInputRef}
+   274→                  type="file"
+   275→                  accept="image/*"
+   276→                  capture="environment"
+   277→                  multiple
+   278→                  className="hidden"
+   279→                  onChange={(e) => {
+   280→                    onFilesSelected(e.target.files);
+   281→                    e.target.value = "";
+   282→                  }}
+   283→                />
+   284→                {/* Gallery upload */}
+   285→                <Button
+   286→                  variant="ghost"
+   287→                  size="sm"
+   288→                  type="button"
+   289→                  onClick={() => galleryInputRef.current?.click()}
+   290→                >
+   291→                  <Upload className="size-3.5" />
+   292→                </Button>
+   293→                <input
+   294→                  ref={galleryInputRef}
+   295→                  type="file"
+   296→                  accept="image/*,video/*"
+   297→                  multiple
+   298→                  className="hidden"
+   299→                  onChange={(e) => {
+   300→                    onFilesSelected(e.target.files);
+   301→                    e.target.value = "";
+   302→                  }}
+   303→                />
+   304→                {/* Voice recorder */}
+   305→                <VoiceRecorder
+   306→                  lang={lang}
+   307→                  onRecorded={(blob) => {
+   308→                    setVoiceNote(URL.createObjectURL(blob));
+   309→                    toast.success(isFa ? "صدای ضبط شد" : "Voice recorded");
+   310→                  }}
+   311→                />
+   312→              </div>
+   313→            </div>
+   314→
+   315→            {(media.length > 0 || voiceNote) && (
+   316→              <div className="mt-3 flex flex-wrap gap-2">
+   317→                {voiceNote && (
+   318→                  <div className="relative flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/5 p-2">
+   319→                    <audio src={voiceNote} controls className="h-8 w-40" />
+   320→                    <button
+   321→                      onClick={() => setVoiceNote(null)}
+   322→                      className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
+   323→                      aria-label={isFa ? "حذف صدا" : "Remove voice"}
+   324→                    >
+   325→                      <X className="size-2.5" />
+   326→                    </button>
+   327→                  </div>
+   328→                )}
+   329→                {media.map((url, i) => (
+   330→                  <div key={i} className="relative">
+   331→                    <img src={url} alt="" className="size-16 rounded-lg border border-border object-cover" />
+   332→                    <button
+   333→                      onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))}
+   334→                      className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
+   335→                      aria-label={isFa ? "حذف عکس" : "Remove photo"}
+   336→                    >
+   337→                      <X className="size-2.5" />
+   338→                    </button>
+   339→                  </div>
+   340→                ))}
+   341→              </div>
+   342→            )}
+   343→          </div>
+   344→        </div>
+   345→
+   346→        {/* Right column: urgency + location + submit */}
+   347→        <div className="space-y-5">
+   348→          <div className="rounded-xl border border-border bg-card p-4">
+   349→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.urgency")}</Label>
+   350→            <div className="mt-3 space-y-2">
+   351→              {URGENCY.map((u) => (
+   352→                <button
+   353→                  key={u.slug}
+   354→                  onClick={() => setUrgency(u.slug)}
+   355→                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${urgency === u.slug ? "border-amber bg-amber/5" : "border-border hover:bg-accent"}`}
+   356→                >
+   357→                  <UrgencyBadge urgency={u.slug} />
+   358→                  <div className="min-w-0 flex-1">
+   359→                    <p className="text-sm font-medium">{t(`urgency.${u.slug}`)}</p>
+   360→                    <p className="text-[11px] text-muted-foreground">{t(`urgency.${u.slug}.desc`)}</p>
+   361→                  </div>
+   362→                </button>
+   363→              ))}
+   364→            </div>
+   365→          </div>
+   366→
+   367→          <div className="rounded-xl border border-border bg-card p-4">
+   368→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.location")}</Label>
+   369→            <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+   370→              <MapPin className="size-4 text-amber" />
+   371→              <Input value={address} onChange={(e) => setAddress(e.target.value)} className="border-0 px-0 focus-visible:ring-0" />
+   372→            </div>
+   373→            <div className="mt-3 h-24 overflow-hidden rounded-lg border border-border bg-[oklch(0.16_0.008_260)]">
+   374→              <div className="size-full mk-grid-bg opacity-40" />
+   375→            </div>
+   376→          </div>
+   377→
+   378→          <div className="sticky bottom-3">
+   379→            <Button onClick={submit} disabled={submitting} className="w-full bg-amber text-black hover:bg-amber/90">
+   380→              {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
+   381→              {submitting ? t("req.finding") : t("req.findTechnicians")}
+   382→            </Button>
+   383→          </div>
+   384→        </div>
+   385→      </div>
+   386→
+   387→      {/* Guest sign-in prompt */}
+   388→      <Dialog open={guestBlock} onOpenChange={setGuestBlock}>
+   389→        <DialogContent className="max-w-sm">
+   390→          <DialogHeader>
+   391→            <DialogTitle className="flex items-center gap-2 font-display">
+   392→              <ShieldCheck className="size-4 text-amber" /> {t("req.guest.title")}
+   393→            </DialogTitle>
+   394→          </DialogHeader>
+   395→          <p className="text-sm text-muted-foreground">
+   396→            {t("req.guest.body")}
+   397→          </p>
+   398→          <DialogFooter className="gap-2 sm:gap-2">
+   399→            <Button variant="ghost" onClick={() => setGuestBlock(false)}>{t("req.guest.later")}</Button>
+   400→            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>{t("req.guest.signInNow")}</Button>
+   401→          </DialogFooter>
+   402→        </DialogContent>
+   403→      </Dialog>
+   404→    </div>
+   405→  );
+   406→}
+   407→
+   408→// ─── Step 3: Matching ───
+   409→export function Matching({ customer }: { customer: DemoUser }) {
+   410→  const { go, params } = useApp();
+   411→  const { t, isFa, money } = useT();
+   412→  const lang = isFa ? "fa" : "en";
+   413→  const [techs, setTechs] = useState<Technician[] | null>(null);
+   414→  const [phase, setPhase] = useState<"searching" | "results">("searching");
+   415→  const [selected, setSelected] = useState<string | null>(null);
+   416→
+   417→  useEffect(() => {
+   418→    const lat = 37.7749, lng = -122.4194;
+   419→    api.listTechnicians({ lat, lng }).then((tList) => {
+   420→      // simulate searching delay
+   421→      setTimeout(() => {
+   422→        setTechs(tList);
+   423→        setPhase("results");
+   424→      }, 1900);
+   425→    });
+   426→  }, []);
+   427→
+   428→  const ranked = (techs ?? []).map((tk) => {
+   429→    const km = tk.lat && tk.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: tk.lat, lng: tk.lng }) : 99;
+   430→    const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
+   431→    const score = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+   432→    // Inspection fee ~ 30min at hourly rate; travel fee scales with distance
+   433→    const inspectionFee = Math.round((tk.hourlyRate * 0.5) * 100) / 100;
+   434→    const travelFee = Math.round((tk.travelFeeBase + km * 0.5) * 100) / 100;
+   435→    return { tech: tk, km, eta, score, inspectionFee, travelFee };
+   436→  }).sort((a, b) => b.score - a.score);
+   437→
+   438→  const onSelect = (techId: string) => {
+   439→    setSelected(techId);
+   440→    go("technician-profile", { requestId: params.requestId, technicianId: techId });
+   441→  };
+   442→
+   443→  return (
+   444→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+   445→      <StepHeader
+   446→        step={3}
+   447→        total={3}
+   448→        title={t("req.matching")}
+   449→        subtitle={t("req.matchingSub")}
+   450→        onBack={() => go("describe")}
+   451→      />
+   452→
+   453→      <AnimatePresence mode="wait">
+   454→        {phase === "searching" ? (
+   455→          <motion.div key="searching" exit={{ opacity: 0 }} className="grid place-items-center py-16">
+   456→            <div className="relative">
+   457→              <motion.div
+   458→                animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+   459→                transition={{ duration: 2, repeat: Infinity }}
+   460→                className="absolute inset-0 rounded-full bg-amber"
+   461→              />
+   462→              <div className="relative grid size-20 place-items-center rounded-full border-2 border-amber/30 bg-amber/10">
+   463→                <Search className="size-8 text-amber" />
+   464→              </div>
+   465→            </div>
+   466→            <p className="mt-6 font-display text-lg font-semibold">{t("req.searching")}</p>
+   467→            <p className="text-sm text-muted-foreground">{t("req.searchingSub")}</p>
+   468→            <div className="mt-4 flex flex-wrap justify-center gap-6 text-[11px] text-muted-foreground">
+   469→              <span className="inline-flex items-center gap-1"><NavIcon className="size-3 text-amber" /> {t("req.search.distance")}</span>
+   470→              <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> {t("req.search.rating")}</span>
+   471→              <span className="inline-flex items-center gap-1"><BadgeCheck className="size-3 text-amber" /> {t("req.search.certs")}</span>
+   472→              <span className="inline-flex items-center gap-1"><Clock className="size-3 text-amber" /> {t("req.search.eta")}</span>
+   473→            </div>
+   474→          </motion.div>
+   475→        ) : (
+   476→          <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+   477→            {ranked.length === 0 ? (
+   478→              <EmptyState
+   479→                icon={Search}
+   480→                title={t("req.noMatch")}
+   481→                description={t("req.noMatchDesc")}
+   482→                action={<Button onClick={() => go("describe")} variant="outline">{t("req.backToDetails")}</Button>}
+   483→              />
+   484→            ) : (
+   485→              <div className="grid gap-3 lg:grid-cols-2">
+   486→                {ranked.map((r, i) => (
+   487→                  <TechnicianCard
+   488→                    key={r.tech.id}
+   489→                    tech={r.tech}
+   490→                    distanceKm={r.km}
+   491→                    etaMins={r.eta}
+   492→                    rank={i + 1}
+   493→                    inspectionFee={r.inspectionFee}
+   494→                    travelFee={r.travelFee}
+   495→                    selected={selected === r.tech.id}
+   496→                    onSelect={() => onSelect(r.tech.id)}
+   497→                  />
+   498→                ))}
+   499→              </div>
+   500→            )}
+   501→          </motion.div>
+   502→        )}
+   503→      </AnimatePresence>
+   504→    </div>
+   505→  );
+   506→}
+   507→
+   508→// ─── Technician Profile ───
+   509→export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
+   510→  const { go, params, back } = useApp();
+   511→  const { t, isFa, money, cat } = useT();
+   512→  const lang = isFa ? "fa" : "en";
+   513→  const [tech, setTech] = useState<Technician | null>(null);
+   514→  const [requesting, setRequesting] = useState(false);
+   515→
+   516→  useEffect(() => {
+   517→    if (params.technicianId) api.getTechnician(params.technicianId).then(setTech);
+   518→  }, [params.technicianId]);
+   519→
+   520→  const request = async () => {
+   521→    setRequesting(true);
+   522→    try {
+   523→      // assign the technician to the request + create a job in REQUESTED state
+   524→      const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
+   525→      if (!sr) throw new Error(t("req.techProfile.requestNotFound"));
+   526→      const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
+   527→        method: "POST",
+   528→        headers: { "Content-Type": "application/json" },
+   529→        body: JSON.stringify({ technicianId: params.technicianId }),
+   530→      });
+   531→      const job = await jobRes.json();
+   532→      if (!job?.id) throw new Error(t("req.techProfile.assignFailed"));
+   533→      toast.success(t("req.techProfile.notified").replace("{name}", tech?.user.name ?? ""));
+   534→      go("track", { jobId: job.id });
+   535→    } catch (e: any) {
+   536→      toast.error(e.message ?? t("req.techProfile.assignFailed"));
+   537→    } finally {
+   538→      setRequesting(false);
+   539→    }
+   540→  };
+   541→
+   542→  if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
+   543→
+   544→  return (
+   545→    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+   546→      <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+   547→        <ArrowLeft className="size-4" /> {t("req.backToResults")}
+   548→      </button>
+   549→
+   550→      {/* Header */}
+   551→      <div className="relative overflow-hidden rounded-xl border border-border bg-card p-5">
+   552→        <div className="absolute -right-16 -top-16 size-48 rounded-full bg-amber/10 blur-3xl" />
+   553→        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+   554→          <div className="relative shrink-0">
+   555→            <div className="grid size-20 place-items-center overflow-hidden rounded-2xl border border-border bg-muted">
+   556→              {tech.user.avatar ? <img src={tech.user.avatar} alt={tech.user.name} className="size-full object-cover" /> : <span className="font-display text-2xl">{tech.user.name[0]}</span>}
+   557→            </div>
+   558→            {tech.verified && <div className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-card bg-amber text-black"><BadgeCheck className="size-4" /></div>}
+   559→          </div>
+   560→          <div className="flex-1">
+   561→            <div className="flex flex-wrap items-center gap-2">
+   562→              <h1 className="font-display text-xl font-semibold">{tech.user.name}</h1>
+   563→              <span className="rounded-full bg-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber">{tech.level}</span>
+   564→            </div>
+   565→            <div className="mt-1 flex items-center gap-2 text-sm">
+   566→              <StarRating value={tech.rating} />
+   567→              <span className="font-semibold">{isFa ? tech.rating.toFixed(2).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.rating.toFixed(2)}</span>
+   568→              <span className="text-muted-foreground">· {tech.reviewCount} {t("common.reviews")} · {tech.completedJobs} {t("common.jobs")}</span>
+   569→            </div>
+   570→            <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
+   571→          </div>
+   572→          <div className="flex flex-col items-end gap-1">
+   573→            <div className="font-display text-2xl font-bold text-amber">{money(tech.hourlyRate)}<span className="text-xs text-muted-foreground">/hr</span></div>
+   574→            <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
+   575→          </div>
+   576→        </div>
+   577→      </div>
+   578→
+   579→      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+   580→        <div className="space-y-4">
+   581→          {/* Specialties */}
+   582→          <div className="rounded-xl border border-border bg-card p-4">
+   583→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.specialties")}</h3>
+   584→            <div className="mt-3 flex flex-wrap gap-2">
+   585→              {tech.specialties.map((s) => (
+   586→                <span key={s.id} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs">
+   587→                  <MekIcon name={iconForCategory(s.category)} className="size-3.5 text-amber" />
+   588→                  {cat(s.category)}
+   589→                </span>
+   590→              ))}
+   591→            </div>
+   592→          </div>
+   593→
+   594→          {/* Certifications */}
+   595→          <div className="rounded-xl border border-border bg-card p-4">
+   596→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.certifications")}</h3>
+   597→            <div className="mt-3 space-y-2">
+   598→              {tech.certifications.map((c) => (
+   599→                <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
+   600→                  <div className={`grid size-9 place-items-center rounded-lg border ${c.verified ? "border-emerald-glow/30 bg-emerald-glow/10" : "border-border bg-muted"}`}>
+   601→                    <ShieldCheck className={`size-4 ${c.verified ? "text-emerald-glow" : "text-muted-foreground"}`} />
+   602→                  </div>
+   603→                  <div className="min-w-0 flex-1">
+   604→                    <p className="text-sm font-medium">{c.name}</p>
+   605→                    <p className="text-[11px] text-muted-foreground">{c.issuer} · {c.year}</p>
+   606→                  </div>
+   607→                  {c.verified ? <span className="rounded bg-emerald-glow/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-glow">{t("common.verified")}</span> : <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t("common.pending")}</span>}
+   608→                </div>
+   609→              ))}
+   610→            </div>
+   611→          </div>
+   612→
+   613→          {/* Reviews */}
+   614→          <div className="rounded-xl border border-border bg-card p-4">
+   615→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.recentReviews")}</h3>
+   616→            <div className="mt-3 space-y-3">
+   617→              {(tech as any).reviews?.slice(0, 3).map((r: any) => (
+   618→                <div key={r.id} className="rounded-lg border border-border bg-background p-3">
+   619→                  <div className="flex items-center justify-between">
+   620→                    <div className="flex items-center gap-2">
+   621→                      <div className="grid size-7 place-items-center overflow-hidden rounded-full border border-border bg-muted">
+   622→                        {r.fromUser?.avatar ? <img src={r.fromUser.avatar} alt="" className="size-full object-cover" /> : <span className="text-[10px]">{r.fromUser?.name?.[0]}</span>}
+   623→                      </div>
+   624→                      <span className="text-xs font-medium">{r.fromUser?.name}</span>
+   625→                    </div>
+   626→                    <StarRating value={r.rating} size={11} />
+   627→                  </div>
+   628→                  {r.comment && <p className="mt-1.5 text-sm text-muted-foreground">"{r.comment}"</p>}
+   629→                </div>
+   630→              )) ?? <p className="text-sm text-muted-foreground">{t("req.techProfile.noReviews")}</p>}
+   631→            </div>
+   632→          </div>
+   633→        </div>
+   634→
+   635→        {/* Right: booking card */}
+   636→        <div className="space-y-4">
+   637→          <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
+   638→            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
+   639→            <div className="mt-3 space-y-2 text-sm">
+   640→              <Row label={t("req.techProfile.hourlyRate")} value={`${money(tech.hourlyRate)}/hr`} />
+   641→              <Row label={t("req.techProfile.travelFee")} value={money(tech.travelFeeBase)} />
+   642→              <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
+   643→              <Row label={t("req.techProfile.experience")} value={`${isFa ? String(tech.experienceYears).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.experienceYears} ${isFa ? "سال" : "yrs"}`} />
+   644→              <Row label={t("req.techProfile.level")} value={tech.level} />
+   645→              <Row label={t("fees.totalEstimate")} value={money(tech.hourlyRate * 0.5 + tech.travelFeeBase)} />
+   646→            </div>
+   647→            <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
+   648→              <ShieldCheck className="mr-1 inline size-3.5 text-amber" />
+   649→              {t("req.techProfile.guarantee")}
+   650→            </div>
+   651→            <Button onClick={request} disabled={requesting} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
+   652→              {requesting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
+   653→              {t("req.techProfile.requestNow")}
+   654→            </Button>
+   655→            <p className="mt-2 text-center text-[10px] text-muted-foreground">{t("req.techProfile.noCharge")}</p>
+   656→          </div>
+   657→        </div>
+   658→      </div>
+   659→    </div>
+   660→  );
+   661→}
+   662→
+   663→function Row({ label, value }: { label: string; value: string }) {
+   664→  return (
+   665→    <div className="flex items-center justify-between border-b border-border/60 py-1.5 last:border-0">
+   666→      <span className="text-muted-foreground">{label}</span>
+   667→      <span className="font-medium">{value}</span>
+   668→    </div>
+   669→  );
+   670→}
+   671→
+   672→// ─── Shared step header ───
+   673→function StepHeader({ step, total, title, subtitle, onBack }: { step: number; total: number; title: string; subtitle?: string; onBack: () => void }) {
+   674→  const { t, isFa } = useT();
+   675→  const stepLabel = isFa
+   676→    ? `${t("req.step")} ${String(step).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])} ${t("req.stepOf")} ${String(total).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])}`
+   677→    : `${t("req.step")} ${step} ${t("req.stepOf")} ${total}`;
+   678→  return (
+   679→    <div className="flex items-center gap-3">
+   680→      <Button variant="ghost" size="icon" className="size-8" onClick={onBack}>
+   681→        <ChevronLeft className="size-4 rtl:hidden" />
+   682→        <ChevronRight className="size-4 hidden rtl:block" />
+   683→      </Button>
+   684→      <div className="flex-1">
+   685→        <div className="flex items-center gap-2">
+   686→          <span className="font-mono text-[10px] uppercase tracking-widest text-amber">{stepLabel}</span>
+   687→          <div className="h-px flex-1 bg-border" />
+   688→        </div>
+   689→        <h1 className="mt-1 font-display text-xl font-semibold tracking-tight">{title}</h1>
+   690→        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+   691→      </div>
+   692→    </div>
+   693→  );
+   694→}
+   695→

@@ -4,12 +4,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, ImagePlus, Mic, Wrench, CheckCheck } from "lucide-react";
 import { api, type Message, type Job } from "@/lib/api";
-import { fmtTime } from "@/lib/format";
+import { fmtTime, toPersianDigits } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { useT } from "@/lib/use-t";
 
 export function ChatPanel({
   job,
@@ -24,6 +25,7 @@ export function ChatPanel({
   otherAvatar?: string;
   className?: string;
 }) {
+  const { t, isFa, lang } = useT();
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -36,8 +38,8 @@ export function ChatPanel({
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
   }, [load]);
 
   useEffect(() => {
@@ -54,19 +56,20 @@ export function ChatPanel({
       setMessages((prev) => [...(prev ?? []), msg]);
     } catch (e: any) {
       setText(draft);
-      toast.error(e.message ?? "Failed to send");
+      toast.error(e.message ?? t("tech.chat.sendFailed"));
     } finally {
       setSending(false);
     }
   };
 
+  const codeText = isFa ? toPersianDigits(job.code) : job.code;
+
   return (
-    <div className={cn("flex h-full flex-col", className)}>
+    <div className={cn("flex h-full flex-col", className)} dir={isFa ? "rtl" : "ltr"}>
       <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
         <div className="relative">
           <div className="grid size-8 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
             {otherAvatar ? (
-               
               <img src={otherAvatar} alt={otherName} className="size-full object-cover" />
             ) : (
               <span className="text-[11px] font-semibold">{otherName[0]}</span>
@@ -76,7 +79,7 @@ export function ChatPanel({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{otherName}</p>
-          <p className="text-[10px] text-emerald-glow">● Online · {job.code}</p>
+          <p className="text-[10px] text-emerald-glow">{t("common.onlineDot")} · {codeText}</p>
         </div>
       </div>
 
@@ -103,7 +106,7 @@ export function ChatPanel({
                     >
                       <Wrench className="size-3 text-amber" />
                       <span>{m.body}</span>
-                      <span className="font-mono text-[9px]">{fmtTime(m.createdAt)}</span>
+                      <span className="font-mono text-[9px]">{fmtTime(m.createdAt, lang)}</span>
                     </motion.div>
                   );
                 }
@@ -124,7 +127,7 @@ export function ChatPanel({
                     >
                       <p className="whitespace-pre-wrap break-words">{m.body}</p>
                       <div className={cn("mt-0.5 flex items-center gap-1 text-[9px]", mine ? "text-black/60" : "text-muted-foreground")}>
-                        <span>{fmtTime(m.createdAt)}</span>
+                        <span>{fmtTime(m.createdAt, lang)}</span>
                         {mine && <CheckCheck className="size-3" />}
                       </div>
                     </div>
@@ -138,10 +141,10 @@ export function ChatPanel({
 
       <div className="border-t border-border p-2.5">
         <div className="flex items-end gap-2">
-          <Button variant="ghost" size="icon" className="size-9 shrink-0" onClick={() => toast.info("Photo upload ready — attach via diagnostics tab")}>
+          <Button variant="ghost" size="icon" className="size-9 shrink-0" onClick={() => toast.info(t("tech.chat.photoUploadReady"))}>
             <ImagePlus className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-9 shrink-0" onClick={() => toast.info("Voice note recording (mock)")}>
+          <Button variant="ghost" size="icon" className="size-9 shrink-0" onClick={() => toast.info(t("tech.chat.voiceMock"))}>
             <Mic className="size-4" />
           </Button>
           <Textarea
@@ -153,7 +156,7 @@ export function ChatPanel({
                 send();
               }
             }}
-            placeholder="Type a message…"
+            placeholder={t("tech.chat.placeholder")}
             rows={1}
             className="min-h-[36px] max-h-24 resize-none"
           />

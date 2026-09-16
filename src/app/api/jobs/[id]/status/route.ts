@@ -12,6 +12,9 @@ const include = {
   tracking: { orderBy: { ts: "asc" } },
 } as const;
 
+// 12-hour hold from job completion before funds become withdrawable
+const HOLD_HOURS = 12;
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json();
@@ -30,6 +33,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (extra.customerApproved != null) data.customerApproved = extra.customerApproved;
 
   const job = await db.job.update({ where: { id }, data, include });
+
+  // When job is COMPLETED, start the 12-hour hold countdown on all PENDING
+  // prepay transactions for this job. Funds become AVAILABLE after holdUntil.
+  if (status === "COMPLETED") {
+    const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
+    await db.walletTransaction.updateMany({
+      where: { jobId: job.id, status: "PENDING" },
+      data: { holdUntil },
+    });
+  }
 
   // Side-effects: notifications + system messages
   const cust = job.request.customer.user;
