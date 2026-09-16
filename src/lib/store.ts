@@ -22,7 +22,8 @@ export type CustomerView =
   | "chat"
   | "notifications"
   | "settings"
-  | "vip";
+  | "vip"
+  | "support";
 
 export type TechView =
   | "dashboard"

@@ -61,17 +61,48 @@ export async function POST(req: Request) {
     }
   }
   const inv = await db.invoice.create({ data: { jobId, ...data }, include: FULL_INCLUDE });
-  // Notify customer
-  const job = await db.job.findUnique({ where: { id: jobId }, include: { request: { include: { customer: true } } } });
+  // Notify BOTH the customer and the mechanic that the invoice was issued.
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    include: {
+      request: { include: { customer: { include: { user: true } } } },
+      technician: { include: { user: true } },
+    },
+  });
   if (job) {
+    const cust = job.request.customer.user;
+    const tech = job.technician?.user;
+    // Notify customer
     await db.notification.create({
       data: {
-        userId: job.request.customer.userId,
-        type: "estimate_ready",
-        title: "Invoice issued",
-        body: `${inv.code} — review and pay ${inv.total}`,
+        userId: cust.id,
+        type: "invoice_issued",
+        title: `Invoice ${inv.code} issued`,
+        body: `${tech?.name ?? "Mechanic"} issued invoice for ${inv.total}. Review and pay to complete the job.`,
         category: "payment",
         link: "customer/invoice",
+      },
+    });
+    // Notify mechanic (so they know the invoice was sent to customer)
+    if (tech) {
+      await db.notification.create({
+        data: {
+          userId: tech.id,
+          type: "invoice_issued",
+          title: `Invoice ${inv.code} sent to customer`,
+          body: `${inv.code} for ${inv.total} was sent to ${cust.name} for review & payment.`,
+          category: "payment",
+          link: "technician/earnings",
+        },
+      });
+    }
+    // System message in the job chat
+    await db.message.create({
+      data: {
+        jobId: job.id,
+        fromUserId: tech?.id ?? cust.id,
+        kind: "system",
+        body: `Invoice ${inv.code} issued — total ${inv.total} ${inv.currency}.`,
       },
     });
   }

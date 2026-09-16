@@ -41,7 +41,9 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
   const reject = async (jobId: string) => {
     setActing(jobId);
     try {
-      await api.updateJobStatus(jobId, "CANCELLED");
+      // Use REJECTED status (distinct from CANCELLED) so the customer gets a
+      // special "alert" notification and the request re-enters the matching pool.
+      await api.updateJobStatus(jobId, "REJECTED");
       toast.success(t("tech.requests.declined"));
       load();
     } catch (e: any) {
@@ -53,7 +55,7 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
 
   const incoming = (jobs ?? []).filter((j) => j.status === "REQUESTED");
   const active = (jobs ?? []).filter((j) => ["ACCEPTED", "EN_ROUTE", "ARRIVED", "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL"].includes(j.status));
-  const recent = (jobs ?? []).filter((j) => ["COMPLETED", "CANCELLED"].includes(j.status));
+  const recent = (jobs ?? []).filter((j) => ["COMPLETED", "CANCELLED", "REJECTED"].includes(j.status));
 
   return (
     <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>

@@ -28,6 +28,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (status === "ARRIVED") data.arrivedAt = new Date();
   if (status === "COMPLETED") data.completedAt = new Date();
   if (status === "CANCELLED") data.request = { update: { status: "CANCELLED" } };
+  // REJECTED: technician declined the request — set request back to OPEN so it
+  // re-enters the matching pool, and remove the technician assignment so the
+  // request can be matched with another technician.
+  if (status === "REJECTED") {
+    data.request = { update: { status: "OPEN", matchedTechId: null } };
+  }
 
   if (extra.technicianNotes != null) data.technicianNotes = extra.technicianNotes;
   if (extra.customerApproved != null) data.customerApproved = extra.customerApproved;
@@ -90,10 +96,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       category: "job",
       link: "customer/completion",
     },
+    REJECTED: {
+      type: "request_rejected",
+      title: `Mechanic declined your request`,
+      body: `${tech.name} could not accept ${job.code}. We're finding another mechanic for you.`,
+      category: "job",
+      link: "customer/home",
+    },
   };
   const notif = notifMap[status];
   if (notif) {
-    await db.notification.create({ data: { userId: cust.id, ...notif } });
+    // For REJECTED, use a special "alert" category to trigger the special
+    // customer-facing alert UI (different from regular notifications).
+    const notifCategory = status === "REJECTED" ? "alert" : notif.category;
+    await db.notification.create({
+      data: {
+        userId: cust.id,
+        type: notif.type,
+        title: notif.title,
+        body: notif.body,
+        category: notifCategory,
+        link: notif.link,
+      },
+    });
     await db.message.create({
       data: {
         jobId: job.id,

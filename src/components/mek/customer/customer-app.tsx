@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus, Crown,
+  Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus, Crown, Headset,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/mek/app-shell";
 import { useApp } from "@/lib/store";
@@ -17,6 +17,7 @@ import { CustomerHistory } from "./service-history";
 import { CustomerChat } from "./chat";
 import { CustomerSettings } from "./settings";
 import { CustomerVip } from "./vip";
+import { CustomerSupport } from "./support";
 import { EmptyState } from "@/components/mek/shared/primitives";
 import { Bell as BellIcon } from "lucide-react";
 import { NotificationCenter } from "@/components/mek/shared/notification-center";
@@ -46,6 +47,7 @@ export function CustomerApp() {
     { view: "vehicles", label: t("nav.vehicles"), icon: Car },
     { view: "service-history", label: t("nav.serviceHistory"), icon: History },
     { view: "vip", label: t("nav.vip"), icon: Crown },
+    { view: "support", label: t("nav.support"), icon: Headset },
     { view: "notifications", label: t("nav.alerts"), icon: Bell },
     { view: "settings", label: t("nav.settings"), icon: Settings },
   ];
@@ -65,6 +67,7 @@ export function CustomerApp() {
       case "service-history": return <CustomerHistory customer={user} />;
       case "chat": return <CustomerChat customer={user} />;
       case "vip": return <CustomerVip userId={user.id} />;
+      case "support": return <CustomerSupport userId={user.id} />;
       case "notifications": return (
         <div className="rounded-xl border border-border bg-card" style={{ height: "calc(100vh - 8rem)" }}>
           <NotificationCenter userId={user.id} />

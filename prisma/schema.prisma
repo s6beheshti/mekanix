@@ -38,6 +38,7 @@ model User {
   mechanicApplication MechanicApplication?
   vipSubscriptions UserVipSubscription[]
   gatewayLogs   PaymentGatewayLog[]
+  supportTickets SupportTicket[]
 
   @@index([role])
   @@index([phone])
@@ -277,6 +278,7 @@ enum JobStatus {
   WAITING_APPROVAL
   COMPLETED
   CANCELLED
+  REJECTED
 }
 
 model Diagnosis {
@@ -489,6 +491,29 @@ enum ApplicationStatus {
   APPROVED
   REJECTED
   ON_HOLD
+}
+
+// ───────────────────────── Support Tickets ─────────────────────────
+// Customer support center — users open tickets, admin replies, status tracked.
+
+model SupportTicket {
+  id          String   @id @default(cuid())
+  code        String   @unique // TKT-...
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     String
+  category    String   // billing | jobs | account | technical | other
+  priority    String   @default("normal") // low | normal | high | urgent
+  status      String   @default("open") // open | pending | resolved | closed
+  message     String
+  reply       String?
+  replyById   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+
+  @@index([userId, status])
+  @@index([status])
 }
 
 // ───────────────────────── Wallets & Withdrawals ─────────────────────────

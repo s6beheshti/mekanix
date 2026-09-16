@@ -139,6 +139,36 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
     toast.success(t("tech.jobDetail.partRemoved"));
   };
 
+  // Issue invoice to BOTH parties — calls /api/invoices POST which sends
+  // notifications to both customer and mechanic + posts a system message
+  // in the job chat.
+  const issueInvoice = async () => {
+    if (!job) return;
+    try {
+      const inv = await api.createInvoice(job.id, { auto: true });
+      const fresh = await api.getJob(job.id);
+      setJob(fresh);
+      toast.success(t("invoice.issued").replace("{code}", isFa ? toPersianDigits(inv.code) : inv.code));
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to issue invoice");
+    }
+  };
+
+  // Send existing invoice to both parties (re-notify)
+  const resendInvoice = async () => {
+    if (!job?.invoice) return;
+    try {
+      // Re-issue creates a fresh notification to both parties (the API
+      // upserts the invoice by jobId, so it won't create duplicates).
+      const inv = await api.createInvoice(job.id, { auto: false, code: job.invoice.code, status: "SENT" });
+      const fresh = await api.getJob(job.id);
+      setJob(fresh);
+      toast.success(t("invoice.issued").replace("{code}", isFa ? toPersianDigits(inv.code) : inv.code));
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to resend invoice");
+    }
+  };
+
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
   if (!job) return null;
 
@@ -342,8 +372,13 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 </div>
               )}
               {job.invoice && (
-                <Button onClick={() => toast.success(t("invoice.issued").replace("{code}", isFa ? toPersianDigits(job.invoice!.code) : job.invoice!.code))} variant="outline" size="sm" className="mt-2 w-full">
+                <Button onClick={resendInvoice} variant="outline" size="sm" className="mt-2 w-full">
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", isFa ? toPersianDigits(job.invoice.code) : job.invoice.code)}
+                </Button>
+              )}
+              {!job.invoice && (
+                <Button onClick={issueInvoice} variant="outline" size="sm" className="mt-2 w-full">
+                  <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
               )}
             </div>

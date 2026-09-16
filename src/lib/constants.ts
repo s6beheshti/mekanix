@@ -58,6 +58,7 @@ export const JOB_STATUS_FLOW: {
   { key: "WAITING_APPROVAL", label: "Awaiting Approval", tone: "amber", step: 6, hint: "Estimate ready for approval" },
   { key: "COMPLETED", label: "Completed", tone: "emerald", step: 7, hint: "Job finished & documented" },
   { key: "CANCELLED", label: "Cancelled", tone: "rose", step: -1, hint: "Job cancelled" },
+  { key: "REJECTED", label: "Rejected", tone: "rose", step: -1, hint: "Mechanic declined — finding another" },
 ];
 
 export const STATUS_TONE_CLASS: Record<string, string> = {
@@ -102,6 +103,7 @@ export const NOTIFICATION_TYPES: Record<
   { label: string; category: string; icon: string }
 > = {
   request_accepted: { label: "Technician Accepted", category: "job", icon: "CircleCheck" },
+  request_rejected: { label: "Mechanic Declined", category: "alert", icon: "XCircle" },
   technician_arriving: { label: "Technician Arriving", category: "job", icon: "MapPin" },
   estimate_ready: { label: "Estimate Ready", category: "job", icon: "FileText" },
   payment_required: { label: "Payment Required", category: "payment", icon: "CreditCard" },
@@ -110,6 +112,15 @@ export const NOTIFICATION_TYPES: Record<
   maintenance_reminder: { label: "Maintenance Reminder", category: "maintenance", icon: "CalendarClock" },
   new_request: { label: "New Service Request", category: "job", icon: "Wrench" },
   review_request: { label: "Rate Your Service", category: "system", icon: "Star" },
+  vip_activated: { label: "VIP Activated", category: "system", icon: "Crown" },
+  new_support_ticket: { label: "New Support Ticket", category: "system", icon: "Headset" },
+  support_update: { label: "Support Update", category: "system", icon: "Headset" },
+  invoice_issued: { label: "Invoice Issued", category: "payment", icon: "Receipt" },
+  payment_received: { label: "Payment Received", category: "payment", icon: "CreditCard" },
+  payout_processed: { label: "Payout Processed", category: "payment", icon: "Banknote" },
+  application_approved: { label: "Application Approved", category: "system", icon: "CheckCircle2" },
+  application_rejected: { label: "Application Rejected", category: "system", icon: "XCircle" },
+  warranty_claim: { label: "Warranty Claim", category: "system", icon: "ShieldCheck" },
 };
 
 export const CURRENCIES: Record<string, { symbol: string; label: string }> = {

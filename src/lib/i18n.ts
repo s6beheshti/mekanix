@@ -204,6 +204,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "notif.filter.maintenance": "Maintenance",
     "notif.filter.system": "System",
     "notif.type.request_accepted": "Technician Accepted",
+    "notif.type.request_rejected": "Mechanic Declined",
     "notif.type.technician_arriving": "Technician Arriving",
     "notif.type.estimate_ready": "Estimate Ready",
     "notif.type.payment_required": "Payment Required",
@@ -219,6 +220,11 @@ const DICT: Record<Lang, Record<string, string>> = {
     "notif.type.dispute_opened": "Dispute Opened",
     "notif.type.dispute_resolved": "Dispute Resolved",
     "notif.type.warranty_claim": "Warranty Claim",
+    "notif.type.vip_activated": "VIP Activated",
+    "notif.type.new_support_ticket": "New Support Ticket",
+    "notif.type.support_update": "Support Update",
+    "notif.type.invoice_issued": "Invoice Issued",
+    "notif.filter.alert": "Alerts",
 
     // ── Mechanic Application ──
     "mech.applyTitle": "Apply as a Mechanic",
@@ -1686,6 +1692,11 @@ const DICT: Record<Lang, Record<string, string>> = {
     "notif.type.dispute_opened": "اختلاف باز شد",
     "notif.type.dispute_resolved": "اختلاف حل شد",
     "notif.type.warranty_claim": "ادعای گارانتی",
+    "notif.type.vip_activated": "VIP فعال شد",
+    "notif.type.new_support_ticket": "تیکت پشتیبانی جدید",
+    "notif.type.support_update": "بروزرسانی پشتیبانی",
+    "notif.type.invoice_issued": "فاکتور صادر شد",
+    "notif.filter.alert": "هشدارها",
 
     // ── Mechanic Application ──
     "mech.applyTitle": "ثبت‌نام به عنوان مکانیک",

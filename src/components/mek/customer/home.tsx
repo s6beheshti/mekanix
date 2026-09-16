@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
+import { SpecialAlertBanner } from "@/components/mek/shared/special-alert-banner";
 import { fmtRelative, fmtDate, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Link as LinkIcon, CircleDot } from "lucide-react";
@@ -41,6 +42,9 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
 
   return (
     <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      {/* Special alert banner (mechanic rejected, etc.) */}
+      <SpecialAlertBanner userId={customer.id} />
+
       {/* Hero */}
       <section className="relative overflow-hidden rounded-2xl border border-border bg-card">
         <div className="absolute inset-0 mk-grid-bg opacity-40" />
