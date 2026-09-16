@@ -79,7 +79,8 @@ model Technician {
   rating         Float   @default(0)
   reviewCount    Int     @default(0)
   hourlyRate     Float   @default(45)
-  travelFeeBase  Float   @default(15)
+  travelFeeBase  Float   @default(15000)
+  inspectionFee  Float   @default(200000)
   status         TechStatus @default(OFFLINE)
   verified       Boolean @default(false)
   level          TechLevel @default(BRONZE)
@@ -237,6 +238,15 @@ model Job {
   startedAt    DateTime?
   arrivedAt    DateTime?
   completedAt  DateTime?
+  // Pre-service payment
+  inspectionFee  Float   @default(0)
+  travelFee      Float   @default(0)
+  prepayPaid     Boolean @default(false)
+  prepayPaidAt   DateTime?
+  // Commission + hold period
+  platformCommission Float @default(0)
+  netEarnings   Float   @default(0)
+  holdUntil     DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Phone, Loader2, ShieldCheck, ChevronRight, Wrench, ArrowRight, ArrowLeft,
@@ -69,13 +69,31 @@ export function Splash() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       toast.success(`${t("splash.welcome")}${data.user?.name ? "، " + data.user.name.split(" ")[0] + "!" : "!"}`);
-      enterApp("customer", {
-        userId: data.user.id,
-        phone: fullPhone,
-        name: data.user.name,
-        isGuest: false,
-        verified: true,
-      });
+
+      // If logging in as mechanic, check that the user has a technician profile
+      if (loginTarget === "mechanic") {
+        if (!data.user.technician) {
+          toast.error(isFa ? "شما مکانیک ثبت‌شده نیستید. ابتدا ثبت‌نام کنید." : "You are not a registered mechanic. Please apply first.");
+          setLoginTarget("customer");
+          setStage("entry");
+          return;
+        }
+        enterApp("mechanic", {
+          userId: data.user.id,
+          phone: fullPhone,
+          name: data.user.name,
+          isGuest: false,
+          verified: true,
+        });
+      } else {
+        enterApp("customer", {
+          userId: data.user.id,
+          phone: fullPhone,
+          name: data.user.name,
+          isGuest: false,
+          verified: true,
+        });
+      }
     } catch (e: any) {
       toast.error(e.message ?? t("splash.invalidCode"));
     } finally {
@@ -86,6 +104,24 @@ export function Splash() {
   const continueAsGuest = () => {
     enterApp("customer", { isGuest: true, verified: false, phone: null, name: "Guest", userId: null });
   };
+
+  // Track if this login is for the mechanic portal
+  const [loginTarget, setLoginTarget] = useState<"customer" | "mechanic">("customer");
+
+  // Listen for "go to mechanic login" event from application form
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setLoginTarget("mechanic");
+      if (detail?.phone) {
+        const num = detail.phone.replace(/\D/g, "");
+        setPhone(num.length > 10 ? num.slice(-10) : num);
+      }
+      setStage("phone");
+    };
+    window.addEventListener("mekanix-go-mechanic-login", handler);
+    return () => window.removeEventListener("mekanix-go-mechanic-login", handler);
+  }, []);
 
 
 
@@ -151,13 +187,26 @@ export function Splash() {
                 transition={{ delay: 1.7 }}
                 className="mt-10 space-y-2.5"
               >
-                <Button onClick={() => setStage("phone")} className="h-12 w-full bg-amber text-black hover:bg-amber/90">
+                <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full bg-amber text-black hover:bg-amber/90">
                   <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
                 </Button>
                 <Button onClick={continueAsGuest} variant="outline" className="h-11 w-full">
                   <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
                 </Button>
               </motion.div>
+
+              {/* Mechanic portal entry — separate from customer */}
+              <motion.button
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.85 }}
+                onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
+                className="mt-4 inline-flex items-center gap-2 text-[11px] text-white/40 transition-colors hover:text-[oklch(0.74_0.16_68)]"
+                dir={isFa ? "rtl" : "ltr"}
+              >
+                <Wrench className="size-3.5" /> {isFa ? "ورود مکانیک‌ها" : "Mechanic Portal"}
+                <ArrowRight className={isFa ? "size-3 rotate-180" : "size-3"} />
+              </motion.button>
 
               <motion.div
                 initial={{ opacity: 0 }}

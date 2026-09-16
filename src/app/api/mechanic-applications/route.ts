@@ -19,8 +19,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Full name and phone are required" }, { status: 400 });
   }
   const code = `APP-${Math.floor(1000 + Math.random() * 9000)}`;
-  const app = await db.mechanicApplication.create({
-    data: {
+
+  // Check if user with this phone already exists
+  let user = await db.user.findUnique({ where: { phone: phone.trim() } });
+
+  // Create or update user as TECHNICIAN
+  if (!user) {
+    user = await db.user.create({
+      data: {
+        name: fullName.trim(),
+        phone: phone.trim(),
+        email: email?.trim() || `mechanic+${phone.trim()}@mekanix.io`,
+        role: "TECHNICIAN",
+        phoneVerified: true,
+        avatar: `https://i.pravatar.cc/150?u=${phone.trim()}`,
+      },
+    });
+  } else {
+    user = await db.user.update({
+      where: { id: user.id },
+      data: { role: "TECHNICIAN", phoneVerified: true },
+    });
+  }
+
+  // Create technician profile if not exists
+  let tech = await db.technician.findUnique({ where: { userId: user.id } });
+  if (!tech) {
+    const specList = JSON.parse(JSON.stringify(specialties ?? [])) as string[];
+    tech = await db.technician.create({
+      data: {
+        userId: user.id,
+        bio: bio?.trim() || "MEKANIX-verified mobile technician.",
+        experienceYears: Number(experienceYears) || 0,
+        hourlyRate: 60,
+        travelFeeBase: 15000,
+        inspectionFee: 200000,
+        status: "ONLINE",
+        availableNow: true,
+        verified: true,
+        level: "SILVER",
+        rating: 5,
+        reviewCount: 0,
+        completedJobs: 0,
+        responseMins: 15,
+        lat: 37.7749,
+        lng: -122.4194,
+        specialties: { create: specList.map((cat: string) => ({ category: cat, label: cat.replace("-", " ") })) },
+        serviceAreas: {
+          create: city ? [{ name: city, lat: 37.7749, lng: -122.4194, radiusKm: 25 }] : [{ name: "San Francisco", lat: 37.7749, lng: -122.4194, radiusKm: 25 }],
+        },
+      },
+    });
+  }
+
+  // Auto-approve the application (upsert — if user already has one, update it)
+  const app = await db.mechanicApplication.upsert({
+    where: { userId: user.id },
+    create: {
       code,
       fullName: fullName.trim(),
       phone: phone.trim(),
@@ -31,24 +86,23 @@ export async function POST(req: Request) {
       certifications: certifications ? JSON.stringify(certifications) : null,
       bio: bio?.trim() || null,
       vehicleOwned: Boolean(vehicleOwned),
-      status: "PENDING",
+      status: "APPROVED",
+      userId: user.id,
+      reviewedAt: new Date(),
+    },
+    update: {
+      fullName: fullName.trim(),
+      phone: phone.trim(),
+      email: email?.trim() || null,
+      city: city?.trim() || null,
+      experienceYears: Number(experienceYears) || 0,
+      specialties: JSON.stringify(specialties ?? []),
+      bio: bio?.trim() || null,
+      vehicleOwned: Boolean(vehicleOwned),
+      status: "APPROVED",
+      reviewedAt: new Date(),
     },
   });
 
-  // Notify admin
-  const admin = await db.user.findFirst({ where: { role: "ADMIN" } });
-  if (admin) {
-    await db.notification.create({
-      data: {
-        userId: admin.id,
-        type: "new_request",
-        title: "New mechanic application",
-        body: `${fullName} applied (${code}) — review & verify`,
-        category: "system",
-        link: "admin/applications",
-      },
-    });
-  }
-
-  return NextResponse.json(app);
+  return NextResponse.json({ ...app, autoApproved: true, userId: user.id });
 }
