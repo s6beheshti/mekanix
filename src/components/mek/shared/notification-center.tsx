@@ -12,21 +12,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "./primitives";
 import { useApp } from "@/lib/store";
+import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 
 const CATEGORY_FILTERS = [
-  { key: "all", label: "All" },
-  { key: "job", label: "Jobs" },
-  { key: "payment", label: "Payments" },
-  { key: "message", label: "Messages" },
-  { key: "maintenance", label: "Maintenance" },
-  { key: "system", label: "System" },
+  { key: "all", labelKey: "notif.filter.all" },
+  { key: "job", labelKey: "notif.filter.job" },
+  { key: "payment", labelKey: "notif.filter.payment" },
+  { key: "message", labelKey: "notif.filter.message" },
+  { key: "maintenance", labelKey: "notif.filter.maintenance" },
+  { key: "system", labelKey: "notif.filter.system" },
 ] as const;
 
 export function NotificationCenter({ userId }: { userId: string }) {
   const [items, setItems] = useState<Notification[] | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const { go } = useApp();
+  const { t, isFa } = useT();
 
   const load = useCallback(async () => {
     const data = await api.listNotifications(userId).catch(() => []);
@@ -41,10 +43,10 @@ export function NotificationCenter({ userId }: { userId: string }) {
     };
     run();
     // poll for new notifications to simulate real-time
-    const t = setInterval(run, 12000);
+    const poll = setInterval(run, 12000);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearInterval(poll);
     };
   }, [userId]);
 
@@ -56,26 +58,26 @@ export function NotificationCenter({ userId }: { userId: string }) {
   const markAll = async () => {
     await api.markAllRead(userId).catch(() => {});
     setItems((prev) => prev?.map((n) => ({ ...n, read: true })) ?? null);
-    toast.success("All notifications marked as read");
+    toast.success(t("notif.markedAll"));
   };
 
   const filtered = items?.filter((n) => filter === "all" || n.category === filter);
   const unread = items?.filter((n) => !n.read).length ?? 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" dir={isFa ? "rtl" : "ltr"}>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <Bell className="size-4 text-amber" />
-          <h2 className="font-display text-sm font-semibold">Notifications</h2>
+          <h2 className="font-display text-sm font-semibold">{t("notif.title")}</h2>
           {unread > 0 && (
             <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">
-              {unread} new
+              {t("notif.unreadCount").replace("{n}", String(unread))}
             </span>
           )}
         </div>
         <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px]" onClick={markAll} disabled={!unread}>
-          <CheckCheck className="size-3.5" /> Mark all read
+          <CheckCheck className="size-3.5" /> {t("notif.markAllRead")}
         </Button>
       </div>
 
@@ -89,7 +91,7 @@ export function NotificationCenter({ userId }: { userId: string }) {
               filter === f.key ? "border-amber bg-amber/15 text-amber" : "border-border text-muted-foreground hover:text-foreground"
             )}
           >
-            {f.label}
+            {t(f.labelKey)}
           </button>
         ))}
       </div>
@@ -103,7 +105,7 @@ export function NotificationCenter({ userId }: { userId: string }) {
               ))}
             </div>
           ) : filtered && filtered.length === 0 ? (
-            <EmptyState icon={BellOff} title="No notifications" description="You're all caught up." className="m-2" />
+            <EmptyState icon={BellOff} title={t("notif.empty")} description={t("notif.emptyDesc")} className="m-2" />
           ) : (
             <div className="space-y-1">
               <AnimatePresence initial={false}>
@@ -135,11 +137,28 @@ export function NotificationCenter({ userId }: { userId: string }) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-2">
-                          <p className={cn("truncate text-[13px] font-medium", !n.read && "text-foreground")}>{n.title}</p>
-                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{fmtRelative(n.createdAt)}</span>
+                          <p className={cn("truncate text-[13px] font-medium", !n.read && "text-foreground")}>{t(`notif.type.${n.type}`, n.title)}</p>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{fmtRelative(n.createdAt, isFa ? "fa" : "en")}</span>
                         </div>
-                        <p className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">{n.body}</p>
-                        <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">{n.category}</span>
+                        <p className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">
+                          {(() => {
+                            const bodyKey = `notif.body.${n.type}`;
+                            const translated = t(bodyKey);
+                            if (translated === bodyKey) return n.body;
+                            const nameMatch = n.body.match(/^(.+?)\s+(?:is|has|on)/);
+                            const name = nameMatch?.[1] ?? "";
+                            const codeMatch = n.body.match(/(JOB-\d+)/);
+                            const code = codeMatch?.[1] ?? "";
+                            return translated
+                              .replace("{name}", name)
+                              .replace("{code}", code)
+                              .replace("{eta}", "")
+                              .replace("— ETA  دقیقه", "")
+                              .replace("{vehicle}", "")
+                              .replace("{title}", "");
+                          })()}
+                        </p>
+                        <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">{t(`notif.filter.${n.category}`)}</span>
                       </div>
                       {!n.read && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-amber mk-status-pulse" />}
                     </motion.button>

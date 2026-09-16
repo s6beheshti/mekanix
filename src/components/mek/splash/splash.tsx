@@ -87,15 +87,12 @@ export function Splash() {
     enterApp("customer", { isGuest: true, verified: false, phone: null, name: "Guest", userId: null });
   };
 
-  const enterAdmin = () => {
-    enterApp("admin", { isGuest: false, verified: true });
-  };
+
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
-      {/* Quiet technical backdrop */}
+    <div className="relative min-h-screen overflow-hidden bg-[#050607]">
       <div className="absolute inset-0 mk-grid-bg opacity-[0.22]" />
-      <div className="absolute left-1/2 top-1/3 size-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber/[0.07] blur-[140px]" />
+      <div className="absolute left-1/2 top-1/3 size-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.12), transparent 62%)" }} />
 
       {/* Language toggle — top-right */}
       <div className="absolute end-5 top-5 z-30 flex items-center gap-1 rounded-lg border border-border bg-card/60 p-0.5 backdrop-blur">
@@ -173,10 +170,7 @@ export function Splash() {
                   <Wrench className="size-3.5" /> {t("splash.applyMechanic")}
                   <ArrowRight className={isFa ? "size-3 rotate-180" : "size-3"} />
                 </button>
-                <span className="size-1 rounded-full bg-border" />
-                <button onClick={enterAdmin} className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground">
-                  <ShieldCheck className="size-3.5" /> {t("splash.operations")}
-                </button>
+
               </motion.div>
 
               <motion.p
@@ -285,50 +279,37 @@ export function Splash() {
   );
 }
 
-// ─── Hero logo: real brand mark, BIG, the visual hero of the splash ───
+// ─── Hero logo: real brand mark, inverted to light via CSS filter on pure black ───
 function HeroLogo() {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.85 }}
+      initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
       className="relative mx-auto grid place-items-center"
-      style={{ width: 300, height: 300 }}
+      style={{ width: 280, height: 200 }}
     >
-      {/* Spotlight disk — soft white so the dark logo mark reads on graphite */}
+      {/* Subtle amber ambient glow behind the mark — atmospheric, not a solid disk */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.1, duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.15, duration: 0.9 }}
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 240, height: 240,
-          background: "radial-gradient(circle at 50% 45%, oklch(0.98 0.003 95 / 0.92) 0%, oklch(0.95 0.004 95 / 0.6) 45%, transparent 72%)",
+          width: 260, height: 260,
+          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.12), transparent 60%)",
         }}
       />
-      {/* subtle amber inner edge tint */}
-      <div
-        className="pointer-events-none absolute rounded-full"
-        style={{ width: 240, height: 240, boxShadow: "inset 0 0 0 1px oklch(0.78 0.16 68 / 0.25)" }}
-      />
 
-      {/* The real logo mark */}
+      {/* The real logo — inverted to light via CSS filter so the dark logo reads on black */}
       <motion.img
         src="/logo.png"
         alt="MEKANIX"
         className="relative z-10 select-none object-contain"
-        style={{ width: 200, height: "auto" }}
+        style={{ width: 220, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      />
-
-      {/* One-time subtle ring pulse — draws the eye on load, then fades */}
-      <motion.div
-        initial={{ scale: 0.7, opacity: 0.5 }}
-        animate={{ scale: 1.35, opacity: 0 }}
-        transition={{ duration: 1.8, ease: "easeOut", delay: 0.4 }}
-        className="pointer-events-none absolute inset-0 rounded-full border border-amber/25"
+        transition={{ delay: 0.3, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
       />
     </motion.div>
   );

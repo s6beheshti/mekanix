@@ -6,8 +6,10 @@ import type { DemoUser } from "@/lib/use-active-user";
 import { api, type Technician } from "@/lib/api";
 import { SectionHeader, EmptyState, StarRating } from "@/components/mek/shared/primitives";
 import { fmtRelative } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 
 export function TechnicianReviews({ user }: { user: DemoUser }) {
+  const { t, isFa } = useT();
   const [tech, setTech] = useState<Technician | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,14 +28,14 @@ export function TechnicianReviews({ user }: { user: DemoUser }) {
   });
 
   return (
-    <div className="space-y-5">
-      <SectionHeader title="Reviews" subtitle="What customers say about your work" />
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      <SectionHeader title={t("tech.reviews.title")} subtitle={t("tech.reviews.subtitle")} />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div className="rounded-xl border border-border bg-card p-5 text-center">
           <p className="font-display text-5xl font-bold text-amber">{avg.toFixed(1)}</p>
           <div className="mt-2 flex justify-center"><StarRating value={avg} size={18} /></div>
-          <p className="mt-1 text-xs text-muted-foreground">{tech?.reviewCount} reviews</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tech?.reviewCount} {t("common.reviews")}</p>
           <div className="mt-4 space-y-1.5">
             {dist.map((d) => (
               <div key={d.star} className="flex items-center gap-2 text-[11px]">
@@ -49,7 +51,7 @@ export function TechnicianReviews({ user }: { user: DemoUser }) {
 
         <div className="space-y-2">
           {reviews.length === 0 ? (
-            <EmptyState icon={Star} title="No reviews yet" description="Reviews appear after you complete jobs." />
+            <EmptyState icon={Star} title={t("tech.reviews.empty")} description={t("tech.reviews.emptyDesc")} />
           ) : (
             reviews.map((r: any, i: number) => (
               <motion.div
@@ -66,13 +68,13 @@ export function TechnicianReviews({ user }: { user: DemoUser }) {
                     </div>
                     <div>
                       <p className="text-sm font-medium">{r.fromUser?.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{fmtRelative(r.createdAt)}</p>
+                      <p className="text-[10px] text-muted-foreground">{fmtRelative(r.createdAt, isFa ? "fa" : "en")}</p>
                     </div>
                   </div>
                   <StarRating value={r.rating} size={13} />
                 </div>
                 {r.comment && <p className="mt-2 text-sm text-muted-foreground">"{r.comment}"</p>}
-                {r.tags && (() => { try { const t = JSON.parse(r.tags); return Array.isArray(t) && t.length ? <div className="mt-2 flex flex-wrap gap-1">{t.map((tag: string) => <span key={tag} className="rounded-full bg-amber/10 px-2 py-0.5 text-[10px] text-amber">{tag}</span>)}</div> : null; } catch { return null; } })()}
+                {r.tags && (() => { try { const tags = JSON.parse(r.tags); return Array.isArray(tags) && tags.length ? <div className="mt-2 flex flex-wrap gap-1">{tags.map((tag: string) => <span key={tag} className="rounded-full bg-amber/10 px-2 py-0.5 text-[10px] text-amber">{t(`completion.tag.${tag}`, tag)}</span>)}</div> : null; } catch { return null; } })()}
               </motion.div>
             ))
           )}

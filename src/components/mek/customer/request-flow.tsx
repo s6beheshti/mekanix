@@ -1,20 +1,21 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Mic, Upload, Search, Star,
-  BadgeCheck, Clock, Zap, ShieldCheck, Navigation as NavIcon, ArrowLeft, CheckCircle2,
+  ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Upload, Search, Star,
+  BadgeCheck, Clock, Zap, ShieldCheck, Navigation as NavIcon, ArrowLeft,
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
 import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
-import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, JOB_STATUS_FLOW, typesForMode } from "@/lib/constants";
+import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, typesForMode } from "@/lib/constants";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { VehicleCard } from "@/components/mek/shared/vehicle-card";
 import { TechnicianCard } from "@/components/mek/shared/technician-card";
 import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { UrgencyBadge } from "@/components/mek/shared/status-badge";
-import { fmtDistance, fmtDuration, haversine } from "@/lib/format";
+import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
+import { fmtDuration, haversine } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,31 +24,46 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { X } from "lucide-react";
+import { useT } from "@/lib/use-t";
 
 // ─── Step 1: Select Machine ───
 export function RequestType({ customer }: { customer: DemoUser }) {
-  const { go, params } = useApp();
+  const { go, params, machineMode } = useApp();
+  const { t, isFa, type: typeLabel } = useT();
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(params.type ?? null);
 
+  const allowedTypes = typesForMode(machineMode);
+
   useEffect(() => {
-    if (customer.customer) api.listVehicles(customer.customer.id).then(setVehicles).catch(() => setVehicles([]));
-  }, [customer]);
+    if (customer.customer)
+      api.listVehicles(customer.customer.id)
+        .then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))))
+        .catch(() => setVehicles([]));
+  }, [customer, machineMode]);
 
   const saved = vehicles ?? [];
   const hasSaved = saved.length > 0;
 
   const proceed = (vehicle?: Vehicle, type?: string) => {
-    go("describe", { vehicleId: vehicle?.id, type: type ?? vehicle?.type ?? selectedType ?? "CAR" });
+    go("describe", { vehicleId: vehicle?.id, type: type ?? vehicle?.type ?? selectedType ?? (machineMode === "heavy" ? "TRUCK" : "CAR") });
   };
 
+  const visibleMachineTypes = MACHINE_TYPES.filter((m) => allowedTypes.includes(m.slug));
+
   return (
-    <div className="space-y-5">
-      <StepHeader step={1} total={3} title="Select Machine" subtitle="Choose a saved machine or pick a type to continue" onBack={() => go("home")} />
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      <StepHeader
+        step={1}
+        total={3}
+        title={t("req.selectMachine")}
+        subtitle={t("req.selectMachineSub")}
+        onBack={() => go("home")}
+      />
 
       {hasSaved && (
         <section>
-          <SectionHeader title="Saved in Your Fleet" subtitle="Tap a machine to request service" />
+          <SectionHeader title={t("req.savedFleet")} subtitle={t("req.savedFleetSub")} />
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {saved.map((v) => (
               <VehicleCard key={v.id} vehicle={v} selected={params.vehicleId === v.id} onSelect={() => proceed(v)} />
@@ -57,9 +73,12 @@ export function RequestType({ customer }: { customer: DemoUser }) {
       )}
 
       <section>
-        <SectionHeader title={hasSaved ? "Or Pick a New Type" : "What needs service?"} subtitle="Select the machine category" />
+        <SectionHeader
+          title={hasSaved ? t("req.pickType") : t("req.whatNeeds")}
+          subtitle={t("req.whatNeedsSub")}
+        />
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {MACHINE_TYPES.map((m) => (
+          {visibleMachineTypes.map((m) => (
             <motion.button
               key={m.slug}
               whileHover={{ y: -2 }}
@@ -69,7 +88,7 @@ export function RequestType({ customer }: { customer: DemoUser }) {
               <div className={`mx-auto grid size-12 place-items-center rounded-xl border ${selectedType === m.slug ? "border-amber/40 bg-amber/10" : "border-border bg-background"}`}>
                 <MekIcon name={m.icon} className={`size-6 ${selectedType === m.slug ? "text-amber" : "text-muted-foreground"}`} />
               </div>
-              <p className="mt-2 font-display text-sm font-semibold">{m.label}</p>
+              <p className="mt-2 font-display text-sm font-semibold">{typeLabel(m.slug)}</p>
             </motion.button>
           ))}
         </div>
@@ -81,6 +100,8 @@ export function RequestType({ customer }: { customer: DemoUser }) {
 // ─── Step 2: Describe Problem ───
 export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const { go, params, machineMode, auth, exitToSplash } = useApp();
+  const { t, isFa, cat, type: typeLabel, money } = useT();
+  const lang = isFa ? "fa" : "en";
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
   const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
@@ -90,24 +111,44 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const [description, setDescription] = useState("");
   const [address, setAddress] = useState("Pier 38, San Francisco, CA");
   const [media, setMedia] = useState<string[]>([]);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [guestBlock, setGuestBlock] = useState(false);
 
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+
+  const allowedTypes = typesForMode(machineMode);
+
   useEffect(() => {
-    if (customer.customer) api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => typesForMode(machineMode).includes(x.type))));
+    if (customer.customer)
+      api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))));
   }, [customer, machineMode]);
 
-  const addMockMedia = () => {
-    const id = Math.floor(Math.random() * 1000);
-    setMedia((m) => [...m, `https://picsum.photos/seed/mek${id}/120/120`]);
-    toast.success("Photo attached");
+  const readFileAsDataURL = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+  const onFilesSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    try {
+      const urls = await Promise.all(Array.from(files).slice(0, 6).map(readFileAsDataURL));
+      setMedia((m) => [...m, ...urls].slice(0, 12));
+      toast.success(isFa ? "عکس ضمیمه شد" : t("req.field.photoAttached"));
+    } catch {
+      toast.error(isFa ? "بارگذاری عکس ناموفق بود" : "Could not attach photo");
+    }
   };
 
   const submit = async () => {
     if (auth.isGuest) { setGuestBlock(true); return; }
-    if (!category) { toast.error("Pick a service category"); return; }
-    if (!title.trim()) { toast.error("Add a short title"); return; }
-    if (!vehicleId && !type) { toast.error("Select a machine"); return; }
+    if (!category) { toast.error(t("req.error.category")); return; }
+    if (!title.trim()) { toast.error(t("req.error.title")); return; }
+    if (!vehicleId && !type) { toast.error(t("req.error.machine")); return; }
     setSubmitting(true);
     try {
       const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
@@ -124,7 +165,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
         lat,
         lng,
       });
-      toast.success(`Request ${sr.code} created`);
+      toast.success(t("req.created").replace("{code}", sr.code));
       go("matching", { requestId: sr.id });
     } catch (e: any) {
       toast.error(e.message ?? "Failed to create request");
@@ -136,14 +177,20 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
 
   return (
-    <div className="space-y-5">
-      <StepHeader step={2} total={3} title="Describe the Problem" subtitle="Tell us what's going on with your machine" onBack={() => go("request-type")} />
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      <StepHeader
+        step={2}
+        total={3}
+        title={t("req.describe")}
+        subtitle={t("req.describeSub")}
+        onBack={() => go("request-type")}
+      />
 
       <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-5">
           {/* Machine */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Machine</Label>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.machine")}</Label>
             {selectedVehicle ? (
               <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 p-3">
                 <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
@@ -151,23 +198,23 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{selectedVehicle.make} {selectedVehicle.model}</p>
-                  <p className="text-[11px] text-muted-foreground">{selectedVehicle.type} · {selectedVehicle.year}</p>
+                  <p className="text-[11px] text-muted-foreground">{typeLabel(selectedVehicle.type)} · {selectedVehicle.year}</p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => { setVehicleId(undefined); }}>Change</Button>
+                <Button variant="ghost" size="sm" onClick={() => { setVehicleId(undefined); }}>{t("req.field.change")}</Button>
               </div>
             ) : (
               <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-3">
                 <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
                   <MekIcon name={iconForMachineType(type)} className="size-5 text-amber" />
                 </div>
-                <span className="text-sm font-medium">{MACHINE_TYPES.find((m) => m.slug === type)?.label}</span>
+                <span className="text-sm font-medium">{typeLabel(type)}</span>
               </div>
             )}
             {vehicles.length > 0 && !selectedVehicle && (
               <Select onValueChange={setVehicleId} value={vehicleId ?? ""}>
-                <SelectTrigger className="mt-2"><SelectValue placeholder="Link to saved machine (optional)" /></SelectTrigger>
+                <SelectTrigger className="mt-2"><SelectValue placeholder={t("req.field.linkSaved")} /></SelectTrigger>
                 <SelectContent>
-                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.make} {v.model} · {v.type}</SelectItem>)}
+                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.make} {v.model} · {typeLabel(v.type)}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -175,7 +222,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
 
           {/* Category */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Service Category</Label>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.category")}</Label>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {SERVICE_CATEGORIES.map((c) => (
                 <button
@@ -184,7 +231,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
                   className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-colors ${category === c.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
                 >
                   <MekIcon name={c.icon} className={`size-4 shrink-0 ${category === c.slug ? "text-amber" : "text-muted-foreground"}`} />
-                  <span className="text-[11px] font-medium leading-tight">{c.label}</span>
+                  <span className="text-[11px] font-medium leading-tight">{cat(c.slug)}</span>
                 </button>
               ))}
             </div>
@@ -192,37 +239,103 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
 
           {/* Title + description */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Problem Summary</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Loud knocking under load at 1600 RPM" className="mt-2" maxLength={120} />
-            <Label className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">Describe Symptoms</Label>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.summary")}</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("req.field.summaryPlaceholder")} className="mt-2" maxLength={120} />
+            <Label className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.symptoms")}</Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="When does it happen? Any warning lights? Recent changes? The more detail, the better the match."
+              placeholder={t("req.field.symptomsPlaceholder")}
               rows={4}
               className="mt-2"
               maxLength={1000}
             />
-            <p className="mt-1 text-right text-[10px] text-muted-foreground">{description.length}/1000</p>
+            <p className="mt-1 text-right text-[10px] text-muted-foreground">
+              {isFa ? description.length.toLocaleString("fa-IR") : description.length}/1000
+            </p>
           </div>
 
           {/* Media */}
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center justify-between">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attach Photos / Video</Label>
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.attach")}</Label>
               <div className="flex gap-1">
-                <Button variant="outline" size="sm" onClick={addMockMedia}><Camera className="mr-1 size-3.5" /> Add</Button>
-                <Button variant="ghost" size="sm" onClick={() => toast.info("Voice recording ready")}><Mic className="size-3.5" /></Button>
-                <Button variant="ghost" size="sm" onClick={() => toast.info("Upload from device")}><Upload className="size-3.5" /></Button>
+                {/* Camera capture — direct to camera on mobile */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                >
+                  <Camera className="mr-1 size-3.5" /> {t("req.field.addPhoto")}
+                </Button>
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    onFilesSelected(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                {/* Gallery upload */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                >
+                  <Upload className="size-3.5" />
+                </Button>
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    onFilesSelected(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                {/* Voice recorder */}
+                <VoiceRecorder
+                  lang={lang}
+                  onRecorded={(blob) => {
+                    setVoiceNote(URL.createObjectURL(blob));
+                    toast.success(isFa ? "صدای ضبط شد" : "Voice recorded");
+                  }}
+                />
               </div>
             </div>
-            {media.length > 0 && (
+
+            {(media.length > 0 || voiceNote) && (
               <div className="mt-3 flex flex-wrap gap-2">
+                {voiceNote && (
+                  <div className="relative flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/5 p-2">
+                    <audio src={voiceNote} controls className="h-8 w-40" />
+                    <button
+                      onClick={() => setVoiceNote(null)}
+                      className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
+                      aria-label={isFa ? "حذف صدا" : "Remove voice"}
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  </div>
+                )}
                 {media.map((url, i) => (
                   <div key={i} className="relative">
-                    { }
                     <img src={url} alt="" className="size-16 rounded-lg border border-border object-cover" />
-                    <button onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))} className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"><X className="size-2.5" /></button>
+                    <button
+                      onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))}
+                      className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"
+                      aria-label={isFa ? "حذف عکس" : "Remove photo"}
+                    >
+                      <X className="size-2.5" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -233,7 +346,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
         {/* Right column: urgency + location + submit */}
         <div className="space-y-5">
           <div className="rounded-xl border border-border bg-card p-4">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Urgency</Label>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.urgency")}</Label>
             <div className="mt-3 space-y-2">
               {URGENCY.map((u) => (
                 <button
@@ -243,8 +356,8 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
                 >
                   <UrgencyBadge urgency={u.slug} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{u.label}</p>
-                    <p className="text-[11px] text-muted-foreground">{u.desc}</p>
+                    <p className="text-sm font-medium">{t(`urgency.${u.slug}`)}</p>
+                    <p className="text-[11px] text-muted-foreground">{t(`urgency.${u.slug}.desc`)}</p>
                   </div>
                 </button>
               ))}
@@ -252,7 +365,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
           </div>
 
           <div className="rounded-xl border border-border bg-card p-4">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Service Location</Label>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.location")}</Label>
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
               <MapPin className="size-4 text-amber" />
               <Input value={address} onChange={(e) => setAddress(e.target.value)} className="border-0 px-0 focus-visible:ring-0" />
@@ -265,7 +378,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
           <div className="sticky bottom-3">
             <Button onClick={submit} disabled={submitting} className="w-full bg-amber text-black hover:bg-amber/90">
               {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
-              Find Technicians
+              {submitting ? t("req.finding") : t("req.findTechnicians")}
             </Button>
           </div>
         </div>
@@ -276,15 +389,15 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-display">
-              <ShieldCheck className="size-4 text-amber" /> Sign in required
+              <ShieldCheck className="size-4 text-amber" /> {t("req.guest.title")}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            To submit a service request, please sign in with your mobile number. Guests can browse the platform but cannot place requests.
+            {t("req.guest.body")}
           </p>
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="ghost" onClick={() => setGuestBlock(false)}>Later</Button>
-            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>Sign in now</Button>
+            <Button variant="ghost" onClick={() => setGuestBlock(false)}>{t("req.guest.later")}</Button>
+            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>{t("req.guest.signInNow")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -295,26 +408,31 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
 // ─── Step 3: Matching ───
 export function Matching({ customer }: { customer: DemoUser }) {
   const { go, params } = useApp();
+  const { t, isFa, money } = useT();
+  const lang = isFa ? "fa" : "en";
   const [techs, setTechs] = useState<Technician[] | null>(null);
   const [phase, setPhase] = useState<"searching" | "results">("searching");
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     const lat = 37.7749, lng = -122.4194;
-    api.listTechnicians({ lat, lng }).then((t) => {
+    api.listTechnicians({ lat, lng }).then((tList) => {
       // simulate searching delay
       setTimeout(() => {
-        setTechs(t);
+        setTechs(tList);
         setPhase("results");
       }, 1900);
     });
   }, []);
 
-  const ranked = (techs ?? []).map((t) => {
-    const km = t.lat && t.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: t.lat, lng: t.lng }) : 99;
-    const eta = Math.max(5, Math.round((km / 35) * 60) + t.responseMins);
-    const score = t.rating * 20 - km * 0.4 + (t.verified ? 5 : 0) + t.completedJobs * 0.02;
-    return { tech: t, km, eta, score };
+  const ranked = (techs ?? []).map((tk) => {
+    const km = tk.lat && tk.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: tk.lat, lng: tk.lng }) : 99;
+    const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
+    const score = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+    // Inspection fee ~ 30min at hourly rate; travel fee scales with distance
+    const inspectionFee = Math.round((tk.hourlyRate * 0.5) * 100) / 100;
+    const travelFee = Math.round((tk.travelFeeBase + km * 0.5) * 100) / 100;
+    return { tech: tk, km, eta, score, inspectionFee, travelFee };
   }).sort((a, b) => b.score - a.score);
 
   const onSelect = (techId: string) => {
@@ -323,8 +441,14 @@ export function Matching({ customer }: { customer: DemoUser }) {
   };
 
   return (
-    <div className="space-y-5">
-      <StepHeader step={3} total={3} title="Matching Technicians" subtitle="We found qualified, verified specialists near you" onBack={() => go("describe")} />
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      <StepHeader
+        step={3}
+        total={3}
+        title={t("req.matching")}
+        subtitle={t("req.matchingSub")}
+        onBack={() => go("describe")}
+      />
 
       <AnimatePresence mode="wait">
         {phase === "searching" ? (
@@ -339,19 +463,24 @@ export function Matching({ customer }: { customer: DemoUser }) {
                 <Search className="size-8 text-amber" />
               </div>
             </div>
-            <p className="mt-6 font-display text-lg font-semibold">Searching nearby technicians…</p>
-            <p className="text-sm text-muted-foreground">Analyzing distance, expertise, availability & ratings</p>
-            <div className="mt-4 flex gap-6 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1"><NavIcon className="size-3 text-amber" /> Distance</span>
-              <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> Rating</span>
-              <span className="inline-flex items-center gap-1"><BadgeCheck className="size-3 text-amber" /> Certifications</span>
-              <span className="inline-flex items-center gap-1"><Clock className="size-3 text-amber" /> ETA</span>
+            <p className="mt-6 font-display text-lg font-semibold">{t("req.searching")}</p>
+            <p className="text-sm text-muted-foreground">{t("req.searchingSub")}</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-6 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1"><NavIcon className="size-3 text-amber" /> {t("req.search.distance")}</span>
+              <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> {t("req.search.rating")}</span>
+              <span className="inline-flex items-center gap-1"><BadgeCheck className="size-3 text-amber" /> {t("req.search.certs")}</span>
+              <span className="inline-flex items-center gap-1"><Clock className="size-3 text-amber" /> {t("req.search.eta")}</span>
             </div>
           </motion.div>
         ) : (
           <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {ranked.length === 0 ? (
-              <EmptyState icon={Search} title="No technicians available" description="Try expanding your urgency or location. Emergency dispatch available 24/7." action={<Button onClick={() => go("describe")} variant="outline">Back to details</Button>} />
+              <EmptyState
+                icon={Search}
+                title={t("req.noMatch")}
+                description={t("req.noMatchDesc")}
+                action={<Button onClick={() => go("describe")} variant="outline">{t("req.backToDetails")}</Button>}
+              />
             ) : (
               <div className="grid gap-3 lg:grid-cols-2">
                 {ranked.map((r, i) => (
@@ -361,6 +490,8 @@ export function Matching({ customer }: { customer: DemoUser }) {
                     distanceKm={r.km}
                     etaMins={r.eta}
                     rank={i + 1}
+                    inspectionFee={r.inspectionFee}
+                    travelFee={r.travelFee}
                     selected={selected === r.tech.id}
                     onSelect={() => onSelect(r.tech.id)}
                   />
@@ -377,6 +508,8 @@ export function Matching({ customer }: { customer: DemoUser }) {
 // ─── Technician Profile ───
 export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
+  const { t, isFa, money, cat } = useT();
+  const lang = isFa ? "fa" : "en";
   const [tech, setTech] = useState<Technician | null>(null);
   const [requesting, setRequesting] = useState(false);
 
@@ -389,22 +522,18 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
     try {
       // assign the technician to the request + create a job in REQUESTED state
       const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
-      if (!sr) throw new Error("Request not found");
-      // create job
-      const res = await fetch("/api/jobs", { method: "POST" as any }).catch(() => null);
-      // The job creation needs a dedicated endpoint; use the matching+status flow instead:
-      // We'll create the job by patching the request's matchedTech and creating via a dedicated endpoint.
+      if (!sr) throw new Error(t("req.techProfile.requestNotFound"));
       const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ technicianId: params.technicianId }),
       });
       const job = await jobRes.json();
-      if (!job?.id) throw new Error("Failed to assign technician");
-      toast.success(`${tech?.user.name} has been notified`);
+      if (!job?.id) throw new Error(t("req.techProfile.assignFailed"));
+      toast.success(t("req.techProfile.notified").replace("{name}", tech?.user.name ?? ""));
       go("track", { jobId: job.id });
     } catch (e: any) {
-      toast.error(e.message ?? "Could not assign technician");
+      toast.error(e.message ?? t("req.techProfile.assignFailed"));
     } finally {
       setRequesting(false);
     }
@@ -413,9 +542,9 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
   if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Back to results
+        <ArrowLeft className="size-4" /> {t("req.backToResults")}
       </button>
 
       {/* Header */}
@@ -435,14 +564,14 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
             </div>
             <div className="mt-1 flex items-center gap-2 text-sm">
               <StarRating value={tech.rating} />
-              <span className="font-semibold">{tech.rating.toFixed(2)}</span>
-              <span className="text-muted-foreground">· {tech.reviewCount} reviews · {tech.completedJobs} jobs</span>
+              <span className="font-semibold">{isFa ? tech.rating.toFixed(2).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.rating.toFixed(2)}</span>
+              <span className="text-muted-foreground">· {tech.reviewCount} {t("common.reviews")} · {tech.completedJobs} {t("common.jobs")}</span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="font-display text-2xl font-bold text-amber">${tech.hourlyRate}<span className="text-xs text-muted-foreground">/hr</span></div>
-            <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins)} avg response</div>
+            <div className="font-display text-2xl font-bold text-amber">{money(tech.hourlyRate)}<span className="text-xs text-muted-foreground">/hr</span></div>
+            <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
           </div>
         </div>
       </div>
@@ -451,12 +580,12 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
         <div className="space-y-4">
           {/* Specialties */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Specialties</h3>
+            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.specialties")}</h3>
             <div className="mt-3 flex flex-wrap gap-2">
               {tech.specialties.map((s) => (
                 <span key={s.id} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs">
                   <MekIcon name={iconForCategory(s.category)} className="size-3.5 text-amber" />
-                  {s.label}
+                  {cat(s.category)}
                 </span>
               ))}
             </div>
@@ -464,7 +593,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
 
           {/* Certifications */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Certifications</h3>
+            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.certifications")}</h3>
             <div className="mt-3 space-y-2">
               {tech.certifications.map((c) => (
                 <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
@@ -475,7 +604,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
                     <p className="text-sm font-medium">{c.name}</p>
                     <p className="text-[11px] text-muted-foreground">{c.issuer} · {c.year}</p>
                   </div>
-                  {c.verified ? <span className="rounded bg-emerald-glow/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-glow">Verified</span> : <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Pending</span>}
+                  {c.verified ? <span className="rounded bg-emerald-glow/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-glow">{t("common.verified")}</span> : <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{t("common.pending")}</span>}
                 </div>
               ))}
             </div>
@@ -483,7 +612,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
 
           {/* Reviews */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Recent Reviews</h3>
+            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.recentReviews")}</h3>
             <div className="mt-3 space-y-3">
               {(tech as any).reviews?.slice(0, 3).map((r: any) => (
                 <div key={r.id} className="rounded-lg border border-border bg-background p-3">
@@ -498,7 +627,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
                   </div>
                   {r.comment && <p className="mt-1.5 text-sm text-muted-foreground">"{r.comment}"</p>}
                 </div>
-              )) ?? <p className="text-sm text-muted-foreground">No reviews yet.</p>}
+              )) ?? <p className="text-sm text-muted-foreground">{t("req.techProfile.noReviews")}</p>}
             </div>
           </div>
         </div>
@@ -506,23 +635,24 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
         {/* Right: booking card */}
         <div className="space-y-4">
           <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Request this Technician</h3>
+            <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
             <div className="mt-3 space-y-2 text-sm">
-              <Row label="Hourly rate" value={`$${tech.hourlyRate}/hr`} />
-              <Row label="Travel fee" value={`$${tech.travelFeeBase}`} />
-              <Row label="Est. arrival" value={fmtDuration(tech.responseMins)} />
-              <Row label="Experience" value={`${tech.experienceYears} yrs`} />
-              <Row label="Level" value={tech.level} />
+              <Row label={t("req.techProfile.hourlyRate")} value={`${money(tech.hourlyRate)}/hr`} />
+              <Row label={t("req.techProfile.travelFee")} value={money(tech.travelFeeBase)} />
+              <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
+              <Row label={t("req.techProfile.experience")} value={`${isFa ? String(tech.experienceYears).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]) : tech.experienceYears} ${isFa ? "سال" : "yrs"}`} />
+              <Row label={t("req.techProfile.level")} value={tech.level} />
+              <Row label={t("fees.totalEstimate")} value={money(tech.hourlyRate * 0.5 + tech.travelFeeBase)} />
             </div>
             <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
               <ShieldCheck className="mr-1 inline size-3.5 text-amber" />
-              MEKANIX guarantee: free re-diagnosis if fault persists within 7 days.
+              {t("req.techProfile.guarantee")}
             </div>
             <Button onClick={request} disabled={requesting} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
               {requesting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
-              Request Now
+              {t("req.techProfile.requestNow")}
             </Button>
-            <p className="mt-2 text-center text-[10px] text-muted-foreground">No charge until work is approved.</p>
+            <p className="mt-2 text-center text-[10px] text-muted-foreground">{t("req.techProfile.noCharge")}</p>
           </div>
         </div>
       </div>
@@ -541,12 +671,19 @@ function Row({ label, value }: { label: string; value: string }) {
 
 // ─── Shared step header ───
 function StepHeader({ step, total, title, subtitle, onBack }: { step: number; total: number; title: string; subtitle?: string; onBack: () => void }) {
+  const { t, isFa } = useT();
+  const stepLabel = isFa
+    ? `${t("req.step")} ${String(step).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])} ${t("req.stepOf")} ${String(total).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])}`
+    : `${t("req.step")} ${step} ${t("req.stepOf")} ${total}`;
   return (
     <div className="flex items-center gap-3">
-      <Button variant="ghost" size="icon" className="size-8" onClick={onBack}><ChevronLeft className="size-4" /></Button>
+      <Button variant="ghost" size="icon" className="size-8" onClick={onBack}>
+        <ChevronLeft className="size-4 rtl:hidden" />
+        <ChevronRight className="size-4 hidden rtl:block" />
+      </Button>
       <div className="flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-amber">Step {step} / {total}</span>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-amber">{stepLabel}</span>
           <div className="h-px flex-1 bg-border" />
         </div>
         <h1 className="mt-1 font-display text-xl font-semibold tracking-tight">{title}</h1>

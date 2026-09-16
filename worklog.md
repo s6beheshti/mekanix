@@ -173,3 +173,140 @@ Stage Summary:
 - All format functions: lang-aware (Persian digits, IRR conversion, شمسی dates)
 - StatusBadge: translates status names
 - i18n: 2,368 lines, 1,085 keys × 2 languages — complete
+
+---
+Task ID: URGENT-TRANSLATE-ALL
+Agent: general-purpose (i18n component audit + fix)
+Task: Comprehensive translation audit + fix ALL components to use useT() translations
+
+Work Log:
+- Read worklog.md context, src/lib/i18n.ts (2368 lines, 1085 keys × 2 langs), src/lib/use-t.ts (t/isFa/money/cat/type/notifType helpers), src/lib/format.ts (lang-aware fmtMoney/fmtDate/fmtRelative/fmtDistance/fmtDuration)
+- Verified which files actually exist; the 6 files from the task spec (vip.tsx, prepay.tsx, fleet-dashboard.tsx, maintenance.tsx, rewards.tsx, admin-portal.tsx) do NOT exist in the codebase — admin portal is split into 12 separate files under src/components/mek/admin/, with overview.tsx being the main dashboard (translated)
+
+Per-file changes (added `import { useT } from "@/lib/use-t"`, destructured `{ t, isFa, money }` (and `cat`/`type` where needed), replaced hardcoded English with t() calls, added `dir={isFa ? "rtl" : "ltr"}` to root containers, swapped `$${amount}` → `money(amount)`, swapped `fmtDate(date)` → `fmtDate(date, undefined, isFa ? "fa" : "en")`, swapped `fmtRelative(date)` → `fmtRelative(date, isFa ? "fa" : "en")`, swapped `fmtDistance(d)` → `fmtDistance(d, isFa ? "fa" : "en")`, swapped `fmtDuration(m)` → `fmtDuration(m, isFa ? "fa" : "en")`):
+
+1. src/components/mek/customer/home.tsx — ~30 strings (hero text, mode badge, guest banner, CTA buttons, feature strip, Live Ops panel, coverage zone, mini-metrics, section headers, empty states, quick-action labels/descriptions, ActiveJobCard location/time)
+2. src/components/mek/customer/tracking.tsx — ~22 strings (job progress, machine/technician/diagnosis headers, ETA, refresh, estimate-ready banner, complete banner, need help, cancel dialog, all toast messages)
+3. src/components/mek/customer/invoice.tsx — ~28 strings (title, draft badge, invoice status (via invst.*), diagnosis, parts table headers, diagnostic photos, line items: labor/parts/travel/subtotal/tax/discount/total, secure-payment, approve&pay, payment-complete, paid-on with {amount}+{date} interpolation, payment methods via pay.*, view-invoice/summary)
+4. src/components/mek/customer/completion.tsx — ~22 strings (back, service-complete banner, repair summary, diagnosis, technician notes, replaced parts, warranty-active/desc, rate title, rate-question with {name} interpolation, 6 review tags via completion.tag.*, comment placeholder, submit, view-history, done)
+5. src/components/mek/customer/settings.tsx — ~25 strings (title/subtitle, profile/regional/notifications/security cards, profile fields, regional fields, theme options via common.dark/light/system, 5 notification toggles, 3 security actions, save-changes, save toast; added live `useApp.setState({ lang })` for language select)
+6. src/components/mek/customer/vip.tsx — FILE DOES NOT EXIST (no customer VIP flow in current codebase)
+7. src/components/mek/customer/prepay.tsx — FILE DOES NOT EXIST (pre-service payment not in current codebase; invoice.tsx handles payment flow)
+8. src/components/mek/customer/fleet-dashboard.tsx — FILE DOES NOT EXIST (fleet is customer/vehicles.tsx)
+9. src/components/mek/customer/maintenance.tsx — FILE DOES NOT EXIST (maintenance section not implemented as separate view)
+10. src/components/mek/customer/rewards.tsx — FILE DOES NOT EXIST (referral/loyalty not implemented as separate view)
+11. src/components/mek/shared/notification-center.tsx — ~12 strings (title, mark-all-read, marked-all toast, unreadCount with {n} interpolation, empty/emptyDesc, 6 category filters via notif.filter.*, notif category badge on each item; renamed local `t` (interval) to `poll` to avoid clash with translation fn)
+12. src/components/mek/technician/dashboard.tsx — ~18 strings (online/offline hero status, toggle labels, KPI labels (Today/This Week/Rating/Completed with sub-labels Earnings/Revenue/reviews/Lifetime jobs), Incoming/Active section headers, empty states for both online/offline variants)
+13. src/components/mek/technician/requests.tsx — ~14 strings (title/subtitle, New/Active/Recent section headers, no-new/no-active/no-completed empties, accept/decline/details buttons, accepted/declined toasts, est. payout, away/eta inline labels)
+14. src/components/mek/technician/job-detail.tsx — ~30 strings (next-action bar with dynamic NEXT_ACTION_KEYS lookup; Customer/Machine/Reported Problem/Diagnosis/Parts/Progress/Activity headers; diagnosis textarea placeholder, fault code/severity labels, 3 severity options; save-diagnosis; part name/qty/price placeholders; estimate preview (labor/parts/travel/est-total); send-estimate; status banners for paid/approved/waiting; issue-invoice with {code} interpolation; open-chat/view-earnings footer; not-found toast)
+15. src/components/mek/technician/earnings.tsx — ~22 strings (title/subtitle, Available/Today/This Week/Pending KPIs with sub-labels Ready-to-withdraw/In-escrow, revenue-14 chart title, Earned legend, Payout Schedule, next payout + auto-deposit copy, Withdraw Now, 14-day trend, Recent Payments section, no-payments empty + desc, table headers Job/Customer/Date/Amount)
+16. src/components/mek/technician/schedule.tsx — ~9 strings (title/subtitle, Calendar card title, Service Areas card title, Save Availability + saved toast, Add Area + desc toast, radius label; localized date format via `toLocaleDateString(isFa ? "fa-IR" : "en-US")`)
+17. src/components/mek/technician/profile.tsx — ~16 strings (title/subtitle, save button + saved toast, Verified badge, reviews/jobs/yrs/hr inline, Bio & Rates card, bio/hourly-rate/travel-fee labels, Specialties card, Certifications card + Add button + addCertDesc toast, Verified/Pending cert status badges; specials labels translated via cat(slug))
+18. src/components/mek/technician/reviews.tsx — ~6 strings (title/subtitle, empty/emptyDesc, common.reviews suffix; review tags translated via completion.tag.<key>; localized fmtRelative)
+19. src/components/mek/admin/admin-portal.tsx — FILE DOES NOT EXIST (admin portal split into 12 files)
+   - Translated src/components/mek/admin/overview.tsx instead — ~32 strings (title/subtitle/Live badge, 7 KPI labels, Revenue&JobVolume chart title, Job Status Breakdown, Service Categories (with category labels via cat.*), Customer Satisfaction, Positive, Completed 30d, Geographic Activity + techsActive with {n}, Tech Performance header + Top-by-revenue, table columns Technician/Jobs/Rating/Revenue, Recent Activity header + No activity empty)
+
+Also fixed (bonus, listed indirectly):
+- src/components/mek/customer/chat.tsx — empty-state strings + dir
+- src/components/mek/technician/chat.tsx — empty-state strings + dir
+
+Stage Summary:
+- Files modified: 15 component files (13 from the requested list + 2 chat files)
+- Files NOT modified (do not exist in codebase): vip.tsx, prepay.tsx, fleet-dashboard.tsx, maintenance.tsx, rewards.tsx, admin-portal.tsx (6 files)
+- Total hardcoded English strings replaced with t() calls: ~285 strings across the 15 files
+- All money values now go through `money(amount)` (auto IRR conversion + Persian digits for fa)
+- All dates go through `fmtDate(date, undefined, isFa ? "fa" : "en")` (شمسی calendar for fa)
+- All relative times go through `fmtRelative(date, isFa ? "fa" : "en")` ("۵ دقیقه پیش" etc.)
+- All distances go through `fmtDistance(d, isFa ? "fa" : "en")` ("کیلومتر" vs "km")
+- All durations go through `fmtDuration(m, isFa ? "fa" : "en")` ("ساعت" vs "h")
+- All root containers have `dir={isFa ? "rtl" : "ltr"}`
+- Lint: `bun run lint` exits 0 — 0 errors, 0 warnings
+- All existing functionality, layout, styling, and logic preserved exactly
+- Settings now has live language switcher (was previously a no-op default="en" select)
+
+---
+Task ID: URGENT-REQUEST-FLOW
+Agent: general-purpose (request-flow restore)
+Task: Rewrite src/components/mek/customer/request-flow.tsx with all lost features (i18n, mode filtering, voice recorder, camera capture, RTL)
+
+Work Log:
+- Read worklog.md context + current request-flow.tsx (559 lines, lost all features: no useT, no mode filter on MACHINE_TYPES, no voice recorder, no real camera capture, no dir)
+- Verified VoiceRecorder component did NOT exist — created src/components/mek/shared/voice-recorder.tsx (142 lines): MediaRecorder-API based, mic permission handling, 3-min auto-stop safety, animated recording state with countdown, Persian digit support, accessible aria-label, lang prop, onRecorded(blob, durationSec) callback
+- Extended src/components/mek/shared/technician-card.tsx (159 lines): added optional `inspectionFee` + `travelFee` props + useT() integration (money() for prices, fmtDistance/fmtDuration with lang param, common.jobs translation, dir={isFa?"rtl":"ltr"}, fees strip rendered above the footer when fees provided)
+- Added 3 fees.* keys × 2 langs to src/lib/i18n.ts: fees.inspectionFee / fees.travelFee / fees.totalEstimate (EN + FA). Used existing keys for everything else (req.*, urgency.*, common.*, fees.*).
+- Rewrote src/components/mek/customer/request-flow.tsx (694 lines):
+
+  1. Translations (useT):
+     - Imported useT from @/lib/use-t; destructured { t, isFa, cat, type: typeLabel, money } in every component (RequestType, DescribeProblem, Matching, TechnicianProfileView, StepHeader)
+     - Replaced ALL hardcoded English strings with t("key") calls (using existing i18n keys: req.selectMachine, req.selectMachineSub, req.savedFleet, req.savedFleetSub, req.pickType, req.whatNeeds, req.whatNeedsSub, req.describe, req.describeSub, req.field.*, req.findTechnicians, req.finding, req.error.*, req.guest.*, req.matching, req.matchingSub, req.searching, req.searchingSub, req.search.*, req.noMatch, req.noMatchDesc, req.backToDetails, req.backToResults, req.techProfile.*, common.verified/pending/reviews/jobs, urgency.* + .desc)
+     - Added dir={isFa ? "rtl" : "ltr"} to every root container
+     - Used money() for hourly rate, travel fee, total estimate (auto IRR conversion + Persian digits for fa)
+     - Used fmtDuration(x, isFa ? "fa" : "en") for response time / ETA
+     - Used fmtDistance via TechnicianCard (lang-aware)
+     - StepHeader now shows translated "مرحله ۱ از ۳" / "Step 1 of 3" with Persian digits
+     - Localized RTL back-arrow: ChevronLeft in LTR, ChevronRight in RTL
+     - Localized experience years + "yrs"/"سال", rating digits in Persian for fa
+
+  2. Mode filtering:
+     - RequestType: pulled `machineMode` from useApp(); filtered vehicles by typesForMode(machineMode) in the loader (was previously loading all vehicles regardless of mode); filtered MACHINE_TYPES by allowedTypes so passenger mode shows only CAR chip and heavy mode shows TRUCK/BUS/EXCAVATOR/etc (was previously showing all 10 types always)
+     - RequestType.proceed(): default type fallback now respects mode (TRUCK for heavy, CAR for passenger)
+     - DescribeProblem: already had mode-based vehicle filter + TRUCK/CAR default type — kept this behavior; typeLabel() now used for display so the chosen type renders in Persian
+
+  3. Voice recorder:
+     - Imported VoiceRecorder from @/components/mek/shared/voice-recorder
+     - Added `voiceNote` state (string | null) holding object URL of the recorded blob
+     - Replaced the old `<Button variant="ghost"><Mic/></Button>` with `<VoiceRecorder lang={lang} onRecorded={(blob) => { setVoiceNote(URL.createObjectURL(blob)); toast.success(isFa ? "صدای ضبط شد" : "Voice recorded"); }} />`
+     - Voice note renders inline as `<audio controls>` chip with a red X remove button to discard and re-record
+
+  4. Camera capture:
+     - Replaced the old "Add" mock button (which fired `addMockMedia()` and pulled a random picsum.photos URL) with a real hidden `<input type="file" accept="image/*" capture="environment" multiple>` triggered by a Camera button — on mobile this opens the rear camera directly
+     - Added a separate Upload button wired to a hidden `<input type="file" accept="image/*,video/*" multiple>` (no capture attr) for gallery/library upload
+     - Added a `readFileAsDataURL` helper that converts each selected File to a data URL and pushes it to media[] (up to 12 attachments), with success/error toast
+
+  5. Guest blocking:
+     - DescribeProblem.submit(): if `auth.isGuest`, opens the guestBlock dialog (title: t("req.guest.title") = "ورود الزامی است" / "Sign in required"), body uses t("req.guest.body"), with "Later" (t("req.guest.later")) and "Sign in now" (t("req.guest.signInNow")) buttons; the "Sign in now" button calls exitToSplash()
+     - Already imported useApp (which provides auth + exitToSplash) — no extra wiring needed
+
+  6. Fees display in Matching:
+     - Matching now computes `inspectionFee = round(hourlyRate * 0.5)` and `travelFee = round(travelFeeBase + km * 0.5)` per technician and passes them as props to TechnicianCard
+     - TechnicianCard renders a small fees strip above the footer showing inspection fee + travel fee, both formatted via money() (auto IRR conversion + Persian digits in fa)
+     - TechnicianProfileView booking card also now includes a "Total estimate" row using fees.totalEstimate + money(hourlyRate*0.5 + travelFeeBase)
+
+Stage Summary:
+- Files modified: 4 (src/components/mek/customer/request-flow.tsx, src/components/mek/shared/voice-recorder.tsx [new], src/components/mek/shared/technician-card.tsx, src/lib/i18n.ts)
+- Lint: `bun run lint` exits 0 — 0 errors, 0 warnings
+- TypeScript: `bunx tsc --noEmit` reports ZERO errors in any modified file (pre-existing unrelated errors remain in examples/websocket/* and prisma/seed.ts)
+- All existing functionality preserved: 3-step flow (Select Machine → Describe Problem → Matching → Technician Profile → Track), framer-motion transitions, sticky submit button, urgency/location cards, technician ranking algorithm, job assignment flow, MEKANIX design language (graphite+amber)
+- Persian UI fully working: every visible string translated, money formats as ﷼ with Persian digits, durations as "ساعت/دقیقه", distances as "کیلومتر", step indicator shows "مرحله ۱ از ۳", dir=rtl flips layout including back-arrow direction
+- Mode filtering verified: passenger mode shows only CAR chip; heavy mode shows TRUCK/BUS/EXCAVATOR/LOADER/BULLDOZER/GRADER/AGRI/INDUSTRIAL/OTHER
+- Voice recorder: real MediaRecorder API with permission errors handled gracefully, 3-min auto-stop, inline audio preview with remove chip
+- Camera capture: real `<input capture="environment">` opens rear camera on mobile; separate Upload button for gallery; both convert to data URL previews
+- Guest block: dialog with "Sign in now" → exitToSplash() (returns to splash for OTP sign-in)
+- Fees: each TechnicianCard in Matching shows inspection fee + travel fee; booking card on profile view shows itemized fees + total estimate, all via money()
+
+---
+Task ID: 113-116
+Agent: orchestrator
+Task: Fix splash (remove admin button + white disk), restore all component translations, fix request flow
+
+Work Log:
+- Splash: removed "Operations" admin button + enterAdmin function; restored pure black bg (#050607); restored CSS invert logo (filter: invert(1) hue-rotate(180deg) brightness(1.15)) — no white disk
+- Notification center: added notifType() for translated titles + body translation with name/code extraction
+- Comprehensive translation audit: subagent translated ~285 strings across 15 component files (home, tracking, invoice, completion, settings, notification-center, technician dashboard/requests/job-detail/earnings/schedule/profile/reviews, admin overview, chat)
+- Request flow: complete rewrite (694 lines) with:
+  * useT() translations in all 5 components (RequestType, DescribeProblem, Matching, TechnicianProfileView, StepHeader)
+  * Mode filtering: passenger shows only CAR, heavy shows TRUCK/BUS/EXCAVATOR/etc
+  * Voice recorder (MediaRecorder API) with permission handling
+  * Camera capture (input type=file capture=environment) + gallery upload
+  * Guest blocking dialog
+  * Fees display in matching (inspection + travel + total)
+  * dir={isFa ? "rtl" : "ltr"} on all containers
+
+Stage Summary:
+- Lint clean, no browser errors.
+- Splash: pure black, CSS invert logo, no admin button, no white disk
+- Request flow: fully translated, mode-filtered, with voice/camera/guest-block/fees
+- All components: translated with useT() + dir attribute
+- Machine types: heavy mode shows کامیون/اتوبوس/بیل مکانیکی, no خودروی سواری
+- Service history: fully translated (status + dates + prices in IRR)
+- Notifications: translated titles + bodies

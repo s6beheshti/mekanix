@@ -12,8 +12,10 @@ import { fmtMoney, fmtRelative, pct } from "@/lib/format";
 import { MekIcon, iconForCategory } from "@/components/mek/shared/icons";
 import { StatusBadge } from "@/components/mek/shared/status-badge";
 import { JOB_STATUS_FLOW } from "@/lib/constants";
+import { useT } from "@/lib/use-t";
 
 export function AdminOverview() {
+  const { t, isFa, money } = useT();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [techs, setTechs] = useState<any[]>([]);
 
@@ -25,53 +27,53 @@ export function AdminOverview() {
   if (!stats) return <LoadingBlock rows={4} />;
 
   const techPoints: MapPoint[] = techs
-    .filter((t) => t.lat && t.lng)
+    .filter((x) => x.lat && x.lng)
     .slice(0, 12)
-    .map((t) => ({
-      id: t.id,
-      lat: t.lat,
-      lng: t.lng,
-      kind: t.status === "ON_JOB" ? "active-job" : "technician",
-      label: t.user.name,
+    .map((x) => ({
+      id: x.id,
+      lat: x.lat,
+      lng: x.lng,
+      kind: x.status === "ON_JOB" ? "active-job" : "technician",
+      label: x.user.name,
     }));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight">Operations Overview</h1>
-          <p className="text-sm text-muted-foreground">Real-time platform activity & performance</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight">{t("admin.overview.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("admin.overview.subtitle")}</p>
         </div>
         <span className="inline-flex items-center gap-2 rounded-full border border-emerald-glow/30 bg-emerald-glow/10 px-3 py-1 text-[11px] font-medium text-emerald-glow">
-          <span className="size-1.5 rounded-full bg-emerald-glow mk-status-pulse" /> Live
+          <span className="size-1.5 rounded-full bg-emerald-glow mk-status-pulse" /> {t("admin.overview.live")}
         </span>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
-        <StatCard label="Active Requests" value={stats.kpis.activeRequests} icon={Activity} tone="amber" />
-        <StatCard label="Techs Online" value={stats.kpis.techniciansOnline} icon={Wrench} tone="emerald" />
-        <StatCard label="Jobs In Progress" value={stats.kpis.jobsInProgress} icon={TrendingUp} tone="violet" />
-        <StatCard label="Completed (30d)" value={stats.kpis.completedJobs30d} icon={Activity} tone="blue" />
-        <StatCard label="Revenue (30d)" value={fmtMoney(stats.kpis.revenue30d)} icon={DollarSign} tone="amber" />
-        <StatCard label="Avg Response" value={`${stats.kpis.avgResponseMins}m`} icon={Clock} tone="emerald" />
-        <StatCard label="Satisfaction" value={`${stats.kpis.customerSatisfaction}/5`} icon={Star} tone="violet" />
+        <StatCard label={t("admin.overview.kpi.activeRequests")} value={stats.kpis.activeRequests} icon={Activity} tone="amber" />
+        <StatCard label={t("admin.overview.kpi.techsOnline")} value={stats.kpis.techniciansOnline} icon={Wrench} tone="emerald" />
+        <StatCard label={t("admin.overview.kpi.jobsInProgress")} value={stats.kpis.jobsInProgress} icon={TrendingUp} tone="violet" />
+        <StatCard label={t("admin.overview.kpi.completed30")} value={stats.kpis.completedJobs30d} icon={Activity} tone="blue" />
+        <StatCard label={t("admin.overview.kpi.revenue30")} value={money(stats.kpis.revenue30d)} icon={DollarSign} tone="amber" />
+        <StatCard label={t("admin.overview.kpi.avgResponse")} value={`${stats.kpis.avgResponseMins}m`} icon={Clock} tone="emerald" />
+        <StatCard label={t("admin.overview.kpi.satisfaction")} value={`${stats.kpis.customerSatisfaction}/5`} icon={Star} tone="violet" />
       </div>
 
       {/* Revenue + status */}
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-display text-sm font-semibold">Revenue & Job Volume — 14 days</h3>
+            <h3 className="font-display text-sm font-semibold">{t("admin.overview.revenue")}</h3>
             <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber" /> Revenue</span>
+              <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber" /> {t("tech.earnings.earned")}</span>
             </div>
           </div>
           <RevenueAreaChart data={stats.revenueSeries} height={220} className="mt-3" />
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="font-display text-sm font-semibold">Job Status Breakdown</h3>
+          <h3 className="font-display text-sm font-semibold">{t("admin.overview.statusBreakdown")}</h3>
           <StatusBarChart data={stats.statusBreakdown} height={220} className="mt-3" />
         </div>
       </div>
@@ -79,42 +81,42 @@ export function AdminOverview() {
       {/* Categories + satisfaction + map */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="font-display text-sm font-semibold">Service Categories</h3>
+          <h3 className="font-display text-sm font-semibold">{t("admin.overview.categories")}</h3>
           <CategoryPieChart data={stats.categoryBreakdown} height={200} className="mt-3" />
           <div className="mt-3 space-y-1">
             {stats.categoryBreakdown.slice(0, 5).map((c) => (
               <div key={c.category} className="flex items-center justify-between text-[11px]">
                 <span className="flex items-center gap-1.5 capitalize">
                   <MekIcon name={iconForCategory(c.category)} className="size-3 text-amber" />
-                  {c.category.replace("-", " ")}
+                  {t(`cat.${c.category}`, c.category.replace("-", " "))}
                 </span>
-                <span className="text-muted-foreground">{c.count} · {fmtMoney(c.revenue)}</span>
+                <span className="text-muted-foreground">{c.count} · {money(c.revenue)}</span>
               </div>
             ))}
           </div>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="font-display text-sm font-semibold">Customer Satisfaction</h3>
+          <h3 className="font-display text-sm font-semibold">{t("admin.overview.satisfaction")}</h3>
           <div className="mt-3 grid place-items-center">
             <SatisfactionRadial value={stats.kpis.customerSatisfaction} size={140} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-center text-[11px]">
             <div className="rounded-lg border border-border bg-background p-2">
               <p className="font-display text-base font-bold text-emerald-glow">{pct(Math.round(stats.kpis.customerSatisfaction * 20), 100)}%</p>
-              <p className="text-muted-foreground">Positive</p>
+              <p className="text-muted-foreground">{t("admin.overview.positive")}</p>
             </div>
             <div className="rounded-lg border border-border bg-background p-2">
               <p className="font-display text-base font-bold text-amber">{stats.kpis.completedJobs30d}</p>
-              <p className="text-muted-foreground">Completed 30d</p>
+              <p className="text-muted-foreground">{t("admin.overview.completed30d")}</p>
             </div>
           </div>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="font-display text-sm font-semibold">Geographic Activity</h3>
+          <h3 className="font-display text-sm font-semibold">{t("admin.overview.geoActivity")}</h3>
           <MapView points={techPoints} height={220} showGrid />
-          <p className="mt-2 text-[11px] text-muted-foreground">{techPoints.length} technicians active across service zones</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">{t("admin.overview.techsActive").replace("{n}", String(techPoints.length))}</p>
         </div>
       </div>
 
@@ -122,37 +124,37 @@ export function AdminOverview() {
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
-            <h3 className="font-display text-sm font-semibold">Technician Performance</h3>
-            <span className="text-[11px] text-muted-foreground">Top by revenue</span>
+            <h3 className="font-display text-sm font-semibold">{t("admin.overview.techPerformance")}</h3>
+            <span className="text-[11px] text-muted-foreground">{t("admin.overview.topByRevenue")}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 text-left font-medium">Technician</th>
-                  <th className="px-4 py-2 text-right font-medium">Jobs</th>
-                  <th className="px-4 py-2 text-right font-medium">Rating</th>
-                  <th className="px-4 py-2 text-right font-medium">Revenue</th>
+                  <th className="px-4 py-2 text-left font-medium">{t("admin.overview.col.technician")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.jobs")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.rating")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.revenue")}</th>
                 </tr>
               </thead>
               <tbody>
-                {stats.techPerformance.slice(0, 8).map((t) => {
-                  const tech = techs.find((x) => x.user.name === t.name);
+                {stats.techPerformance.slice(0, 8).map((tp) => {
+                  const tech = techs.find((x) => x.user.name === tp.name);
                   return (
-                    <tr key={t.name} className="border-t border-border hover:bg-muted/30">
+                    <tr key={tp.name} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
                           <div className="grid size-7 place-items-center overflow-hidden rounded-full border border-border bg-muted">
-                            {tech?.user?.avatar ? <img src={tech.user.avatar} alt="" className="size-full object-cover" /> : <span className="text-[10px]">{t.name[0]}</span>}
+                            {tech?.user?.avatar ? <img src={tech.user.avatar} alt="" className="size-full object-cover" /> : <span className="text-[10px]">{tp.name[0]}</span>}
                           </div>
-                          <span className="font-medium">{t.name}</span>
+                          <span className="font-medium">{tp.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{t.jobs}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{tp.jobs}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
-                        <span className="inline-flex items-center gap-1"><Star className="size-3 fill-amber text-amber" />{t.rating}</span>
+                        <span className="inline-flex items-center gap-1"><Star className="size-3 fill-amber text-amber" />{tp.rating}</span>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-amber tabular-nums">{fmtMoney(t.revenue)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-amber tabular-nums">{money(tp.revenue)}</td>
                     </tr>
                   );
                 })}
@@ -163,12 +165,12 @@ export function AdminOverview() {
 
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
-            <h3 className="font-display text-sm font-semibold">Recent Activity</h3>
+            <h3 className="font-display text-sm font-semibold">{t("admin.overview.recentActivity")}</h3>
             <Activity className="size-4 text-amber" />
           </div>
           <div className="max-h-80 overflow-y-auto p-2">
             {stats.recentActivity.length === 0 ? (
-              <EmptyState icon={Activity} title="No activity" />
+              <EmptyState icon={Activity} title={t("admin.overview.noActivity")} />
             ) : (
               stats.recentActivity.map((a, i) => (
                 <motion.div
@@ -183,7 +185,7 @@ export function AdminOverview() {
                     <p className="truncate text-xs font-medium">{a.label}</p>
                     <p className="truncate text-[10px] text-muted-foreground">{a.sub}</p>
                   </div>
-                  <span className="font-mono text-[9px] text-muted-foreground">{fmtRelative(a.ts)}</span>
+                  <span className="font-mono text-[9px] text-muted-foreground">{fmtRelative(a.ts, isFa ? "fa" : "en")}</span>
                 </motion.div>
               ))
             )}

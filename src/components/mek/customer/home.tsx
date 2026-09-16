@@ -12,10 +12,12 @@ import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge"
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
 import { fmtRelative, fmtDate } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { Link as LinkIcon, CircleDot } from "lucide-react";
 
 export function CustomerHome({ customer }: { customer: DemoUser }) {
   const { go, machineMode, auth } = useApp();
+  const { t, isFa, money, type } = useT();
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [activeJobs, setActiveJobs] = useState<Job[] | null>(null);
   const [history, setHistory] = useState<Job[] | null>(null);
@@ -31,14 +33,14 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
   }, [customer, machineMode]);
 
   const quickActions = [
-    { label: "Request a Mechanic", desc: "Book a service call", icon: Wrench, tone: "amber", view: "request-type" },
-    { label: "Emergency Assistance", desc: "Roadside, breakdown", icon: Siren, tone: "rose", view: "request-type", urgency: "EMERGENCY" },
-    { label: "Schedule Maintenance", desc: "Plan ahead", icon: CalendarClock, tone: "emerald", view: "request-type", urgency: "NORMAL" },
-    { label: "My Vehicles", desc: "Manage fleet", icon: Car, tone: "blue", view: "vehicles" },
+    { label: t("home.quick.requestMechanic"), desc: t("home.quick.requestDesc"), icon: Wrench, tone: "amber", view: "request-type" },
+    { label: t("home.quick.emergency"), desc: t("home.quick.emergencyDesc"), icon: Siren, tone: "rose", view: "request-type", urgency: "EMERGENCY" },
+    { label: t("home.quick.maintenance"), desc: t("home.quick.maintenanceDesc"), icon: CalendarClock, tone: "emerald", view: "request-type", urgency: "NORMAL" },
+    { label: t("home.quick.vehicles"), desc: t("home.quick.vehiclesDesc"), icon: Car, tone: "blue", view: "vehicles" },
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       {/* Hero */}
       <section className="relative overflow-hidden rounded-2xl border border-border bg-card">
         <div className="absolute inset-0 mk-grid-bg opacity-40" />
@@ -48,12 +50,12 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
           <div>
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-[11px] font-medium text-amber">
               <span className="size-1.5 rounded-full bg-amber mk-status-pulse" />
-              {machineMode === "heavy" ? "Heavy Machinery" : "Passenger Vehicles"} mode · {vehicles?.length ?? 0} machines
+              {machineMode === "heavy" ? t("mode.heavy") : t("mode.passenger")} {t("home.heroMode")} · {vehicles?.length ?? 0} {t("home.heroMachines")}
             </motion.div>
             {auth.isGuest && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/5 px-3 py-1.5 text-[11px] text-amber">
                 <ShieldAlert className="size-3.5" />
-                Browsing as guest — sign in to submit service requests
+                {t("home.guestBanner")}
               </motion.div>
             )}
             <motion.h1
@@ -62,24 +64,24 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
               transition={{ delay: 0.05 }}
               className="mt-4 font-display text-3xl font-bold leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl"
             >
-              Get the right technician <br className="hidden sm:block" />
-              <span className="text-amber mk-text-glow">to your machine.</span>
+              {t("home.heroTitle1")} <br className="hidden sm:block" />
+              <span className="text-amber mk-text-glow">{t("home.heroTitle2")}</span>
             </motion.h1>
             <p className="mt-3 max-w-md text-sm text-muted-foreground sm:text-base">
-              On-demand diagnostics, repair, and maintenance for cars, trucks, buses, and heavy machinery — wherever your fleet is parked.
+              {t("home.heroDesc")}
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90">
-                <Wrench className="mr-1.5 size-4" /> Request a Mechanic
+                <Wrench className="mr-1.5 size-4" /> {t("home.cta.requestMechanic")}
               </Button>
               <Button variant="outline" onClick={() => go("vehicles")}>
-                <Car className="mr-1.5 size-4" /> View My Fleet
+                <Car className="mr-1.5 size-4" /> {t("home.cta.viewFleet")}
               </Button>
             </div>
             <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-emerald-glow" /> Verified technicians</span>
-              <span className="inline-flex items-center gap-1.5"><Activity className="size-3.5 text-amber" /> Real-time tracking</span>
-              <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5 text-sky-400" /> Avg. 15 min response</span>
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-emerald-glow" /> {t("home.feature.verified")}</span>
+              <span className="inline-flex items-center gap-1.5"><Activity className="size-3.5 text-amber" /> {t("home.feature.tracking")}</span>
+              <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5 text-sky-400" /> {t("home.feature.response")}</span>
             </div>
           </div>
 
@@ -91,22 +93,22 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
             className="relative rounded-xl border border-border bg-background/60 p-4 backdrop-blur"
           >
             <div className="flex items-center justify-between">
-              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Live Ops</span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{t("home.liveOps")}</span>
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-glow/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-glow">
-                <span className="size-1.5 rounded-full bg-emerald-glow mk-status-pulse" /> Operational
+                <span className="size-1.5 rounded-full bg-emerald-glow mk-status-pulse" /> {t("home.operational")}
               </span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <MiniMetric label="Active Jobs" value={activeJobs?.length ?? "—"} icon={Wrench} tone="amber" />
-              <MiniMetric label="In Fleet" value={vehicles?.length ?? "—"} icon={Car} tone="blue" />
-              <MiniMetric label="Completed" value={history?.length ?? "—"} icon={ShieldCheck} tone="emerald" />
-              <MiniMetric label="Response" value="15m" icon={Zap} tone="violet" />
+              <MiniMetric label={t("home.metric.activeJobs")} value={activeJobs?.length ?? "—"} icon={Wrench} tone="amber" />
+              <MiniMetric label={t("home.metric.inFleet")} value={vehicles?.length ?? "—"} icon={Car} tone="blue" />
+              <MiniMetric label={t("home.metric.completed")} value={history?.length ?? "—"} icon={ShieldCheck} tone="emerald" />
+              <MiniMetric label={t("home.metric.response")} value="15m" icon={Zap} tone="violet" />
             </div>
             <div className="mt-3 rounded-lg border border-border bg-card/60 p-2.5">
-              <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">Coverage Zone</p>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{t("home.coverageZone")}</p>
               <div className="mt-1.5 flex items-center gap-2 text-[11px]">
                 <MapPin className="size-3.5 text-amber" />
-                <span>San Francisco Bay Area · 24/7</span>
+                <span>{t("home.coverageArea")}</span>
               </div>
             </div>
           </motion.div>
@@ -138,9 +140,9 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
       {/* Active jobs */}
       <section>
         <SectionHeader
-          title="Active Service Calls"
-          subtitle="Track ongoing jobs in real time"
-          action={<Button variant="ghost" size="sm" onClick={() => go("service-history")}>History <ChevronRight className="size-3.5" /></Button>}
+          title={t("home.section.activeCalls")}
+          subtitle={t("home.section.activeCallsSub")}
+          action={<Button variant="ghost" size="sm" onClick={() => go("service-history")}>{t("home.section.history")} <ChevronRight className="size-3.5" /></Button>}
         />
         <div className="mt-3">
           {activeJobs === null ? (
@@ -148,7 +150,7 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
               {[0, 1].map((i) => <div key={i} className="h-28 rounded-xl bg-muted/60 mk-shimmer" />)}
             </div>
           ) : activeJobs.length === 0 ? (
-            <EmptyState icon={Wrench} title="No active jobs" description="Request a mechanic to start a service call." action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90"><Wrench className="mr-1.5 size-4" />Request a Mechanic</Button>} />
+            <EmptyState icon={Wrench} title={t("home.empty.activeJobs")} description={t("home.empty.activeJobsDesc")} action={<Button onClick={() => go("request-type")} className="bg-amber text-black hover:bg-amber/90"><Wrench className="mr-1.5 size-4" />{t("home.quick.requestMechanic")}</Button>} />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {activeJobs.slice(0, 4).map((job) => (
@@ -162,12 +164,12 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
       {/* Fleet snapshot + recent history */}
       <section className="grid gap-5 lg:grid-cols-2">
         <div>
-          <SectionHeader title="Your Fleet" action={<Button variant="ghost" size="sm" onClick={() => go("vehicles")}>Manage <ChevronRight className="size-3.5" /></Button>} />
+          <SectionHeader title={t("home.section.yourFleet")} action={<Button variant="ghost" size="sm" onClick={() => go("vehicles")}>{t("home.section.manage")} <ChevronRight className="size-3.5" /></Button>} />
           <div className="mt-3">
             {vehicles === null ? (
               <div className="h-28 rounded-xl bg-muted/60 mk-shimmer" />
             ) : vehicles.length === 0 ? (
-              <EmptyState icon={Car} title="No vehicles yet" description="Add your first vehicle or machine." action={<Button onClick={() => go("vehicles")} variant="outline" size="sm"><Car className="mr-1.5 size-4" />Add Vehicle</Button>} />
+              <EmptyState icon={Car} title={t("home.empty.vehicles")} description={t("home.empty.vehiclesDesc")} action={<Button onClick={() => go("vehicles")} variant="outline" size="sm"><Car className="mr-1.5 size-4" />{t("home.empty.addVehicle")}</Button>} />
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
                 {vehicles.slice(0, 4).map((v) => (
@@ -177,7 +179,7 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{v.make} {v.model}</p>
-                      <p className="text-[11px] text-muted-foreground">{v.type} · {v.year}</p>
+                      <p className="text-[11px] text-muted-foreground">{type(v.type)} · {v.year}</p>
                     </div>
                     {v.plate && <span className="font-mono text-[9px] text-muted-foreground">{v.plate}</span>}
                   </button>
@@ -187,12 +189,12 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
           </div>
         </div>
         <div>
-          <SectionHeader title="Recent Service History" action={<Button variant="ghost" size="sm" onClick={() => go("service-history")}>All <ChevronRight className="size-3.5" /></Button>} />
+          <SectionHeader title={t("home.section.recentHistory")} action={<Button variant="ghost" size="sm" onClick={() => go("service-history")}>{t("home.section.all")} <ChevronRight className="size-3.5" /></Button>} />
           <div className="mt-3">
             {history === null ? (
               <div className="h-28 rounded-xl bg-muted/60 mk-shimmer" />
             ) : history.length === 0 ? (
-              <EmptyState icon={History} title="No history yet" description="Completed jobs will appear here." />
+              <EmptyState icon={History} title={t("home.empty.history")} description={t("home.empty.historyDesc")} />
             ) : (
               <div className="space-y-2">
                 {history.map((job) => (
@@ -202,9 +204,9 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{job.request.title}</p>
-                      <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model} · {fmtDate(job.completedAt ?? job.createdAt)}</p>
+                      <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model} · {fmtDate(job.completedAt ?? job.createdAt, undefined, isFa ? "fa" : "en")}</p>
                     </div>
-                    {job.invoice && <span className="font-mono text-xs text-amber">${Math.round(job.invoice.total)}</span>}
+                    {job.invoice && <span className="font-mono text-xs text-amber">{money(job.invoice.total)}</span>}
                   </button>
                 ))}
               </div>
@@ -229,6 +231,7 @@ function MiniMetric({ label, value, icon: Icon, tone }: { label: string; value: 
 }
 
 function ActiveJobCard({ job, onClick }: { job: Job; onClick: () => void }) {
+  const { t, isFa } = useT();
   return (
     <button onClick={onClick} className="group relative overflow-hidden rounded-xl border border-border bg-card p-4 text-left mk-card-hover hover:border-amber/40">
       <div className="flex items-start justify-between gap-2">
@@ -244,10 +247,10 @@ function ActiveJobCard({ job, onClick }: { job: Job; onClick: () => void }) {
       </div>
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1">
-          <MapPin className="size-3 text-amber" /> {job.request.vehicle.location ?? "On-site"}
+          <MapPin className="size-3 text-amber" /> {job.request.vehicle.location ?? t("home.onSite")}
         </span>
         <span className="inline-flex items-center gap-1">
-          <Clock className="size-3 text-amber" /> {fmtRelative(job.updatedAt)}
+          <Clock className="size-3 text-amber" /> {fmtRelative(job.updatedAt, isFa ? "fa" : "en")}
         </span>
       </div>
     </button>

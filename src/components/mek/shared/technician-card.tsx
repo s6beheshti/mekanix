@@ -5,7 +5,8 @@ import { Star, MapPin, Clock, BadgeCheck, ChevronRight } from "lucide-react";
 import type { Technician } from "@/lib/api";
 import { StarRating } from "./primitives";
 import { TECH_LEVELS } from "@/lib/constants";
-import { fmtDistance, haversine } from "@/lib/format";
+import { fmtDistance, fmtDuration, haversine } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 
 export function TechnicianCard({
   tech,
@@ -14,6 +15,8 @@ export function TechnicianCard({
   onSelect,
   selected,
   rank,
+  inspectionFee,
+  travelFee,
   className,
 }: {
   tech: Technician;
@@ -22,13 +25,19 @@ export function TechnicianCard({
   onSelect?: () => void;
   selected?: boolean;
   rank?: number;
+  inspectionFee?: number;
+  travelFee?: number;
   className?: string;
 }) {
+  const { t, isFa, money } = useT();
+  const lang = isFa ? "fa" : "en";
   const level = TECH_LEVELS.find((l) => l.slug === tech.level) ?? TECH_LEVELS[0];
+  const hasFees = inspectionFee != null || travelFee != null;
   return (
     <motion.button
       type="button"
       onClick={onSelect}
+      dir={isFa ? "rtl" : "ltr"}
       whileHover={{ y: -2 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
       className={cn(
@@ -46,7 +55,6 @@ export function TechnicianCard({
         <div className="relative shrink-0">
           <div className="grid size-12 place-items-center overflow-hidden rounded-xl border border-border bg-muted">
             {tech.user.avatar ? (
-               
               <img src={tech.user.avatar} alt={tech.user.name} className="size-full object-cover" />
             ) : (
               <span className="font-display text-sm font-semibold">{tech.user.name[0]}</span>
@@ -67,7 +75,7 @@ export function TechnicianCard({
             <StarRating value={tech.rating} size={11} />
             <span className="font-medium text-foreground">{tech.rating.toFixed(1)}</span>
             <span>·</span>
-            <span>{tech.completedJobs} jobs</span>
+            <span>{tech.completedJobs} {t("common.jobs")}</span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {tech.specialties.slice(0, 2).map((s) => (
@@ -81,21 +89,40 @@ export function TechnicianCard({
           </div>
         </div>
       </div>
+
+      {/* Fees strip (optional — shown when inspectionFee/travelFee provided) */}
+      {hasFees && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5 text-[10px]">
+          {inspectionFee != null && (
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <span>{t("fees.inspectionFee")}:</span>
+              <span className="font-medium text-foreground">{money(inspectionFee)}</span>
+            </span>
+          )}
+          {travelFee != null && (
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <span>{t("fees.travelFee")}:</span>
+              <span className="font-medium text-foreground">{money(travelFee)}</span>
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-[11px]">
         <div className="flex items-center gap-3 text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <MapPin className="size-3 text-amber" />
-            {distanceKm != null ? fmtDistance(distanceKm) : "—"}
+            {distanceKm != null ? fmtDistance(distanceKm, lang) : "—"}
           </span>
           {etaMins != null && (
             <span className="inline-flex items-center gap-1">
               <Clock className="size-3 text-amber" />
-              {etaMins} min
+              {fmtDuration(etaMins, lang)}
             </span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-display text-sm font-semibold">${tech.hourlyRate}<span className="text-[10px] text-muted-foreground">/hr</span></span>
+          <span className="font-display text-sm font-semibold">{money(tech.hourlyRate)}<span className="text-[10px] text-muted-foreground">/hr</span></span>
           <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
       </div>
@@ -116,7 +143,6 @@ export function TechnicianMini({ tech }: { tech: Technician }) {
     <div className="flex items-center gap-2">
       <div className="grid size-8 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
         {tech.user.avatar ? (
-           
           <img src={tech.user.avatar} alt={tech.user.name} className="size-full object-cover" />
         ) : (
           <span className="text-[11px] font-semibold">{tech.user.name[0]}</span>

@@ -9,12 +9,14 @@ import { useApp } from "@/lib/store";
 import { api, type Invoice, type Job, type Payment } from "@/lib/api";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { fmtMoney, fmtDate } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { parseMedia } from "@/lib/format";
 
 export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
+  const { t, isFa, money } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,7 +29,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
       setJob(j);
       const inv = await api.getInvoice(j.id);
       setInvoice(inv);
-    }).catch(() => toast.error("Job not found")).finally(() => setLoading(false));
+    }).catch(() => toast.error(t("invoice.jobNotFound"))).finally(() => setLoading(false));
   }, [params.jobId]);
 
   const approveAndPay = async () => {
@@ -41,13 +43,13 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
       }
       const pay = await api.payInvoice(invoice.id, method);
       if (pay.status === "SUCCEEDED") {
-        toast.success("Payment successful");
+        toast.success(t("pay.success"));
         go("completion", { jobId: job!.id });
       } else {
-        toast.error("Payment failed — please try again");
+        toast.error(t("pay.failed"));
       }
     } catch (e: any) {
-      toast.error(e.message ?? "Payment failed");
+      toast.error(e.message ?? t("pay.failed"));
     } finally {
       setPaying(false);
     }
@@ -60,9 +62,9 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const mediaUrls = parseMedia(job.request.mediaUrls);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
       <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Back
+        <ArrowLeft className="size-4" /> {t("invoice.back")}
       </button>
 
       {/* Invoice header */}
@@ -73,13 +75,13 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
               <Receipt className="size-4 text-amber" />
             </div>
             <div>
-              <h1 className="font-display text-base font-semibold">Repair Estimate</h1>
-              <p className="font-mono text-[11px] text-muted-foreground">{invoice?.code ?? "Draft"} · {job.code}</p>
+              <h1 className="font-display text-base font-semibold">{t("invoice.title")}</h1>
+              <p className="font-mono text-[11px] text-muted-foreground">{invoice?.code ?? t("invoice.draft")} · {job.code}</p>
             </div>
           </div>
           {invoice && (
             <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${invoice.status === "PAID" ? "border-emerald-glow/30 bg-emerald-glow/10 text-emerald-glow" : invoice.status === "SENT" ? "border-amber/30 bg-amber/10 text-amber" : "border-border text-muted-foreground"}`}>
-              {invoice.status}
+              {t(`invst.${invoice.status}`)}
             </span>
           )}
         </div>
@@ -88,7 +90,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         <div className="space-y-4 p-5">
           {job.diagnosis && (
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Diagnosis</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("invoice.diagnosis")}</p>
               <p className="mt-1 text-sm">{job.diagnosis}</p>
             </div>
           )}
@@ -96,15 +98,15 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
           {/* Parts */}
           {parts.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Parts & Materials</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("invoice.parts")}</p>
               <div className="mt-2 overflow-hidden rounded-lg border border-border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium">Item</th>
-                      <th className="px-3 py-2 text-right font-medium">Qty</th>
-                      <th className="px-3 py-2 text-right font-medium">Unit</th>
-                      <th className="px-3 py-2 text-right font-medium">Total</th>
+                      <th className="px-3 py-2 text-left font-medium">{t("invoice.col.item")}</th>
+                      <th className="px-3 py-2 text-right font-medium">{t("invoice.col.qty")}</th>
+                      <th className="px-3 py-2 text-right font-medium">{t("invoice.col.unit")}</th>
+                      <th className="px-3 py-2 text-right font-medium">{t("invoice.col.total")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -115,8 +117,8 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
                           {p.sku && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{p.quantity}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(p.unitPrice)}</td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums">{fmtMoney(p.unitPrice * p.quantity)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{money(p.unitPrice)}</td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.unitPrice * p.quantity)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -128,7 +130,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
           {/* Media evidence */}
           {mediaUrls.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Diagnostic Photos</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("invoice.diagnosticPhotos")}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {mediaUrls.map((u, i) => <img key={i} src={u} alt="" className="size-20 rounded-lg border border-border object-cover" />)}
               </div>
@@ -140,16 +142,16 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         {invoice && (
           <div className="border-t border-border bg-muted/20 p-5">
             <div className="mx-auto max-w-xs space-y-1.5 text-sm">
-              <Line label="Labor" value={`${invoice.laborHours}h × ${fmtMoney(invoice.laborRate)}`} amount={invoice.laborTotal} />
-              <Line label="Parts & materials" amount={invoice.partsTotal} />
-              <Line label="Travel fee" amount={invoice.travelFee} />
+              <Line label={t("invoice.labor")} value={`${invoice.laborHours}h × ${money(invoice.laborRate)}`} amount={invoice.laborTotal} moneyFn={money} />
+              <Line label={t("invoice.partsMaterials")} amount={invoice.partsTotal} moneyFn={money} />
+              <Line label={t("invoice.travelFee")} amount={invoice.travelFee} moneyFn={money} />
               <div className="border-t border-border pt-1.5" />
-              <Line label="Subtotal" amount={invoice.subtotal} muted />
-              <Line label={`Tax (${Math.round(invoice.taxRate * 100)}%)`} amount={invoice.taxTotal} muted />
-              {invoice.discount > 0 && <Line label="Discount" amount={-invoice.discount} muted tone="emerald" />}
+              <Line label={t("invoice.subtotal")} amount={invoice.subtotal} muted moneyFn={money} />
+              <Line label={t("invoice.tax", undefined).replace("{rate}", String(Math.round(invoice.taxRate * 100)))} amount={invoice.taxTotal} muted moneyFn={money} />
+              {invoice.discount > 0 && <Line label={t("invoice.discount")} amount={-invoice.discount} muted tone="emerald" moneyFn={money} />}
               <div className="flex items-center justify-between border-t border-border pt-2">
-                <span className="font-display text-base font-semibold">Total</span>
-                <span className="font-display text-xl font-bold text-amber">{fmtMoney(invoice.total)}</span>
+                <span className="font-display text-base font-semibold">{t("invoice.total")}</span>
+                <span className="font-display text-xl font-bold text-amber">{money(invoice.total)}</span>
               </div>
             </div>
           </div>
@@ -163,9 +165,9 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2">
             <Lock className="size-4 text-amber" />
-            <h3 className="font-display text-sm font-semibold">Approve & Pay</h3>
+            <h3 className="font-display text-sm font-semibold">{t("invoice.approvePay")}</h3>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Select a payment method. You'll approve the estimate before charges apply.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("invoice.approvePayHint")}</p>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {PAYMENT_METHODS.map((m) => {
               const Icon = { CreditCard, Wallet, Landmark, Banknote }[m.icon] ?? CreditCard;
@@ -176,7 +178,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
                   className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 transition-colors ${method === m.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
                 >
                   <Icon className={`size-5 ${method === m.slug ? "text-amber" : "text-muted-foreground"}`} />
-                  <span className="text-[10px] font-medium leading-tight">{m.label}</span>
+                  <span className="text-[10px] font-medium leading-tight">{t(`pay.${m.slug}`)}</span>
                 </button>
               );
             })}
@@ -184,12 +186,12 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
 
           <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-glow/20 bg-emerald-glow/5 p-3 text-[11px] text-muted-foreground">
             <ShieldCheck className="size-4 text-emerald-glow shrink-0" />
-            MEKANIX secure payment · 6-month warranty on parts & labor
+            {t("invoice.securePayment")}
           </div>
 
           <Button onClick={approveAndPay} disabled={paying} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
             {paying ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Lock className="mr-2 size-4" />}
-            Approve & Pay {fmtMoney(invoice.total)}
+            {t("pay.approveAndPay")} {money(invoice.total)}
           </Button>
         </div>
       )}
@@ -198,15 +200,17 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-emerald-glow/40 bg-emerald-glow/5 p-5">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="size-5 text-emerald-glow" />
-            <h3 className="font-display text-sm font-semibold">Payment Complete</h3>
+            <h3 className="font-display text-sm font-semibold">{t("invoice.paymentComplete")}</h3>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Paid {fmtMoney(invoice.total)} on {fmtDate(invoice.updatedAt)}.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("invoice.paidOn").replace("{amount}", money(invoice.total)).replace("{date}", fmtDate(invoice.updatedAt, undefined, isFa ? "fa" : "en"))}
+          </p>
           <div className="mt-3 flex gap-2">
             <Button onClick={() => go("invoice-document", { jobId: job.id })} variant="outline" className="flex-1">
-              <FileText className="mr-1.5 size-4" /> View Invoice
+              <FileText className="mr-1.5 size-4" /> {t("invoice.viewInvoiceDoc")}
             </Button>
             <Button onClick={() => go("completion", { jobId: job.id })} className="flex-1 bg-amber text-black hover:bg-amber/90">
-              View Summary & Rate
+              {t("invoice.viewSummary")}
             </Button>
           </div>
         </motion.div>
@@ -215,14 +219,14 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   );
 }
 
-function Line({ label, value, amount, muted, tone }: { label: string; value?: string; amount: number; muted?: boolean; tone?: string }) {
+function Line({ label, value, amount, muted, tone, moneyFn }: { label: string; value?: string; amount: number; muted?: boolean; tone?: string; moneyFn: (n: number) => string }) {
   return (
     <div className="flex items-center justify-between">
       <span className={muted ? "text-muted-foreground" : "text-foreground"}>
         {label}{value && <span className="ml-1 text-[11px] text-muted-foreground">{value}</span>}
       </span>
       <span className={`tabular-nums ${tone === "emerald" ? "text-emerald-glow" : muted ? "text-muted-foreground" : "font-medium"}`}>
-        {fmtMoney(amount)}
+        {moneyFn(amount)}
       </span>
     </div>
   );

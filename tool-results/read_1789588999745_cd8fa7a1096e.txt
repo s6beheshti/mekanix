@@ -1,0 +1,560 @@
+     1→     1→"use client";
+     2→     2→import { useEffect, useState } from "react";
+     3→     3→import { motion, AnimatePresence } from "framer-motion";
+     4→     4→import {
+     5→     5→  ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Mic, Upload, Search, Star,
+     6→     6→  BadgeCheck, Clock, Zap, ShieldCheck, Navigation as NavIcon, ArrowLeft, CheckCircle2,
+     7→     7→} from "lucide-react";
+     8→     8→import type { DemoUser } from "@/lib/use-active-user";
+     9→     9→import { useApp } from "@/lib/store";
+    10→    10→import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
+    11→    11→import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, JOB_STATUS_FLOW, typesForMode } from "@/lib/constants";
+    12→    12→import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
+    13→    13→import { VehicleCard } from "@/components/mek/shared/vehicle-card";
+    14→    14→import { TechnicianCard } from "@/components/mek/shared/technician-card";
+    15→    15→import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
+    16→    16→import { UrgencyBadge } from "@/components/mek/shared/status-badge";
+    17→    17→import { fmtDistance, fmtDuration, haversine } from "@/lib/format";
+    18→    18→import { Button } from "@/components/ui/button";
+    19→    19→import { Input } from "@/components/ui/input";
+    20→    20→import { Label } from "@/components/ui/label";
+    21→    21→import { Textarea } from "@/components/ui/textarea";
+    22→    22→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    23→    23→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+    24→    24→import { toast } from "sonner";
+    25→    25→import { X } from "lucide-react";
+    26→    26→import { useT } from "@/lib/use-t";
+    27→    27→import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
+    28→    28→
+    29→    29→// ─── Step 1: Select Machine ───
+    30→    30→export function RequestType({ customer }: { customer: DemoUser }) {
+    31→    31→  const { go, params } = useApp();
+    32→    32→  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+    33→    33→  const [selectedType, setSelectedType] = useState<string | null>(params.type ?? null);
+    34→    34→
+    35→    35→  useEffect(() => {
+    36→    36→    if (customer.customer) api.listVehicles(customer.customer.id).then(setVehicles).catch(() => setVehicles([]));
+    37→    37→  }, [customer]);
+    38→    38→
+    39→    39→  const saved = vehicles ?? [];
+    40→    40→  const hasSaved = saved.length > 0;
+    41→    41→
+    42→    42→  const proceed = (vehicle?: Vehicle, type?: string) => {
+    43→    43→    go("describe", { vehicleId: vehicle?.id, type: type ?? vehicle?.type ?? selectedType ?? "CAR" });
+    44→    44→  };
+    45→    45→
+    46→    46→  return (
+    47→    47→    <div className="space-y-5">
+    48→    48→      <StepHeader step={1} total={3} title="Select Machine" subtitle="Choose a saved machine or pick a type to continue" onBack={() => go("home")} />
+    49→    49→
+    50→    50→      {hasSaved && (
+    51→    51→        <section>
+    52→    52→          <SectionHeader title="Saved in Your Fleet" subtitle="Tap a machine to request service" />
+    53→    53→          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    54→    54→            {saved.map((v) => (
+    55→    55→              <VehicleCard key={v.id} vehicle={v} selected={params.vehicleId === v.id} onSelect={() => proceed(v)} />
+    56→    56→            ))}
+    57→    57→          </div>
+    58→    58→        </section>
+    59→    59→      )}
+    60→    60→
+    61→    61→      <section>
+    62→    62→        <SectionHeader title={hasSaved ? "Or Pick a New Type" : "What needs service?"} subtitle="Select the machine category" />
+    63→    63→        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    64→    64→          {MACHINE_TYPES.map((m) => (
+    65→    65→            <motion.button
+    66→    66→              key={m.slug}
+    67→    67→              whileHover={{ y: -2 }}
+    68→    68→              onClick={() => { setSelectedType(m.slug); proceed(undefined, m.slug); }}
+    69→    69→              className={`group relative overflow-hidden rounded-xl border bg-card p-4 text-center mk-card-hover ${selectedType === m.slug ? "border-amber mk-amber-glow" : "border-border hover:border-amber/40"}`}
+    70→    70→            >
+    71→    71→              <div className={`mx-auto grid size-12 place-items-center rounded-xl border ${selectedType === m.slug ? "border-amber/40 bg-amber/10" : "border-border bg-background"}`}>
+    72→    72→                <MekIcon name={m.icon} className={`size-6 ${selectedType === m.slug ? "text-amber" : "text-muted-foreground"}`} />
+    73→    73→              </div>
+    74→    74→              <p className="mt-2 font-display text-sm font-semibold">{m.label}</p>
+    75→    75→            </motion.button>
+    76→    76→          ))}
+    77→    77→        </div>
+    78→    78→      </section>
+    79→    79→    </div>
+    80→    80→  );
+    81→    81→}
+    82→    82→
+    83→    83→// ─── Step 2: Describe Problem ───
+    84→    84→export function DescribeProblem({ customer }: { customer: DemoUser }) {
+    85→    85→  const { go, params, machineMode, auth, exitToSplash } = useApp();
+    86→    86→  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    87→    87→  const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
+    88→    88→  const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
+    89→    89→  const [category, setCategory] = useState<string>("");
+    90→    90→  const [urgency, setUrgency] = useState<string>(params.urgency ?? "NORMAL");
+    91→    91→  const [title, setTitle] = useState("");
+    92→    92→  const [description, setDescription] = useState("");
+    93→    93→  const [address, setAddress] = useState("Pier 38, San Francisco, CA");
+    94→    94→  const [media, setMedia] = useState<string[]>([]);
+    95→    95→  const [submitting, setSubmitting] = useState(false);
+    96→    96→  const [guestBlock, setGuestBlock] = useState(false);
+    97→    97→
+    98→    98→  useEffect(() => {
+    99→    99→    if (customer.customer) api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => typesForMode(machineMode).includes(x.type))));
+   100→   100→  }, [customer, machineMode]);
+   101→   101→
+   102→   102→  const addMockMedia = () => {
+   103→   103→    const id = Math.floor(Math.random() * 1000);
+   104→   104→    setMedia((m) => [...m, `https://picsum.photos/seed/mek${id}/120/120`]);
+   105→   105→    toast.success("Photo attached");
+   106→   106→  };
+   107→   107→
+   108→   108→  const submit = async () => {
+   109→   109→    if (auth.isGuest) { setGuestBlock(true); return; }
+   110→   110→    if (!category) { toast.error("Pick a service category"); return; }
+   111→   111→    if (!title.trim()) { toast.error("Add a short title"); return; }
+   112→   112→    if (!vehicleId && !type) { toast.error("Select a machine"); return; }
+   113→   113→    setSubmitting(true);
+   114→   114→    try {
+   115→   115→      const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
+   116→   116→      const lng = -122.4194 + (Math.random() - 0.5) * 0.03;
+   117→   117→      const sr = await api.createRequest({
+   118→   118→        customerId: customer.customer!.id,
+   119→   119→        vehicleId: vehicleId ?? vehicles[0]?.id,
+   120→   120→        category,
+   121→   121→        urgency,
+   122→   122→        title: title.trim(),
+   123→   123→        description: description.trim(),
+   124→   124→        mediaUrls: media,
+   125→   125→        address,
+   126→   126→        lat,
+   127→   127→        lng,
+   128→   128→      });
+   129→   129→      toast.success(`Request ${sr.code} created`);
+   130→   130→      go("matching", { requestId: sr.id });
+   131→   131→    } catch (e: any) {
+   132→   132→      toast.error(e.message ?? "Failed to create request");
+   133→   133→    } finally {
+   134→   134→      setSubmitting(false);
+   135→   135→    }
+   136→   136→  };
+   137→   137→
+   138→   138→  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
+   139→   139→
+   140→   140→  return (
+   141→   141→    <div className="space-y-5">
+   142→   142→      <StepHeader step={2} total={3} title="Describe the Problem" subtitle="Tell us what's going on with your machine" onBack={() => go("request-type")} />
+   143→   143→
+   144→   144→      <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
+   145→   145→        <div className="space-y-5">
+   146→   146→          {/* Machine */}
+   147→   147→          <div className="rounded-xl border border-border bg-card p-4">
+   148→   148→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Machine</Label>
+   149→   149→            {selectedVehicle ? (
+   150→   150→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 p-3">
+   151→   151→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   152→   152→                  <MekIcon name={iconForMachineType(selectedVehicle.type)} className="size-5 text-amber" />
+   153→   153→                </div>
+   154→   154→                <div className="min-w-0 flex-1">
+   155→   155→                  <p className="truncate text-sm font-medium">{selectedVehicle.make} {selectedVehicle.model}</p>
+   156→   156→                  <p className="text-[11px] text-muted-foreground">{selectedVehicle.type} · {selectedVehicle.year}</p>
+   157→   157→                </div>
+   158→   158→                <Button variant="ghost" size="sm" onClick={() => { setVehicleId(undefined); }}>Change</Button>
+   159→   159→              </div>
+   160→   160→            ) : (
+   161→   161→              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-3">
+   162→   162→                <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
+   163→   163→                  <MekIcon name={iconForMachineType(type)} className="size-5 text-amber" />
+   164→   164→                </div>
+   165→   165→                <span className="text-sm font-medium">{MACHINE_TYPES.find((m) => m.slug === type)?.label}</span>
+   166→   166→              </div>
+   167→   167→            )}
+   168→   168→            {vehicles.length > 0 && !selectedVehicle && (
+   169→   169→              <Select onValueChange={setVehicleId} value={vehicleId ?? ""}>
+   170→   170→                <SelectTrigger className="mt-2"><SelectValue placeholder="Link to saved machine (optional)" /></SelectTrigger>
+   171→   171→                <SelectContent>
+   172→   172→                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.make} {v.model} · {v.type}</SelectItem>)}
+   173→   173→                </SelectContent>
+   174→   174→              </Select>
+   175→   175→            )}
+   176→   176→          </div>
+   177→   177→
+   178→   178→          {/* Category */}
+   179→   179→          <div className="rounded-xl border border-border bg-card p-4">
+   180→   180→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Service Category</Label>
+   181→   181→            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+   182→   182→              {SERVICE_CATEGORIES.map((c) => (
+   183→   183→                <button
+   184→   184→                  key={c.slug}
+   185→   185→                  onClick={() => setCategory(c.slug)}
+   186→   186→                  className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-colors ${category === c.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
+   187→   187→                >
+   188→   188→                  <MekIcon name={c.icon} className={`size-4 shrink-0 ${category === c.slug ? "text-amber" : "text-muted-foreground"}`} />
+   189→   189→                  <span className="text-[11px] font-medium leading-tight">{c.label}</span>
+   190→   190→                </button>
+   191→   191→              ))}
+   192→   192→            </div>
+   193→   193→          </div>
+   194→   194→
+   195→   195→          {/* Title + description */}
+   196→   196→          <div className="rounded-xl border border-border bg-card p-4">
+   197→   197→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Problem Summary</Label>
+   198→   198→            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Loud knocking under load at 1600 RPM" className="mt-2" maxLength={120} />
+   199→   199→            <Label className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">Describe Symptoms</Label>
+   200→   200→            <Textarea
+   201→   201→              value={description}
+   202→   202→              onChange={(e) => setDescription(e.target.value)}
+   203→   203→              placeholder="When does it happen? Any warning lights? Recent changes? The more detail, the better the match."
+   204→   204→              rows={4}
+   205→   205→              className="mt-2"
+   206→   206→              maxLength={1000}
+   207→   207→            />
+   208→   208→            <p className="mt-1 text-right text-[10px] text-muted-foreground">{description.length}/1000</p>
+   209→   209→          </div>
+   210→   210→
+   211→   211→          {/* Media */}
+   212→   212→          <div className="rounded-xl border border-border bg-card p-4">
+   213→   213→            <div className="flex items-center justify-between">
+   214→   214→              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attach Photos / Video</Label>
+   215→   215→              <div className="flex gap-1">
+   216→   216→                <Button variant="outline" size="sm" onClick={addMockMedia}><Camera className="mr-1 size-3.5" /> Add</Button>
+   217→   217→                <Button variant="ghost" size="sm" onClick={() => toast.info("Voice recording ready")}><Mic className="size-3.5" /></Button>
+   218→   218→                <Button variant="ghost" size="sm" onClick={() => toast.info("Upload from device")}><Upload className="size-3.5" /></Button>
+   219→   219→              </div>
+   220→   220→            </div>
+   221→   221→            {media.length > 0 && (
+   222→   222→              <div className="mt-3 flex flex-wrap gap-2">
+   223→   223→                {media.map((url, i) => (
+   224→   224→                  <div key={i} className="relative">
+   225→   225→                    { }
+   226→   226→                    <img src={url} alt="" className="size-16 rounded-lg border border-border object-cover" />
+   227→   227→                    <button onClick={() => setMedia((m) => m.filter((_, idx) => idx !== i))} className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-destructive text-white"><X className="size-2.5" /></button>
+   228→   228→                  </div>
+   229→   229→                ))}
+   230→   230→              </div>
+   231→   231→            )}
+   232→   232→          </div>
+   233→   233→        </div>
+   234→   234→
+   235→   235→        {/* Right column: urgency + location + submit */}
+   236→   236→        <div className="space-y-5">
+   237→   237→          <div className="rounded-xl border border-border bg-card p-4">
+   238→   238→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Urgency</Label>
+   239→   239→            <div className="mt-3 space-y-2">
+   240→   240→              {URGENCY.map((u) => (
+   241→   241→                <button
+   242→   242→                  key={u.slug}
+   243→   243→                  onClick={() => setUrgency(u.slug)}
+   244→   244→                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${urgency === u.slug ? "border-amber bg-amber/5" : "border-border hover:bg-accent"}`}
+   245→   245→                >
+   246→   246→                  <UrgencyBadge urgency={u.slug} />
+   247→   247→                  <div className="min-w-0 flex-1">
+   248→   248→                    <p className="text-sm font-medium">{u.label}</p>
+   249→   249→                    <p className="text-[11px] text-muted-foreground">{u.desc}</p>
+   250→   250→                  </div>
+   251→   251→                </button>
+   252→   252→              ))}
+   253→   253→            </div>
+   254→   254→          </div>
+   255→   255→
+   256→   256→          <div className="rounded-xl border border-border bg-card p-4">
+   257→   257→            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Service Location</Label>
+   258→   258→            <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+   259→   259→              <MapPin className="size-4 text-amber" />
+   260→   260→              <Input value={address} onChange={(e) => setAddress(e.target.value)} className="border-0 px-0 focus-visible:ring-0" />
+   261→   261→            </div>
+   262→   262→            <div className="mt-3 h-24 overflow-hidden rounded-lg border border-border bg-[oklch(0.16_0.008_260)]">
+   263→   263→              <div className="size-full mk-grid-bg opacity-40" />
+   264→   264→            </div>
+   265→   265→          </div>
+   266→   266→
+   267→   267→          <div className="sticky bottom-3">
+   268→   268→            <Button onClick={submit} disabled={submitting} className="w-full bg-amber text-black hover:bg-amber/90">
+   269→   269→              {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
+   270→   270→              Find Technicians
+   271→   271→            </Button>
+   272→   272→          </div>
+   273→   273→        </div>
+   274→   274→      </div>
+   275→   275→
+   276→   276→      {/* Guest sign-in prompt */}
+   277→   277→      <Dialog open={guestBlock} onOpenChange={setGuestBlock}>
+   278→   278→        <DialogContent className="max-w-sm">
+   279→   279→          <DialogHeader>
+   280→   280→            <DialogTitle className="flex items-center gap-2 font-display">
+   281→   281→              <ShieldCheck className="size-4 text-amber" /> Sign in required
+   282→   282→            </DialogTitle>
+   283→   283→          </DialogHeader>
+   284→   284→          <p className="text-sm text-muted-foreground">
+   285→   285→            To submit a service request, please sign in with your mobile number. Guests can browse the platform but cannot place requests.
+   286→   286→          </p>
+   287→   287→          <DialogFooter className="gap-2 sm:gap-2">
+   288→   288→            <Button variant="ghost" onClick={() => setGuestBlock(false)}>Later</Button>
+   289→   289→            <Button className="bg-amber text-black hover:bg-amber/90" onClick={() => { exitToSplash(); }}>Sign in now</Button>
+   290→   290→          </DialogFooter>
+   291→   291→        </DialogContent>
+   292→   292→      </Dialog>
+   293→   293→    </div>
+   294→   294→  );
+   295→   295→}
+   296→   296→
+   297→   297→// ─── Step 3: Matching ───
+   298→   298→export function Matching({ customer }: { customer: DemoUser }) {
+   299→   299→  const { go, params } = useApp();
+   300→   300→  const [techs, setTechs] = useState<Technician[] | null>(null);
+   301→   301→  const [phase, setPhase] = useState<"searching" | "results">("searching");
+   302→   302→  const [selected, setSelected] = useState<string | null>(null);
+   303→   303→
+   304→   304→  useEffect(() => {
+   305→   305→    const lat = 37.7749, lng = -122.4194;
+   306→   306→    api.listTechnicians({ lat, lng }).then((t) => {
+   307→   307→      // simulate searching delay
+   308→   308→      setTimeout(() => {
+   309→   309→        setTechs(t);
+   310→   310→        setPhase("results");
+   311→   311→      }, 1900);
+   312→   312→    });
+   313→   313→  }, []);
+   314→   314→
+   315→   315→  const ranked = (techs ?? []).map((t) => {
+   316→   316→    const km = t.lat && t.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: t.lat, lng: t.lng }) : 99;
+   317→   317→    const eta = Math.max(5, Math.round((km / 35) * 60) + t.responseMins);
+   318→   318→    const score = t.rating * 20 - km * 0.4 + (t.verified ? 5 : 0) + t.completedJobs * 0.02;
+   319→   319→    return { tech: t, km, eta, score };
+   320→   320→  }).sort((a, b) => b.score - a.score);
+   321→   321→
+   322→   322→  const onSelect = (techId: string) => {
+   323→   323→    setSelected(techId);
+   324→   324→    go("technician-profile", { requestId: params.requestId, technicianId: techId });
+   325→   325→  };
+   326→   326→
+   327→   327→  return (
+   328→   328→    <div className="space-y-5">
+   329→   329→      <StepHeader step={3} total={3} title="Matching Technicians" subtitle="We found qualified, verified specialists near you" onBack={() => go("describe")} />
+   330→   330→
+   331→   331→      <AnimatePresence mode="wait">
+   332→   332→        {phase === "searching" ? (
+   333→   333→          <motion.div key="searching" exit={{ opacity: 0 }} className="grid place-items-center py-16">
+   334→   334→            <div className="relative">
+   335→   335→              <motion.div
+   336→   336→                animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+   337→   337→                transition={{ duration: 2, repeat: Infinity }}
+   338→   338→                className="absolute inset-0 rounded-full bg-amber"
+   339→   339→              />
+   340→   340→              <div className="relative grid size-20 place-items-center rounded-full border-2 border-amber/30 bg-amber/10">
+   341→   341→                <Search className="size-8 text-amber" />
+   342→   342→              </div>
+   343→   343→            </div>
+   344→   344→            <p className="mt-6 font-display text-lg font-semibold">Searching nearby technicians…</p>
+   345→   345→            <p className="text-sm text-muted-foreground">Analyzing distance, expertise, availability & ratings</p>
+   346→   346→            <div className="mt-4 flex gap-6 text-[11px] text-muted-foreground">
+   347→   347→              <span className="inline-flex items-center gap-1"><NavIcon className="size-3 text-amber" /> Distance</span>
+   348→   348→              <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> Rating</span>
+   349→   349→              <span className="inline-flex items-center gap-1"><BadgeCheck className="size-3 text-amber" /> Certifications</span>
+   350→   350→              <span className="inline-flex items-center gap-1"><Clock className="size-3 text-amber" /> ETA</span>
+   351→   351→            </div>
+   352→   352→          </motion.div>
+   353→   353→        ) : (
+   354→   354→          <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+   355→   355→            {ranked.length === 0 ? (
+   356→   356→              <EmptyState icon={Search} title="No technicians available" description="Try expanding your urgency or location. Emergency dispatch available 24/7." action={<Button onClick={() => go("describe")} variant="outline">Back to details</Button>} />
+   357→   357→            ) : (
+   358→   358→              <div className="grid gap-3 lg:grid-cols-2">
+   359→   359→                {ranked.map((r, i) => (
+   360→   360→                  <TechnicianCard
+   361→   361→                    key={r.tech.id}
+   362→   362→                    tech={r.tech}
+   363→   363→                    distanceKm={r.km}
+   364→   364→                    etaMins={r.eta}
+   365→   365→                    rank={i + 1}
+   366→   366→                    selected={selected === r.tech.id}
+   367→   367→                    onSelect={() => onSelect(r.tech.id)}
+   368→   368→                  />
+   369→   369→                ))}
+   370→   370→              </div>
+   371→   371→            )}
+   372→   372→          </motion.div>
+   373→   373→        )}
+   374→   374→      </AnimatePresence>
+   375→   375→    </div>
+   376→   376→  );
+   377→   377→}
+   378→   378→
+   379→   379→// ─── Technician Profile ───
+   380→   380→export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
+   381→   381→  const { go, params, back } = useApp();
+   382→   382→  const [tech, setTech] = useState<Technician | null>(null);
+   383→   383→  const [requesting, setRequesting] = useState(false);
+   384→   384→
+   385→   385→  useEffect(() => {
+   386→   386→    if (params.technicianId) api.getTechnician(params.technicianId).then(setTech);
+   387→   387→  }, [params.technicianId]);
+   388→   388→
+   389→   389→  const request = async () => {
+   390→   390→    setRequesting(true);
+   391→   391→    try {
+   392→   392→      // assign the technician to the request + create a job in REQUESTED state
+   393→   393→      const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
+   394→   394→      if (!sr) throw new Error("Request not found");
+   395→   395→      // create job
+   396→   396→      const res = await fetch("/api/jobs", { method: "POST" as any }).catch(() => null);
+   397→   397→      // The job creation needs a dedicated endpoint; use the matching+status flow instead:
+   398→   398→      // We'll create the job by patching the request's matchedTech and creating via a dedicated endpoint.
+   399→   399→      const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
+   400→   400→        method: "POST",
+   401→   401→        headers: { "Content-Type": "application/json" },
+   402→   402→        body: JSON.stringify({ technicianId: params.technicianId }),
+   403→   403→      });
+   404→   404→      const job = await jobRes.json();
+   405→   405→      if (!job?.id) throw new Error("Failed to assign technician");
+   406→   406→      toast.success(`${tech?.user.name} has been notified`);
+   407→   407→      go("track", { jobId: job.id });
+   408→   408→    } catch (e: any) {
+   409→   409→      toast.error(e.message ?? "Could not assign technician");
+   410→   410→    } finally {
+   411→   411→      setRequesting(false);
+   412→   412→    }
+   413→   413→  };
+   414→   414→
+   415→   415→  if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
+   416→   416→
+   417→   417→  return (
+   418→   418→    <div className="space-y-5">
+   419→   419→      <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+   420→   420→        <ArrowLeft className="size-4" /> Back to results
+   421→   421→      </button>
+   422→   422→
+   423→   423→      {/* Header */}
+   424→   424→      <div className="relative overflow-hidden rounded-xl border border-border bg-card p-5">
+   425→   425→        <div className="absolute -right-16 -top-16 size-48 rounded-full bg-amber/10 blur-3xl" />
+   426→   426→        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+   427→   427→          <div className="relative shrink-0">
+   428→   428→            <div className="grid size-20 place-items-center overflow-hidden rounded-2xl border border-border bg-muted">
+   429→   429→              {tech.user.avatar ? <img src={tech.user.avatar} alt={tech.user.name} className="size-full object-cover" /> : <span className="font-display text-2xl">{tech.user.name[0]}</span>}
+   430→   430→            </div>
+   431→   431→            {tech.verified && <div className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-card bg-amber text-black"><BadgeCheck className="size-4" /></div>}
+   432→   432→          </div>
+   433→   433→          <div className="flex-1">
+   434→   434→            <div className="flex flex-wrap items-center gap-2">
+   435→   435→              <h1 className="font-display text-xl font-semibold">{tech.user.name}</h1>
+   436→   436→              <span className="rounded-full bg-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber">{tech.level}</span>
+   437→   437→            </div>
+   438→   438→            <div className="mt-1 flex items-center gap-2 text-sm">
+   439→   439→              <StarRating value={tech.rating} />
+   440→   440→              <span className="font-semibold">{tech.rating.toFixed(2)}</span>
+   441→   441→              <span className="text-muted-foreground">· {tech.reviewCount} reviews · {tech.completedJobs} jobs</span>
+   442→   442→            </div>
+   443→   443→            <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
+   444→   444→          </div>
+   445→   445→          <div className="flex flex-col items-end gap-1">
+   446→   446→            <div className="font-display text-2xl font-bold text-amber">${tech.hourlyRate}<span className="text-xs text-muted-foreground">/hr</span></div>
+   447→   447→            <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins)} avg response</div>
+   448→   448→          </div>
+   449→   449→        </div>
+   450→   450→      </div>
+   451→   451→
+   452→   452→      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+   453→   453→        <div className="space-y-4">
+   454→   454→          {/* Specialties */}
+   455→   455→          <div className="rounded-xl border border-border bg-card p-4">
+   456→   456→            <h3 className="font-display text-sm font-semibold">Specialties</h3>
+   457→   457→            <div className="mt-3 flex flex-wrap gap-2">
+   458→   458→              {tech.specialties.map((s) => (
+   459→   459→                <span key={s.id} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs">
+   460→   460→                  <MekIcon name={iconForCategory(s.category)} className="size-3.5 text-amber" />
+   461→   461→                  {s.label}
+   462→   462→                </span>
+   463→   463→              ))}
+   464→   464→            </div>
+   465→   465→          </div>
+   466→   466→
+   467→   467→          {/* Certifications */}
+   468→   468→          <div className="rounded-xl border border-border bg-card p-4">
+   469→   469→            <h3 className="font-display text-sm font-semibold">Certifications</h3>
+   470→   470→            <div className="mt-3 space-y-2">
+   471→   471→              {tech.certifications.map((c) => (
+   472→   472→                <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
+   473→   473→                  <div className={`grid size-9 place-items-center rounded-lg border ${c.verified ? "border-emerald-glow/30 bg-emerald-glow/10" : "border-border bg-muted"}`}>
+   474→   474→                    <ShieldCheck className={`size-4 ${c.verified ? "text-emerald-glow" : "text-muted-foreground"}`} />
+   475→   475→                  </div>
+   476→   476→                  <div className="min-w-0 flex-1">
+   477→   477→                    <p className="text-sm font-medium">{c.name}</p>
+   478→   478→                    <p className="text-[11px] text-muted-foreground">{c.issuer} · {c.year}</p>
+   479→   479→                  </div>
+   480→   480→                  {c.verified ? <span className="rounded bg-emerald-glow/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-glow">Verified</span> : <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Pending</span>}
+   481→   481→                </div>
+   482→   482→              ))}
+   483→   483→            </div>
+   484→   484→          </div>
+   485→   485→
+   486→   486→          {/* Reviews */}
+   487→   487→          <div className="rounded-xl border border-border bg-card p-4">
+   488→   488→            <h3 className="font-display text-sm font-semibold">Recent Reviews</h3>
+   489→   489→            <div className="mt-3 space-y-3">
+   490→   490→              {(tech as any).reviews?.slice(0, 3).map((r: any) => (
+   491→   491→                <div key={r.id} className="rounded-lg border border-border bg-background p-3">
+   492→   492→                  <div className="flex items-center justify-between">
+   493→   493→                    <div className="flex items-center gap-2">
+   494→   494→                      <div className="grid size-7 place-items-center overflow-hidden rounded-full border border-border bg-muted">
+   495→   495→                        {r.fromUser?.avatar ? <img src={r.fromUser.avatar} alt="" className="size-full object-cover" /> : <span className="text-[10px]">{r.fromUser?.name?.[0]}</span>}
+   496→   496→                      </div>
+   497→   497→                      <span className="text-xs font-medium">{r.fromUser?.name}</span>
+   498→   498→                    </div>
+   499→   499→                    <StarRating value={r.rating} size={11} />
+   500→   500→                  </div>
+   501→   501→                  {r.comment && <p className="mt-1.5 text-sm text-muted-foreground">"{r.comment}"</p>}
+   502→   502→                </div>
+   503→   503→              )) ?? <p className="text-sm text-muted-foreground">No reviews yet.</p>}
+   504→   504→            </div>
+   505→   505→          </div>
+   506→   506→        </div>
+   507→   507→
+   508→   508→        {/* Right: booking card */}
+   509→   509→        <div className="space-y-4">
+   510→   510→          <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
+   511→   511→            <h3 className="font-display text-sm font-semibold">Request this Technician</h3>
+   512→   512→            <div className="mt-3 space-y-2 text-sm">
+   513→   513→              <Row label="Hourly rate" value={`$${tech.hourlyRate}/hr`} />
+   514→   514→              <Row label="Travel fee" value={`$${tech.travelFeeBase}`} />
+   515→   515→              <Row label="Est. arrival" value={fmtDuration(tech.responseMins)} />
+   516→   516→              <Row label="Experience" value={`${tech.experienceYears} yrs`} />
+   517→   517→              <Row label="Level" value={tech.level} />
+   518→   518→            </div>
+   519→   519→            <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
+   520→   520→              <ShieldCheck className="mr-1 inline size-3.5 text-amber" />
+   521→   521→              MEKANIX guarantee: free re-diagnosis if fault persists within 7 days.
+   522→   522→            </div>
+   523→   523→            <Button onClick={request} disabled={requesting} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
+   524→   524→              {requesting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
+   525→   525→              Request Now
+   526→   526→            </Button>
+   527→   527→            <p className="mt-2 text-center text-[10px] text-muted-foreground">No charge until work is approved.</p>
+   528→   528→          </div>
+   529→   529→        </div>
+   530→   530→      </div>
+   531→   531→    </div>
+   532→   532→  );
+   533→   533→}
+   534→   534→
+   535→   535→function Row({ label, value }: { label: string; value: string }) {
+   536→   536→  return (
+   537→   537→    <div className="flex items-center justify-between border-b border-border/60 py-1.5 last:border-0">
+   538→   538→      <span className="text-muted-foreground">{label}</span>
+   539→   539→      <span className="font-medium">{value}</span>
+   540→   540→    </div>
+   541→   541→  );
+   542→   542→}
+   543→   543→
+   544→   544→// ─── Shared step header ───
+   545→   545→function StepHeader({ step, total, title, subtitle, onBack }: { step: number; total: number; title: string; subtitle?: string; onBack: () => void }) {
+   546→   546→  return (
+   547→   547→    <div className="flex items-center gap-3">
+   548→   548→      <Button variant="ghost" size="icon" className="size-8" onClick={onBack}><ChevronLeft className="size-4" /></Button>
+   549→   549→      <div className="flex-1">
+   550→   550→        <div className="flex items-center gap-2">
+   551→   551→          <span className="font-mono text-[10px] uppercase tracking-widest text-amber">Step {step} / {total}</span>
+   552→   552→          <div className="h-px flex-1 bg-border" />
+   553→   553→        </div>
+   554→   554→        <h1 className="mt-1 font-display text-xl font-semibold tracking-tight">{title}</h1>
+   555→   555→        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+   556→   556→      </div>
+   557→   557→    </div>
+   558→   558→  );
+   559→   559→}
+   560→   560→

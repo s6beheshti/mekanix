@@ -13,6 +13,7 @@ import { JobStatusTimeline } from "@/components/mek/shared/job-status-timeline";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { fmtMoney, fmtDistance, fmtDuration, fmtRelative } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,19 +33,20 @@ const NEXT_STATUS: Record<string, string> = {
   COMPLETED: "COMPLETED",
 };
 
-const NEXT_LABEL: Record<string, { label: string; icon: any }> = {
-  REQUESTED: { label: "Accept Job", icon: Check },
-  ACCEPTED: { label: "Start Travel", icon: Navigation },
-  EN_ROUTE: { label: "Mark Arrived", icon: MapPin },
-  ARRIVED: { label: "Begin Diagnosis", icon: ClipboardList },
-  DIAGNOSING: { label: "Start Repair", icon: Wrench },
-  REPAIRING: { label: "Send Estimate", icon: FileText },
-  WAITING_APPROVAL: { label: "Awaiting Approval", icon: CircleDashed },
-  COMPLETED: { label: "Completed", icon: CircleCheck },
+const NEXT_ACTION_KEYS: Record<string, { key: string; icon: any }> = {
+  REQUESTED: { key: "tech.jobDetail.action.acceptJob", icon: Check },
+  ACCEPTED: { key: "tech.jobDetail.action.startTravel", icon: Navigation },
+  EN_ROUTE: { key: "tech.jobDetail.action.markArrived", icon: MapPin },
+  ARRIVED: { key: "tech.jobDetail.action.beginDiagnosis", icon: ClipboardList },
+  DIAGNOSING: { key: "tech.jobDetail.action.startRepair", icon: Wrench },
+  REPAIRING: { key: "tech.jobDetail.action.sendEstimate", icon: FileText },
+  WAITING_APPROVAL: { key: "tech.jobDetail.action.awaitingApproval", icon: CircleDashed },
+  COMPLETED: { key: "tech.jobDetail.action.completed", icon: CircleCheck },
 };
 
 export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const { go, params, back } = useApp();
+  const { t, isFa, money, cat } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [advancing, setAdvancing] = useState(false);
@@ -65,7 +67,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
       setJob(j);
       if (!diagnosis && j.diagnosis) setDiagnosis(j.diagnosis);
     } catch {
-      toast.error("Job not found");
+      toast.error(t("tech.jobDetail.notFound"));
       go("requests");
     } finally {
       setLoading(false);
@@ -74,8 +76,8 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 8000);
-    return () => clearInterval(t);
+    const poll = setInterval(load, 8000);
+    return () => clearInterval(poll);
   }, [load]);
 
   const advance = async () => {
@@ -86,7 +88,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
     try {
       const updated = await api.updateJobStatus(job.id, next);
       setJob(updated);
-      toast.success(`Status → ${JOB_STATUS_FLOW.find((s) => s.key === next)?.label}`);
+      toast.success(t("tech.jobDetail.statusSet").replace("{label}", t(`status.${next}`)));
       if (next === "WAITING_APPROVAL") setShowInvoice(true);
     } catch (e: any) {
       toast.error(e.message);
@@ -96,12 +98,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   };
 
   const saveDiagnosis = async () => {
-    if (!job || !diagnosis.trim()) { toast.error("Add a diagnosis summary"); return; }
+    if (!job || !diagnosis.trim()) { toast.error(t("tech.jobDetail.errorDiagnosis")); return; }
     setSavingDiag(true);
     try {
       const updated = await api.setJobDiagnosis(job.id, diagnosis.trim(), severity, faultCode || undefined);
       setJob(updated);
-      toast.success("Diagnosis saved");
+      toast.success(t("tech.jobDetail.diagnosisSaved"));
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -110,7 +112,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   };
 
   const addPart = async () => {
-    if (!job || !partName.trim()) { toast.error("Enter a part name"); return; }
+    if (!job || !partName.trim()) { toast.error(t("tech.jobDetail.errorPartName")); return; }
     setAddingPart(true);
     try {
       await api.addPart(job.id, {
@@ -121,7 +123,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
       const fresh = await api.getJob(job.id);
       setJob(fresh);
       setPartName(""); setPartQty("1"); setPartPrice("");
-      toast.success("Part added");
+      toast.success(t("tech.jobDetail.partAdded"));
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -134,26 +136,26 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
     await api.removePart(job.id, partId);
     const fresh = await api.getJob(job.id);
     setJob(fresh);
-    toast.success("Part removed");
+    toast.success(t("tech.jobDetail.partRemoved"));
   };
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
   if (!job) return null;
 
   const next = NEXT_STATUS[job.status];
-  const nextMeta = NEXT_LABEL[job.status];
+  const nextMeta = NEXT_ACTION_KEYS[job.status];
   const canAdvance = job.status !== "COMPLETED" && job.status !== "CANCELLED" && next !== job.status;
   const techLoc = { lat: user.technician?.lat ?? 37.77, lng: user.technician?.lng ?? -122.42 };
   const custLoc = { lat: job.request.lat, lng: job.request.lng };
   const info = routeInfo(techLoc, custLoc);
   const points: MapPoint[] = [
-    { id: "tech", lat: techLoc.lat, lng: techLoc.lng, kind: "technician", label: "You" },
-    { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? "Customer" },
+    { id: "tech", lat: techLoc.lat, lng: techLoc.lng, kind: "technician", label: t("tech.dashboard.youOnline").split(" ")[0] },
+    { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? t("tech.jobDetail.customer") },
   ];
   const isComplete = job.status === "COMPLETED";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" dir={isFa ? "rtl" : "ltr"}>
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -174,12 +176,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
         <div className="sticky top-14 z-30 rounded-xl border border-amber/30 bg-background/95 p-3 backdrop-blur mk-amber-glow">
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Next action</p>
-              <p className="font-display text-sm font-semibold">{nextMeta.label}</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("tech.jobDetail.nextAction")}</p>
+              <p className="font-display text-sm font-semibold">{t(nextMeta.key)}</p>
             </div>
             <Button onClick={advance} disabled={!canAdvance || advancing} className="bg-amber text-black hover:bg-amber/90">
               {advancing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <nextMeta.icon className="mr-2 size-4" />}
-              {canAdvance ? "Continue" : "Waiting"}
+              {canAdvance ? t("tech.jobDetail.continue") : t("tech.jobDetail.waiting")}
             </Button>
           </div>
         </div>
@@ -195,7 +197,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
           {/* Customer + machine */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Customer</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("tech.jobDetail.customer")}</p>
               <div className="mt-2 flex items-center gap-3">
                 <div className="grid size-10 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
                   {job.request.customer.user.avatar ? <img src={job.request.customer.user.avatar} alt="" className="size-full object-cover" /> : <span className="text-xs">{job.request.customer.user.name[0]}</span>}
@@ -206,12 +208,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 </div>
               </div>
               <div className="mt-3 flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1" onClick={() => toast.success("Calling…")}><Phone className="mr-1 size-3.5" /> Call</Button>
-                <Button variant="outline" size="sm" className="flex-1" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1 size-3.5" /> Chat</Button>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => toast.success(t("toast.calling"))}><Phone className="mr-1 size-3.5" /> {t("track.call")}</Button>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1 size-3.5" /> {t("track.chat")}</Button>
               </div>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Machine</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("tech.jobDetail.machine")}</p>
               <div className="mt-2 flex items-center gap-3">
                 <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
                   <MekIcon name={iconForMachineType(job.request.vehicle.type)} className="size-5 text-amber" />
@@ -231,12 +233,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
           {/* Problem description */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Reported Problem</p>
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("tech.jobDetail.reportedProblem")}</p>
             <p className="mt-1 text-sm">{job.request.description}</p>
             <div className="mt-2 flex items-center gap-2">
               <Badge variant="outline" className="gap-1">
                 <MekIcon name={iconForCategory(job.request.category)} className="size-3 text-amber" />
-                {job.request.category}
+                {cat(job.request.category)}
               </Badge>
             </div>
           </div>
@@ -246,25 +248,25 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center gap-2">
                 <ClipboardList className="size-4 text-amber" />
-                <h3 className="font-display text-sm font-semibold">Diagnosis</h3>
+                <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.diagnosis")}</h3>
               </div>
-              <Textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="Describe the root cause, severity, and recommended fix…" rows={3} className="mt-3" />
+              <Textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder={t("tech.jobDetail.diagnosisPlaceholder")} rows={3} className="mt-3" />
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-[10px]">Fault code</Label>
-                  <Input value={faultCode} onChange={(e) => setFaultCode(e.target.value)} placeholder="e.g. SPN-1487" className="mt-1 h-8 text-xs" />
+                  <Label className="text-[10px]">{t("tech.jobDetail.faultCode")}</Label>
+                  <Input value={faultCode} onChange={(e) => setFaultCode(e.target.value)} placeholder={t("tech.jobDetail.faultCodePlaceholder")} className="mt-1 h-8 text-xs" />
                 </div>
                 <div>
-                  <Label className="text-[10px]">Severity</Label>
+                  <Label className="text-[10px]">{t("tech.jobDetail.severity")}</Label>
                   <div className="mt-1 flex gap-1">
                     {["low", "medium", "high"].map((s) => (
-                      <button key={s} onClick={() => setSeverity(s)} className={`flex-1 rounded border px-2 py-1 text-[10px] capitalize ${severity === s ? "border-amber bg-amber/15 text-amber" : "border-border text-muted-foreground"}`}>{s}</button>
+                      <button key={s} onClick={() => setSeverity(s)} className={`flex-1 rounded border px-2 py-1 text-[10px] ${severity === s ? "border-amber bg-amber/15 text-amber" : "border-border text-muted-foreground"}`}>{t(`tech.jobDetail.severity.${s}`)}</button>
                     ))}
                   </div>
                 </div>
               </div>
               <Button onClick={saveDiagnosis} disabled={savingDiag} size="sm" className="mt-2 bg-amber text-black hover:bg-amber/90">
-                {savingDiag ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Check className="mr-1.5 size-3.5" />} Save Diagnosis
+                {savingDiag ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Check className="mr-1.5 size-3.5" />} {t("tech.jobDetail.saveDiagnosis")}
               </Button>
             </div>
           )}
@@ -274,7 +276,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center gap-2">
                 <Package className="size-4 text-amber" />
-                <h3 className="font-display text-sm font-semibold">Parts & Materials</h3>
+                <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.parts")}</h3>
               </div>
               {job.parts.length > 0 && (
                 <div className="mt-3 space-y-1.5">
@@ -282,7 +284,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                     <div key={p.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                       <span className="text-[11px] text-muted-foreground">×{p.quantity}</span>
-                      <span className="tabular-nums text-amber">{fmtMoney(p.unitPrice)}</span>
+                      <span className="tabular-nums text-amber">{money(p.unitPrice)}</span>
                       <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 className="size-3" />
                       </button>
@@ -291,9 +293,9 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 </div>
               )}
               <div className="mt-3 grid grid-cols-[1fr_60px_80px_auto] gap-2">
-                <Input value={partName} onChange={(e) => setPartName(e.target.value)} placeholder="Part name" className="h-8 text-xs" />
-                <Input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min={1} placeholder="Qty" className="h-8 text-xs" />
-                <Input value={partPrice} onChange={(e) => setPartPrice(e.target.value)} type="number" placeholder="$" className="h-8 text-xs" />
+                <Input value={partName} onChange={(e) => setPartName(e.target.value)} placeholder={t("tech.jobDetail.partName")} className="h-8 text-xs" />
+                <Input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min={1} placeholder={t("tech.jobDetail.qty")} className="h-8 text-xs" />
+                <Input value={partPrice} onChange={(e) => setPartPrice(e.target.value)} type="number" placeholder={t("tech.jobDetail.price")} className="h-8 text-xs" />
                 <Button onClick={addPart} disabled={addingPart} size="sm" className="bg-amber text-black hover:bg-amber/90">
                   {addingPart ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
                 </Button>
@@ -306,7 +308,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
         <div className="space-y-4">
           {/* Timeline */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Progress</h3>
+            <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.progress")}</h3>
             <div className="mt-4"><JobStatusTimeline status={job.status} /></div>
           </div>
 
@@ -314,34 +316,34 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
           {["REPAIRING", "WAITING_APPROVAL", "COMPLETED"].includes(job.status) && (
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-display text-sm font-semibold">Estimate Preview</h3>
+                <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.estimatePreview")}</h3>
                 {job.invoice && <StatusBadge status={job.invoice.status === "PAID" ? "COMPLETED" : "WAITING_APPROVAL"} />}
               </div>
               <div className="mt-3 space-y-1.5 text-sm">
-                <EstLine label={`Labor (est. ${job.invoice?.laborHours ?? 1.5}h)`} amount={(job.invoice?.laborHours ?? 1.5) * job.technician.hourlyRate} />
-                <EstLine label="Parts" amount={job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0)} />
-                <EstLine label="Travel fee" amount={job.technician.travelFeeBase} />
+                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * job.technician.hourlyRate} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0)} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.travelFee")} amount={job.technician.travelFeeBase} moneyFn={money} />
                 <div className="border-t border-border pt-1.5" />
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">Est. Total</span>
+                  <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
                   <span className="font-display text-lg font-bold text-amber">
-                    {fmtMoney((job.invoice?.total ?? (1.5 * job.technician.hourlyRate + job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0) + job.technician.travelFeeBase) * 1.09))}
+                    {money((job.invoice?.total ?? (1.5 * job.technician.hourlyRate + job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0) + job.technician.travelFeeBase) * 1.09))}
                   </span>
                 </div>
               </div>
               {job.status === "REPAIRING" && (
                 <Button onClick={advance} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
-                  <FileText className="mr-2 size-4" /> Send Estimate to Customer
+                  <FileText className="mr-2 size-4" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
               )}
               {job.invoice && (
                 <div className="mt-2 rounded-lg border border-amber/30 bg-amber/5 p-2.5 text-[11px] text-muted-foreground">
-                  {job.invoice.status === "PAID" ? "Invoice paid — warranty activated." : job.customerApproved ? "Customer approved — begin repair." : "Waiting for customer approval."}
+                  {job.invoice.status === "PAID" ? t("tech.jobDetail.invoicePaid") : job.customerApproved ? t("tech.jobDetail.customerApproved") : t("tech.jobDetail.waitingApproval")}
                 </div>
               )}
               {job.invoice && (
-                <Button onClick={() => toast.success(`Invoice ${job.invoice!.code} issued to customer`)} variant="outline" size="sm" className="mt-2 w-full">
-                  <FileText className="mr-1.5 size-3.5" /> Issue Invoice {job.invoice.code}
+                <Button onClick={() => toast.success(t("invoice.issued").replace("{code}", job.invoice!.code))} variant="outline" size="sm" className="mt-2 w-full">
+                  <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", job.invoice.code)}
                 </Button>
               )}
             </div>
@@ -349,32 +351,32 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
           {/* System messages */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Activity</h3>
+            <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.activity")}</h3>
             <div className="mt-2 space-y-1.5">
               {job.messages.filter((m) => m.kind === "system").slice(-4).map((m) => (
                 <div key={m.id} className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] text-muted-foreground">
-                  <span className="font-mono text-[9px]">{fmtRelative(m.createdAt)}</span> · {m.body}
+                  <span className="font-mono text-[9px]">{fmtRelative(m.createdAt, isFa ? "fa" : "en")}</span> · {m.body}
                 </div>
               ))}
-              {job.messages.filter((m) => m.kind === "system").length === 0 && <p className="text-[11px] text-muted-foreground">No activity yet.</p>}
+              {job.messages.filter((m) => m.kind === "system").length === 0 && <p className="text-[11px] text-muted-foreground">{t("tech.jobDetail.noActivity")}</p>}
             </div>
           </div>
         </div>
       </div>
 
       <div className="flex gap-2">
-        <Button variant="outline" className="flex-1" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-2 size-4" /> Open Chat</Button>
-        {isComplete && <Button className="flex-1 bg-amber text-black hover:bg-amber/90" onClick={() => go("earnings")}>View Earnings <ChevronRight className="ml-1 size-4" /></Button>}
+        <Button variant="outline" className="flex-1" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-2 size-4" /> {t("tech.jobDetail.openChat")}</Button>
+        {isComplete && <Button className="flex-1 bg-amber text-black hover:bg-amber/90" onClick={() => go("earnings")}>{t("tech.jobDetail.viewEarnings")} <ChevronRight className="ml-1 size-4" /></Button>}
       </div>
     </div>
   );
 }
 
-function EstLine({ label, amount }: { label: string; amount: number }) {
+function EstLine({ label, amount, moneyFn }: { label: string; amount: number; moneyFn: (n: number) => string }) {
   return (
     <div className="flex items-center justify-between text-muted-foreground">
       <span>{label}</span>
-      <span className="tabular-nums text-foreground">{fmtMoney(amount)}</span>
+      <span className="tabular-nums text-foreground">{moneyFn(amount)}</span>
     </div>
   );
 }

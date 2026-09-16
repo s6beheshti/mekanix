@@ -9,11 +9,13 @@ import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge"
 import { EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { fmtMoney, fmtDistance, fmtDuration, fmtRelative, haversine } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export function TechnicianRequests({ user }: { user: DemoUser }) {
   const { go } = useApp();
+  const { t, isFa } = useT();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [acting, setActing] = useState<string | null>(null);
 
@@ -27,7 +29,7 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
     setActing(jobId);
     try {
       await api.updateJobStatus(jobId, "ACCEPTED");
-      toast.success("Job accepted — heading out soon");
+      toast.success(t("tech.requests.accepted"));
       load();
     } catch (e: any) {
       toast.error(e.message);
@@ -40,7 +42,7 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
     setActing(jobId);
     try {
       await api.updateJobStatus(jobId, "CANCELLED");
-      toast.success("Job declined");
+      toast.success(t("tech.requests.declined"));
       load();
     } catch (e: any) {
       toast.error(e.message);
@@ -54,18 +56,18 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
   const recent = (jobs ?? []).filter((j) => ["COMPLETED", "CANCELLED"].includes(j.status));
 
   return (
-    <div className="space-y-5">
-      <SectionHeader title="Service Requests" subtitle="Incoming matches & your active jobs" />
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+      <SectionHeader title={t("tech.requests.title")} subtitle={t("tech.requests.subtitle")} />
 
       <div>
         <h3 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold">
-          <Inbox className="size-4 text-amber" /> New Requests
+          <Inbox className="size-4 text-amber" /> {t("tech.requests.new")}
           {incoming.length > 0 && <span className="rounded-full bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">{incoming.length}</span>}
         </h3>
         {jobs === null ? (
           <div className="space-y-2">{[0, 1].map((i) => <div key={i} className="h-32 rounded-xl bg-muted/60 mk-shimmer" />)}</div>
         ) : incoming.length === 0 ? (
-          <EmptyState icon={Inbox} title="No new requests" description="You'll see incoming jobs here when customers request service." />
+          <EmptyState icon={Inbox} title={t("tech.requests.noNew")} description={t("tech.requests.noNewDesc")} />
         ) : (
           <div className="space-y-2">
             <AnimatePresence>
@@ -78,9 +80,9 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
       </div>
 
       <div>
-        <h3 className="mb-2 font-display text-sm font-semibold">Active Jobs</h3>
+        <h3 className="mb-2 font-display text-sm font-semibold">{t("tech.requests.active")}</h3>
         {active.length === 0 ? (
-          <EmptyState icon={ChevronRight} title="No active jobs" description="Accept a request to start." />
+          <EmptyState icon={ChevronRight} title={t("tech.requests.noActive")} description={t("tech.requests.noActiveDesc")} />
         ) : (
           <div className="space-y-2">
             {active.map((job) => <ActiveRow key={job.id} job={job} onClick={() => go("job-detail", { jobId: job.id })} />)}
@@ -89,9 +91,9 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
       </div>
 
       <div>
-        <h3 className="mb-2 font-display text-sm font-semibold">Recent</h3>
+        <h3 className="mb-2 font-display text-sm font-semibold">{t("tech.requests.recent")}</h3>
         {recent.length === 0 ? (
-          <EmptyState icon={Check} title="No completed jobs yet" />
+          <EmptyState icon={Check} title={t("tech.requests.noCompleted")} />
         ) : (
           <div className="space-y-2">
             {recent.slice(0, 6).map((job) => <ActiveRow key={job.id} job={job} onClick={() => go("job-detail", { jobId: job.id })} />)}
@@ -103,6 +105,7 @@ export function TechnicianRequests({ user }: { user: DemoUser }) {
 }
 
 function RequestCard({ job, userLat, userLng, acting, onAccept, onReject, onOpen }: { job: Job; userLat: number | null; userLng: number | null; acting: boolean; onAccept: () => void; onReject: () => void; onOpen: () => void }) {
+  const { t, isFa, money } = useT();
   const dist = userLat != null && userLng != null && job.request.lat
     ? haversine({ lat: userLat, lng: userLng }, { lat: job.request.lat, lng: job.request.lng })
     : null;
@@ -125,30 +128,31 @@ function RequestCard({ job, userLat, userLng, acting, onAccept, onReject, onOpen
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{job.request.description}</p>
         </button>
         <div className="shrink-0 text-right">
-          <p className="font-display text-lg font-bold text-amber">{fmtMoney(job.technician.hourlyRate * 1.5)}</p>
-          <p className="text-[10px] text-muted-foreground">est. payout</p>
+          <p className="font-display text-lg font-bold text-amber">{money(job.technician.hourlyRate * 1.5)}</p>
+          <p className="text-[10px] text-muted-foreground">{t("tech.requests.estPayout")}</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
         <span>{job.request.customer.user.name}</span>
-        {dist != null && <span>{fmtDistance(dist)} away</span>}
-        <span>ETA {fmtDuration(job.etaMins)}</span>
-        <span>{fmtRelative(job.createdAt)}</span>
+        {dist != null && <span>{fmtDistance(dist, isFa ? "fa" : "en")} {t("tech.requests.away")}</span>}
+        <span>{t("tech.requests.eta")} {fmtDuration(job.etaMins, isFa ? "fa" : "en")}</span>
+        <span>{fmtRelative(job.createdAt, isFa ? "fa" : "en")}</span>
       </div>
       <div className="mt-3 flex gap-2">
         <Button onClick={onAccept} disabled={acting} className="flex-1 bg-amber text-black hover:bg-amber/90">
-          {acting ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Check className="mr-1.5 size-4" />} Accept
+          {acting ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Check className="mr-1.5 size-4" />} {t("tech.requests.accept")}
         </Button>
         <Button onClick={onReject} disabled={acting} variant="outline" className="text-destructive hover:bg-destructive/10">
-          <X className="mr-1.5 size-4" /> Decline
+          <X className="mr-1.5 size-4" /> {t("tech.requests.decline")}
         </Button>
-        <Button onClick={onOpen} variant="outline">Details</Button>
+        <Button onClick={onOpen} variant="outline">{t("tech.requests.details")}</Button>
       </div>
     </motion.div>
   );
 }
 
 function ActiveRow({ job, onClick }: { job: Job; onClick: () => void }) {
+  const { t, isFa, money } = useT();
   return (
     <button onClick={onClick} className="group flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left mk-card-hover hover:border-amber/40">
       <div className="grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-background">
@@ -160,9 +164,9 @@ function ActiveRow({ job, onClick }: { job: Job; onClick: () => void }) {
           <StatusBadge status={job.status} />
         </div>
         <p className="mt-0.5 truncate text-sm font-medium">{job.request.title}</p>
-        <p className="text-[11px] text-muted-foreground">{job.request.customer.user.name} · {fmtRelative(job.updatedAt)}</p>
+        <p className="text-[11px] text-muted-foreground">{job.request.customer.user.name} · {fmtRelative(job.updatedAt, isFa ? "fa" : "en")}</p>
       </div>
-      {job.invoice && <span className="font-mono text-xs text-amber">{fmtMoney(job.invoice.total)}</span>}
+      {job.invoice && <span className="font-mono text-xs text-amber">{money(job.invoice.total)}</span>}
       <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
     </button>
   );

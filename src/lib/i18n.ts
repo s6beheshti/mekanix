@@ -472,6 +472,11 @@ const DICT: Record<Lang, Record<string, string>> = {
     "req.techProfile.assignFailed": "Could not assign technician",
     "req.techProfile.requestNotFound": "Request not found",
 
+    // ── Fees (inline display on technician cards / booking summary) ──
+    "fees.inspectionFee": "Inspection fee",
+    "fees.travelFee": "Travel fee",
+    "fees.totalEstimate": "Total estimate",
+
     // ── Tracking ──
     "track.calculatingEta": "Calculating ETA…",
     "track.estArrival": "est. arrival",
@@ -1641,6 +1646,11 @@ const DICT: Record<Lang, Record<string, string>> = {
     "req.techProfile.notified": "به {name} اطلاع داده شد",
     "req.techProfile.assignFailed": "اختصاص مکانیک ناموفق بود",
     "req.techProfile.requestNotFound": "درخواست یافت نشد",
+
+    // ── Fees (inline display on technician cards / booking summary) ──
+    "fees.inspectionFee": "هزینه عیب‌یابی",
+    "fees.travelFee": "هزینه سفر",
+    "fees.totalEstimate": "مجموع تخمینی",
 
     // ── Tracking ──
     "track.calculatingEta": "در حال محاسبه زمان رسیدن…",

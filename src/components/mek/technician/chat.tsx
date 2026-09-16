@@ -6,9 +6,11 @@ import { api, type Job } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { ChatPanel } from "@/components/mek/shared/chat-panel";
 import { EmptyState } from "@/components/mek/shared/primitives";
+import { useT } from "@/lib/use-t";
 
 export function TechnicianChat({ user }: { user: DemoUser }) {
   const { params, back } = useApp();
+  const { t, isFa } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,10 +28,10 @@ export function TechnicianChat({ user }: { user: DemoUser }) {
   }, [params.jobId]);
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
-  if (!job) return <EmptyState icon={MessageSquare} title="No active conversation" description="Open a job to chat with the customer." />;
+  if (!job) return <EmptyState icon={MessageSquare} title={t("tech.chat.empty")} description={t("tech.chat.empty")} />;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card" style={{ height: "calc(100vh - 8rem)" }}>
+    <div className="overflow-hidden rounded-xl border border-border bg-card" dir={isFa ? "rtl" : "ltr"} style={{ height: "calc(100vh - 8rem)" }}>
       <ChatPanel
         job={job}
         currentUserId={user.id}

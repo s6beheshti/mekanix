@@ -11,12 +11,14 @@ import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/pri
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
 import { fmtMoney, fmtRelative, fmtDuration } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 export function TechnicianDashboard({ user }: { user: DemoUser }) {
   const { go } = useApp();
+  const { t, isFa, money } = useT();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [online, setOnline] = useState(user.technician?.status === "ONLINE");
   const [todayEarnings, setTodayEarnings] = useState(0);
@@ -45,10 +47,10 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next ? "ONLINE" : "OFFLINE", availableNow: next }),
       });
-      toast.success(next ? "You're now online" : "You're offline");
+      toast.success(next ? t("tech.dashboard.onlineNow") : t("tech.dashboard.offlineNow"));
     } catch {
       setOnline(!next);
-      toast.error("Could not update status");
+      toast.error(t("tech.dashboard.statusUpdateFail"));
     }
   };
 
@@ -56,7 +58,7 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
   const incoming = (jobs ?? []).filter((j) => j.status === "REQUESTED");
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       {/* Status hero */}
       <div className="relative overflow-hidden rounded-xl border border-border bg-card p-4">
         <div className="absolute -right-10 -top-10 size-40 rounded-full bg-amber/10 blur-3xl" />
@@ -69,12 +71,12 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
               {online && <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-emerald-glow mk-status-pulse" />}
             </div>
             <div>
-              <p className="font-display text-sm font-semibold">{online ? "You're Online" : "You're Offline"}</p>
-              <p className="text-[11px] text-muted-foreground">{online ? "Receiving job requests" : "Toggle on to receive jobs"}</p>
+              <p className="font-display text-sm font-semibold">{online ? t("tech.dashboard.youOnline") : t("tech.dashboard.youOffline")}</p>
+              <p className="text-[11px] text-muted-foreground">{online ? t("tech.dashboard.receivingJobs") : t("tech.dashboard.toggleOn")}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{online ? "Online" : "Offline"}</span>
+            <span className="text-xs text-muted-foreground">{online ? t("common.online") : t("common.offline")}</span>
             <Switch checked={online} onCheckedChange={toggleOnline} />
           </div>
         </div>
@@ -82,20 +84,20 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Today" value={fmtMoney(todayEarnings)} icon={Wallet} tone="amber" sub="Earnings" />
-        <StatCard label="This Week" value={fmtMoney(weekEarnings)} icon={TrendingUp} tone="emerald" sub="Revenue" />
-        <StatCard label="Rating" value={(user.technician.rating ?? 0).toFixed(1)} icon={Star} tone="violet" sub={`${user.technician.reviewCount} reviews`} />
-        <StatCard label="Completed" value={user.technician.completedJobs} icon={Zap} tone="blue" sub="Lifetime jobs" />
+        <StatCard label={t("tech.dashboard.today")} value={money(todayEarnings)} icon={Wallet} tone="amber" sub={t("tech.dashboard.earnings")} />
+        <StatCard label={t("tech.dashboard.thisWeek")} value={money(weekEarnings)} icon={TrendingUp} tone="emerald" sub={t("tech.dashboard.revenue")} />
+        <StatCard label={t("tech.dashboard.rating")} value={(user.technician.rating ?? 0).toFixed(1)} icon={Star} tone="violet" sub={`${user.technician.reviewCount} ${t("common.reviews")}`} />
+        <StatCard label={t("tech.dashboard.completed")} value={user.technician.completedJobs} icon={Zap} tone="blue" sub={t("tech.dashboard.lifetimeJobs")} />
       </div>
 
       {/* Incoming requests */}
       <section>
-        <SectionHeader title="Incoming Requests" subtitle="New jobs matched to your expertise" action={<Button variant="ghost" size="sm" onClick={() => go("requests")}>All <ChevronRight className="size-3.5" /></Button>} />
+        <SectionHeader title={t("tech.dashboard.incoming")} subtitle={t("tech.dashboard.incomingSub")} action={<Button variant="ghost" size="sm" onClick={() => go("requests")}>{t("tech.dashboard.all")} <ChevronRight className="size-3.5" /></Button>} />
         <div className="mt-3">
           {jobs === null ? (
             <div className="space-y-2">{[0, 1].map((i) => <div key={i} className="h-24 rounded-xl bg-muted/60 mk-shimmer" />)}</div>
           ) : incoming.length === 0 ? (
-            <EmptyState icon={Inbox} title="No incoming requests" description={online ? "You'll be notified when a job matches you." : "Go online to receive requests."} />
+            <EmptyState icon={Inbox} title={t("tech.dashboard.noIncoming")} description={online ? t("tech.dashboard.noIncomingOnline") : t("tech.dashboard.noIncomingOffline")} />
           ) : (
             <div className="space-y-2">
               {incoming.map((job) => (
@@ -108,10 +110,10 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
 
       {/* Active jobs */}
       <section>
-        <SectionHeader title="Active Jobs" subtitle="Jobs currently in progress" action={<Button variant="ghost" size="sm" onClick={() => go("requests")}>View all <ChevronRight className="size-3.5" /></Button>} />
+        <SectionHeader title={t("tech.dashboard.activeJobs")} subtitle={t("tech.dashboard.activeJobsSub")} action={<Button variant="ghost" size="sm" onClick={() => go("requests")}>{t("tech.dashboard.viewAll")} <ChevronRight className="size-3.5" /></Button>} />
         <div className="mt-3">
           {active.length === 0 ? (
-            <EmptyState icon={Activity} title="No active jobs" description="Accept an incoming request to begin." />
+            <EmptyState icon={Activity} title={t("tech.dashboard.noActive")} description={t("tech.dashboard.noActiveDesc")} />
           ) : (
             <div className="space-y-2">
               {active.map((job) => (
@@ -126,6 +128,7 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
 }
 
 function JobRow({ job, onClick }: { job: Job; onClick: () => void }) {
+  const { t, isFa } = useT();
   return (
     <motion.button
       initial={{ opacity: 0, y: 4 }}
@@ -145,14 +148,14 @@ function JobRow({ job, onClick }: { job: Job; onClick: () => void }) {
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="truncate">{job.request.customer.user.name}</span>
           <span>·</span>
-          <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" /> {job.request.vehicle.location ?? "On-site"}</span>
+          <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" /> {job.request.vehicle.location ?? t("home.onSite")}</span>
           <span>·</span>
-          <span className="inline-flex items-center gap-0.5"><Clock className="size-3" /> {fmtDuration(job.etaMins)}</span>
+          <span className="inline-flex items-center gap-0.5"><Clock className="size-3" /> {fmtDuration(job.etaMins, isFa ? "fa" : "en")}</span>
         </div>
       </div>
       <div className="flex flex-col items-end gap-1">
         <StatusBadge status={job.status} />
-        <span className="text-[10px] text-muted-foreground">{fmtRelative(job.updatedAt)}</span>
+        <span className="text-[10px] text-muted-foreground">{fmtRelative(job.updatedAt, isFa ? "fa" : "en")}</span>
       </div>
       <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
     </motion.button>

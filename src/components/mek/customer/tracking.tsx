@@ -12,6 +12,7 @@ import { JobStatusTimeline } from "@/components/mek/shared/job-status-timeline";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { fmtDistance, fmtDuration, fmtRelative } from "@/lib/format";
+import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -21,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 export function CustomerTracking({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
+  const { t, isFa } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -32,7 +34,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
       const j = await api.getJob(params.jobId);
       setJob(j);
     } catch {
-      toast.error("Job not found");
+      toast.error(t("track.jobNotFound"));
       go("home");
     } finally {
       setLoading(false);
@@ -41,8 +43,8 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 6000); // poll for updates
-    return () => clearInterval(t);
+    const poll = setInterval(load, 6000); // poll for updates
+    return () => clearInterval(poll);
   }, [load]);
 
   const cancel = async () => {
@@ -51,7 +53,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
       const updated = await api.updateJobStatus(job.id, "CANCELLED");
       setJob(updated);
       setCancelOpen(false);
-      toast.success("Job cancelled");
+      toast.success(t("track.jobCancelledToast"));
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -65,10 +67,10 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
   const techLoc = job.tracking.length ? job.tracking[job.tracking.length - 1] : null;
   const custLoc = { lat: job.request.lat, lng: job.request.lng };
   const route = (job.tracking.length
-    ? job.tracking.map((t) => ({ lat: t.lat, lng: t.lng }))
+    ? job.tracking.map((p) => ({ lat: p.lat, lng: p.lng }))
     : techLoc ? [{ lat: techLoc.lat, lng: techLoc.lng }, custLoc] : []) as { lat: number; lng: number }[];
   const points: MapPoint[] = [
-    { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? "Your location" },
+    { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? t("track.yourLocation") },
     ...(techLoc ? [{ id: "tech", lat: techLoc.lat, lng: techLoc.lng, kind: "technician" as const, label: job.technician.user.name }] : []),
   ];
   const info = techLoc ? routeInfo({ lat: techLoc.lat, lng: techLoc.lng }, custLoc) : null;
@@ -76,7 +78,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
   const isCancelled = job.status === "CANCELLED";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" dir={isFa ? "rtl" : "ltr"}>
       {/* Top bar */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -107,13 +109,13 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
                 </div>
                 <div>
                   <p className="text-xs font-medium">{job.technician.user.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{info ? info.label : "Calculating ETA…"}</p>
+                  <p className="text-[10px] text-muted-foreground">{info ? info.label : t("track.calculatingEta")}</p>
                 </div>
               </div>
               {job.status === "EN_ROUTE" && (
                 <div className="text-right">
-                  <p className="font-display text-lg font-bold text-amber">{job.etaMins}<span className="text-[10px] text-muted-foreground"> min</span></p>
-                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">est. arrival</p>
+                  <p className="font-display text-lg font-bold text-amber">{job.etaMins}<span className="text-[10px] text-muted-foreground"> {t("track.min")}</span></p>
+                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("track.estArrival")}</p>
                 </div>
               )}
             </div>
@@ -122,8 +124,8 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
           {/* Status timeline */}
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-display text-sm font-semibold">Job Progress</h3>
-              <Button variant="ghost" size="sm" className="gap-1 text-[11px]" onClick={load}><RefreshCw className="size-3" /> Refresh</Button>
+              <h3 className="font-display text-sm font-semibold">{t("track.jobProgress")}</h3>
+              <Button variant="ghost" size="sm" className="gap-1 text-[11px]" onClick={load}><RefreshCw className="size-3" /> {t("track.refresh")}</Button>
             </div>
             <div className="mt-4">
               <JobStatusTimeline status={job.status} />
@@ -132,7 +134,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
 
           {/* Machine info */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Machine</h3>
+            <h3 className="font-display text-sm font-semibold">{t("track.machine")}</h3>
             <div className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-background p-3">
               <div className="grid size-10 place-items-center rounded-lg border border-border bg-muted">
                 <span className="font-mono text-[10px] uppercase">{job.request.vehicle.type}</span>
@@ -150,7 +152,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
         {/* Actions + technician */}
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-display text-sm font-semibold">Technician</h3>
+            <h3 className="font-display text-sm font-semibold">{t("track.technician")}</h3>
             <div className="mt-3 flex items-center gap-3">
               <div className="grid size-12 place-items-center overflow-hidden rounded-xl border border-border bg-muted">
                 {job.technician.user.avatar ? <img src={job.technician.user.avatar} alt="" className="size-full object-cover" /> : <span className="font-semibold">{job.technician.user.name[0]}</span>}
@@ -166,8 +168,8 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
               {job.technician && <BadgeCheck className="size-4 text-amber" />}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1.5 size-4" /> Chat</Button>
-              <Button variant="outline" onClick={() => toast.success("Connecting call…")}><Phone className="mr-1.5 size-4" /> Call</Button>
+              <Button variant="outline" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1.5 size-4" /> {t("track.chat")}</Button>
+              <Button variant="outline" onClick={() => toast.success(t("track.connectingCall"))}><Phone className="mr-1.5 size-4" /> {t("track.call")}</Button>
             </div>
           </div>
 
@@ -176,18 +178,18 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-amber/40 bg-amber/5 p-4">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="size-5 text-amber" />
-                <h3 className="font-display text-sm font-semibold">Estimate Ready</h3>
+                <h3 className="font-display text-sm font-semibold">{t("track.estimateReady")}</h3>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Review the diagnosis and approve the repair estimate.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("track.estimateReadyDesc")}</p>
               <Button onClick={() => go("invoice", { jobId: job.id })} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
-                View Estimate <ChevronRight className="ml-1 size-4" />
+                {t("track.viewEstimate")} <ChevronRight className="ml-1 size-4" />
               </Button>
             </motion.div>
           )}
 
           {job.diagnosis && ["DIAGNOSING", "REPAIRING", "WAITING_APPROVAL", "COMPLETED"].includes(job.status) && (
             <div className="rounded-xl border border-border bg-card p-4">
-              <h3 className="font-display text-sm font-semibold">Diagnosis</h3>
+              <h3 className="font-display text-sm font-semibold">{t("track.diagnosis")}</h3>
               <p className="mt-2 text-sm text-muted-foreground">{job.diagnosis}</p>
             </div>
           )}
@@ -198,12 +200,12 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-emerald-glow/40 bg-emerald-glow/5 p-4">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-emerald-glow" />
-                  <h3 className="font-display text-sm font-semibold">Job Complete</h3>
+                  <h3 className="font-display text-sm font-semibold">{t("track.jobComplete")}</h3>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Review the summary, pay, and rate your technician.</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("track.jobCompleteDesc")}</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Button onClick={() => go("invoice", { jobId: job.id })} variant="outline">View Invoice</Button>
-                  <Button onClick={() => go("completion", { jobId: job.id })} className="bg-amber text-black hover:bg-amber/90">Complete & Rate</Button>
+                  <Button onClick={() => go("invoice", { jobId: job.id })} variant="outline">{t("track.viewInvoice")}</Button>
+                  <Button onClick={() => go("completion", { jobId: job.id })} className="bg-amber text-black hover:bg-amber/90">{t("track.completeRate")}</Button>
                 </div>
               </motion.div>
             </div>
@@ -212,13 +214,13 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
           {/* Cancel / emergency */}
           {!isComplete && !isCancelled && (
             <div className="rounded-xl border border-border bg-card p-4">
-              <h3 className="font-display text-sm font-semibold">Need help?</h3>
+              <h3 className="font-display text-sm font-semibold">{t("track.needHelp")}</h3>
               <div className="mt-3 space-y-2">
                 <Button variant="outline" className="w-full justify-start text-destructive hover:bg-destructive/10" onClick={() => setCancelOpen(true)}>
-                  <X className="mr-2 size-4" /> Cancel Request
+                  <X className="mr-2 size-4" /> {t("track.cancelRequest")}
                 </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => toast.success("Emergency line connected — help on the way")}>
-                  <ShieldAlert className="mr-2 size-4 text-rose-500" /> Emergency Contact
+                <Button variant="outline" className="w-full justify-start" onClick={() => toast.success(t("track.emergencyConnected"))}>
+                  <ShieldAlert className="mr-2 size-4 text-rose-500" /> {t("track.emergencyContact")}
                 </Button>
               </div>
             </div>
@@ -226,7 +228,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
 
           {isCancelled && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-              This job was cancelled. <button onClick={() => go("home")} className="underline">Back to home</button>
+              {t("track.jobCancelled")} <button onClick={() => go("home")} className="underline">{t("track.backHome")}</button>
             </div>
           )}
         </div>
@@ -235,11 +237,11 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
       {/* Cancel dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Cancel this request?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">The technician will be notified and released. This cannot be undone.</p>
+          <DialogHeader><DialogTitle>{t("track.cancelTitle")}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{t("track.cancelBody")}</p>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCancelOpen(false)}>Keep Job</Button>
-            <Button variant="destructive" onClick={cancel}>Cancel Job</Button>
+            <Button variant="ghost" onClick={() => setCancelOpen(false)}>{t("track.keepJob")}</Button>
+            <Button variant="destructive" onClick={cancel}>{t("track.cancelJob")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
