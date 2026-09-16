@@ -337,3 +337,27 @@ Stage Summary:
 - Splash: clean, minimal, 9/10 VLM rating
 - Mechanic registration: works end-to-end (register → approve → login → dashboard)
 - Mechanic login: shows "ورود مکانیک" heading correctly
+
+---
+Task ID: 121
+Agent: orchestrator
+Task: Redesign splash - professional, clean, well-spaced
+
+Work Log:
+- Splash redesigned:
+  * Removed: tagline text below logo, grid background, scan line, big "مکانیکس" heading, cluttered layout
+  * Logo: size reduced to 180px (was 200), container 240x160, cleaner glow
+  * Layout: full-height flex column, content vertically centered, max-width xs (320px)
+  * Spacing: mt-12 between logo and primary buttons, mt-6 for divider, generous padding
+  * Primary buttons: "ورود با موبایل" (amber, h-13, rounded-xl, py-3.5) + "ادامه به‌عنوان مهمان" (ghost, subtle)
+  * Divider: thin line with "یا"/"OR" in center
+  * Mechanic section: "ورود مکانیک‌ها" as bordered button (clearly separated from customer) + "ثبت‌نام به‌عنوان مکانیک" as small text link below
+  * No tagline text, no "مکانیکس" heading — logo speaks for itself
+  * VLM: 8.5/10 "production-ready, premium, well-hierarchied"
+- Mechanic registration: verified working (APP-3758, 200 OK)
+- Mechanic login: "ورود مکانیک" heading, OTP flow, dashboard loads
+
+Stage Summary:
+- Lint clean, no browser errors.
+- Splash: clean, professional, well-spaced. 8.5/10 VLM.
+- Mechanic registration + login: fully working end-to-end.

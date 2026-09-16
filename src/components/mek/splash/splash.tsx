@@ -126,17 +126,17 @@ export function Splash() {
 
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050607]">
-      {/* Subtle ambient glow only — no grid, no scan line */}
-      <div className="absolute left-1/2 top-[35%] size-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.08), transparent 65%)" }} />
+    <div className="relative min-h-screen overflow-hidden bg-[#050607] flex flex-col">
+      {/* Single ambient glow — soft, centered */}
+      <div className="absolute left-1/2 top-[40%] size-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.06), transparent 70%)" }} />
 
-      {/* Language toggle — top-right, minimal */}
-      <div className="absolute end-5 top-5 z-30 flex items-center gap-1 rounded-full border border-white/8 bg-white/5 p-0.5 backdrop-blur">
+      {/* Language toggle — top corner, ultra-minimal */}
+      <div className="absolute end-6 top-6 z-30 flex items-center gap-0.5 rounded-full border border-white/8 bg-white/5 p-0.5 backdrop-blur-sm">
         {LANGS.map((l) => (
           <button
             key={l.code}
             onClick={() => setLang(l.code as Lang)}
-            className={`relative rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${lang === l.code ? "text-black" : "text-white/50 hover:text-white"}`}
+            className={`relative rounded-full px-3 py-1 text-[10px] font-medium transition-colors ${lang === l.code ? "text-black" : "text-white/40 hover:text-white/70"}`}
           >
             {lang === l.code && <motion.div layoutId="splash-lang" className="absolute inset-0 rounded-full bg-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
             <span className="relative">{l.label}</span>
@@ -144,8 +144,8 @@ export function Splash() {
         ))}
       </div>
 
-      {/* Center hero — clean, minimal, spacious */}
-      <div className="relative z-20 mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center px-6">
+      {/* Main content — vertically centered, spacious */}
+      <div className="relative z-20 flex flex-1 flex-col items-center justify-center px-8">
         <AnimatePresence mode="wait">
           {stage === "entry" && (
             <motion.div
@@ -153,35 +153,24 @@ export function Splash() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="w-full text-center"
+              transition={{ duration: 0.4 }}
+              className="w-full max-w-xs text-center"
             >
-              {/* Logo — inverted, clean, no disk */}
+              {/* Logo — clean, inverted, well-sized */}
               <HeroLogo />
 
-              {/* Tagline — subtle, not bold */}
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="mt-8 text-[11px] font-light uppercase tracking-[0.3em] text-white/35"
-                dir={isFa ? "rtl" : "ltr"}
-              >
-                {isFa ? "تعمیر / نگهداری / اتصال" : "Repair / Maintain / Connect"}
-              </motion.p>
-
-              {/* Actions — minimal, two primary + two secondary */}
+              {/* Primary actions — generous spacing */}
               <motion.div
-                initial={{ opacity: 0, y: 8 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7 }}
-                className="mt-10 space-y-2"
+                transition={{ delay: 0.6 }}
+                className="mt-12 space-y-3"
               >
-                <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full bg-amber text-black hover:bg-amber/90">
-                  <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
+                <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-13 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
+                  {t("splash.signInMobile")}
                 </Button>
-                <Button onClick={continueAsGuest} variant="ghost" className="h-11 w-full text-white/70 hover:text-white hover:bg-white/5">
-                  <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
+                <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
+                  {t("splash.continueGuest")}
                 </Button>
               </motion.div>
 
@@ -189,39 +178,34 @@ export function Splash() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.9 }}
-                className="my-5 flex items-center gap-3"
+                transition={{ delay: 0.8 }}
+                className="my-6 flex items-center gap-3"
               >
-                <div className="h-px flex-1 bg-white/8" />
-                <span className="text-[9px] uppercase tracking-widest text-white/25">{isFa ? "یا" : "or"}</span>
-                <div className="h-px flex-1 bg-white/8" />
+                <div className="h-px flex-1 bg-white/6" />
+                <span className="text-[9px] tracking-widest text-white/20">{isFa ? "یا" : "OR"}</span>
+                <div className="h-px flex-1 bg-white/6" />
               </motion.div>
 
-              {/* Secondary actions — mechanic + apply */}
+              {/* Mechanic actions — clearly separated */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 1.0 }}
-                className="flex items-center justify-center gap-6 text-[11px] text-white/40"
-                dir={isFa ? "rtl" : "ltr"}
+                transition={{ delay: 0.9 }}
+                className="space-y-2.5"
               >
-                <button onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }} className="inline-flex items-center gap-1.5 transition-colors hover:text-amber">
-                  <Wrench className="size-3.5" /> {isFa ? "ورود مکانیک‌ها" : "Mechanic Portal"}
+                <button
+                  onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-3 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
+                >
+                  <Wrench className="size-4" /> {isFa ? "ورود مکانیک‌ها" : "Mechanic Portal"}
                 </button>
-                <button onClick={() => setApplyOpen(true)} className="inline-flex items-center gap-1.5 transition-colors hover:text-amber">
+                <button
+                  onClick={() => setApplyOpen(true)}
+                  className="block w-full text-center text-[11px] text-white/30 transition-colors hover:text-amber"
+                >
                   {t("splash.applyMechanic")}
                 </button>
               </motion.div>
-
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1.2 }}
-                className="mt-8 text-[10px] text-white/25"
-                dir={isFa ? "rtl" : "ltr"}
-              >
-                {t("splash.guestHint")}
-              </motion.p>
             </motion.div>
           )}
 
@@ -329,33 +313,27 @@ export function Splash() {
 function HeroLogo() {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
+      initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
       className="relative mx-auto grid place-items-center"
-      style={{ width: 280, height: 200 }}
+      style={{ width: 240, height: 160 }}
     >
-      {/* Subtle amber ambient glow behind the mark — atmospheric, not a solid disk */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.15, duration: 0.9 }}
+      {/* Subtle amber ambient glow behind the mark */}
+      <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 260, height: 260,
-          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.12), transparent 60%)",
+          width: 200, height: 200,
+          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.1), transparent 60%)",
         }}
       />
 
-      {/* The real logo — inverted to light via CSS filter so the dark logo reads on black */}
-      <motion.img
+      {/* The real logo — inverted to light via CSS filter */}
+      <img
         src="/logo.png"
         alt="MEKANIX"
         className="relative z-10 select-none object-contain"
-        style={{ width: 200, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        style={{ width: 180, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
       />
     </motion.div>
   );
