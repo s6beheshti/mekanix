@@ -23,7 +23,11 @@ export type CustomerView =
   | "notifications"
   | "settings"
   | "vip"
-  | "support";
+  | "support"
+  | "fleet-dashboard"
+  | "maintenance"
+  | "referral"
+  | "insurance";
 
 export type TechView =
   | "dashboard"

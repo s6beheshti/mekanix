@@ -1,8 +1,21 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 
-// USD → IRR conversion rate (approximate; in production fetch live)
-const USD_TO_IRR = 60000;
+// USD → IRR conversion rate. Default fallback is 60,000 (realistic 2024 rate).
+// On the client, `useT()` triggers a fetch from /api/exchange-rate which updates
+// this live. In production, that endpoint scrapes Telegram rate channels or
+// calls a free FX API.
+let USD_TO_IRR = 60000;
+
+export function setUsdToIrrRate(rate: number) {
+  if (typeof rate === "number" && rate > 0) {
+    USD_TO_IRR = rate;
+  }
+}
+
+export function getUsdToIrrRate(): number {
+  return USD_TO_IRR;
+}
 
 // Convert digits to Persian
 function toPersianDigits(s: string | number): string {

@@ -27,8 +27,15 @@ export const metadata: Metadata = {
   description:
     "MEKANIX connects you with qualified mobile technicians for vehicles, trucks, buses, and heavy machinery. Diagnose, repair, and maintain — anywhere.",
   keywords: ["MEKANIX", "mobile mechanic", "repair", "maintenance", "heavy machinery", "fleet"],
+  manifest: "/manifest.json",
   icons: {
     icon: "/logo.svg",
+    apple: "/logo.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MEKANIX",
   },
 };
 

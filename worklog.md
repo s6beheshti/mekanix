@@ -627,3 +627,84 @@ Stage Summary:
 - ✅ Mechanic reject: REJECTED status distinct from CANCELLED, special "alert" category notification, customer gets prominent rose banner with "Find another mechanic" CTA. Request re-enters matching pool.
 - ✅ Real Leaflet map with OSM tiles — VLM verified real streets (San Francisco). Works in Iran (no Google Maps, no API key, no geo-restrictions).
 - Lint clean. No runtime errors. Dev server healthy.
+
+---
+Task ID: 15
+Agent: feature-builder
+Task: Build 4 customer-facing feature components (fleet dashboard, maintenance, referral, insurance)
+
+Work Log:
+- Read worklog.md to understand prior context (Tasks 0-14). Confirmed API routes for /api/maintenance, /api/referral, /api/insurance, /api/insurance/claim already exist; i18n keys for fleet.*, maint.*, ref.*, ins.* already added (lines 800-919 EN, 2398-2517 FA).
+- Inspected existing customer components (home, vehicles, vip, support) to mirror patterns: DemoUser prop, useT() hook, SectionHeader/EmptyState/StatCard primitives, Dialog usage, fetch + toast error handling, dir={isFa ? "rtl" : "ltr"} on root, money() for IRR conversion.
+- Created `src/components/mek/customer/fleet-dashboard.tsx` — `CustomerFleetDashboard({ customer: DemoUser })`:
+  * Fetches vehicles (api.listVehicles), jobs (api.listJobs), maintenance schedules (/api/maintenance?customerId) in parallel.
+  * 4 KPI StatCards (totalVehicles / activeJobs / maintenanceDue / totalSpent30d). Total spent computed from completed-job invoices within last 30 days.
+  * Fleet health banner (good/warning/critical) based on count of vehicles with overdue maintenance.
+  * Vehicle list as table-like grid (md:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto]) with Vehicle / Status / Last service / Next service / Engine hours / Location / Actions columns. Status pill (healthy/dueSoon/overdue) derived from maintenance schedules per vehicle.
+  * Empty state with Add Vehicle CTA (go("vehicles")).
+- Created `src/components/mek/customer/maintenance.tsx` — `CustomerMaintenance({ customer: DemoUser })`:
+  * Lists schedules grouped by vehicle, each showing category badge (Droplets/Disc3/BatteryCharging/CircleDot/Filter/ClipboardCheck/Settings2 icons by category), title, interval (km/days/hours with interpolation), last done date, next due date + relative status pill (overdue=rose, dueSoon≤7d=amber, healthy=emerald), Mark as done button (PATCH /api/maintenance {id, action:"markDone"}).
+  * Summary banner: total schedules, due soon count, overdue count.
+  * Add Schedule dialog: vehicle select, 7-category picker grid (visual buttons with icons), title input, interval type radio (km/days/hours) with conditional input, notes textarea. POST /api/maintenance.
+  * Empty state with maint.noSchedules + maint.noSchedulesDesc.
+- Created `src/components/mek/customer/referral.tsx` — `CustomerReferral({ userId: string })`:
+  * On mount POST /api/referral {userId} to get-or-create the code; GET /api/referral?userId to load referrals + stats.
+  * Hero card with large mono referral code, Copy code button (clipboard + toast ref.copied), Share button (navigator.share with fallback to copy link), share link box (mekanix.ir/r/{code}) with separate copy button.
+  * How-it-works 4-step strip with step icons (Share2/UserPlus/CheckCircle2/Gift) and reward amount interpolated via money(5).
+  * 5-card stats grid: total / signedUp / firstJob / earned / available.
+  * Referrals list: name/email, status badge (pending/signed_up/first_job/rewarded/expired), reward amount (money), dates, Claim button (visible only when status=first_job && !rewardClaimed → PATCH /api/referral {referralId, action:"claim"}). Claimed state shows "Claimed" badge.
+  * Empty state with ref.noReferrals + invite desc.
+- Created `src/components/mek/customer/insurance.tsx` — `CustomerInsurance({ customer: DemoUser })`:
+  * Lists policies (GET /api/insurance?userId). Each card shows provider badge (translated via ins.providers.{provider}), policy type badge (ins.type.{type}), policy code + status badge (active=emerald, expired=rose, cancelled=muted, claimed=amber), policy number (mono), vehicle (if linked), 4-cell meta grid (start date / end date / premium / coverage), expiry warning banner (≤30d=amber "expires in {days} days", <0=rose "expired {days} days ago"), notes section, claims list (if any) with claim status badge.
+  * Summary strip: active count / expiring soon count / total coverage money.
+  * Add Policy dialog: vehicle select (optional), provider select (iran-mehr/pasargad/asia/melli/razi/other), policy number input, type select (third-party/comprehensive/zero), start/end date pickers, premium + coverage USD inputs, notes textarea. POST /api/insurance.
+  * File Claim dialog: description textarea, amount USD input with live money() preview, POST /api/insurance/claim {policyId, description, amount}. Disabled when policy status is expired/cancelled.
+  * Empty state with ins.noPolicies + ins.noPoliciesDesc.
+- Fixed lint errors:
+  * maintenance.tsx line 173: removed stray `}` after `>` in `<Button ...>` JSX (parser error).
+  * insurance.tsx: refactored useEffect to define async `run()` function inline (with cancelled flag + cleanup) instead of calling external `load()`. The react-hooks/set-state-in-effect rule was flagging the external `load()` call because of synchronous setState calls in its early-return branch. Inline async pattern with cancelled flag satisfies the rule.
+- Fixed TS errors:
+  * maintenance.tsx imports: replaced unavailable `OilCan` with `Droplets` and `Brake` with `CircleDot`. Also swapped `Wind` → `Filter` for the filter category (more semantically correct).
+- Verified: `bun run lint` exits 0 (0 errors, 0 warnings). `npx tsc --noEmit` reports 0 errors in the 4 new files (pre-existing TS errors in i18n.ts, seed.ts, admin/*, etc. remain untouched per task rules).
+
+Stage Summary:
+- 4 files created (all named exports, all use { customer: DemoUser } or { userId: string } props per spec):
+  * src/components/mek/customer/fleet-dashboard.tsx → CustomerFleetDashboard
+  * src/components/mek/customer/maintenance.tsx → CustomerMaintenance
+  * src/components/mek/customer/referral.tsx → CustomerReferral
+  * src/components/mek/customer/insurance.tsx → CustomerInsurance
+- Lint clean. TypeScript clean for new files (pre-existing project errors untouched).
+- All 4 components: RTL-aware (dir on root), fully translated (existing fleet.* / maint.* / ref.* / ins.* keys only — no new keys added), use money()/fmtDate()/fmtRelative()/toPersianDigits() helpers, use SectionHeader/EmptyState/StatCard primitives, use shadcn/ui Button/Card/Input/Label/Textarea/Select/Dialog/Badge, use lucide-react icons, toast (sonner) for feedback, Loader2 spinner during fetch, try/catch on every fetch.
+- Next: orchestrator can wire these into customer-app.tsx nav + add to nav list (e.g., view "fleet-dashboard", "maintenance", "referral", "insurance"). The components are ready to drop in — each is a self-contained named export.
+
+---
+Task ID: 16
+Agent: orchestrator (main)
+Task: Fix map (real tiles in Iran), mobile bottom nav, 4 previously-suggested features, live exchange rate, PWA
+
+Work Log:
+- MAP FIX (critical): Root cause was 3 issues:
+  1. OSM standard tiles return `x-blocked: Access denied` header (policy violation — need proper User-Agent, rate limits). Switched to CARTO tiles initially, but CARTO `dark_all` tiles now have "API KEY REQUIRED" watermark. Final solution: OSM standard tiles (free, no API key, no watermark, works in Iran) + CSS invert filter for dark theme (`filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9)` applied to `.leaflet-tile-pane` inside `.mek-map-dark` container).
+  2. No geocoder — user couldn't search "Tehran". Added Nominatim geocoder search box (free, works in Iran, has full Iran coverage with Persian labels). Returns 5 results, click to fly to location. Default center changed from San Francisco to Tehran (35.6892, 51.3890).
+  3. Map re-init on every render (points array recreated → useEffect re-ran → map removed + re-created → flyTo lost). Fixed by separating map init (runs once) from marker updates (runs on points change, doesn't reset view). Used refs for points/route/center. Only fitBounds on initial load.
+  - Verified: tile coordinates at zoom 14 = x:10529-10530, y:6450 = Tehran. Map center confirmed at 35.689, 51.389 via `getCenter()`. VLM confirmed real Tehran tiles with Persian street labels.
+  - VLM also confirmed: dark-themed map with visible streets (Turk St, Fell St, Van Ness for SF demo; Persian labels for Tehran), NO "API KEY REQUIRED" watermark, search box with Persian placeholder «جستجوی آدرس... (مثلاً تهران)».
+- MOBILE BOTTOM NAV: Added `MobileBottomNav` component to app-shell.tsx — sticky `fixed bottom-0` bar visible only on mobile (`md:hidden`). Shows 4 nav items + "بیشتر" (More) button that opens the slide-out drawer. Active item highlighted in amber with top indicator bar. Added `pb-20 md:pb-5` to main content to prevent bottom nav overlapping content. VLM confirmed: "sticky/fixed at the bottom" with 5 items, active highlighted in orange.
+- 4 PREVIOUSLY-SUGGESTED FEATURES (built by subagent Task ID 15):
+  1. Fleet Dashboard (`fleet-dashboard.tsx`) — KPIs (vehicles/activeJobs/maintenanceDue/totalSpent), fleet health score, vehicle table with status badges. Nav: «مدیریت ناوگان»
+  2. Maintenance Scheduling (`maintenance.tsx`) — preventive maintenance schedules per vehicle, 7 categories (oil/tires/battery/brake/filter/inspection/custom), interval tracking (km/days/hours), mark-as-done. Nav: «نگهداری»
+  3. Rewards/Referral (`referral.tsx`) — unique referral code (get-or-create), copy/share buttons, 4-step how-it-works strip, 5-card stats grid, referrals list with claim button. Nav: «دعوت و درآمد»
+  4. Insurance (`insurance.tsx`) — policy management (add/list), provider select (iran-mehr/pasargad/asia/melli/razi), type (third-party/comprehensive/zero), expiry tracking, file-claim dialog. Nav: «بیمه و پوشش»
+- API routes: /api/maintenance (GET/POST/PATCH), /api/referral (GET/POST/PATCH), /api/insurance (GET/POST), /api/insurance/claim (POST). Prisma models: MaintenanceSchedule, Referral, InsurancePolicy, InsuranceClaim.
+- LIVE EXCHANGE RATE: Added /api/exchange-rate endpoint that fetches live USD→IRR rate from open.er-api.com (free, no API key). Returns real current rate (1,468,180 IRR/USD as tested). useT() hook fetches on mount + every 5 min, calls `setUsdToIrrRate()` to update the module-level variable in format.ts. `money()` helper now uses live rate for IRR conversion.
+- PWA: Added manifest.json with Persian app name «مکانیکس», standalone display, dark theme colors, shortcuts (request mechanic/vehicles/support). Wired into layout.tsx metadata + appleWebApp config.
+- i18n: Added ~120 new keys × 2 langs for fleet.*/maint.*/ref.*/ins.* sections.
+- All 4 feature pages verified with Agent Browser: rendered correctly in Persian, empty states shown, add buttons functional.
+
+Stage Summary:
+- ✅ Map: real OSM tiles with dark CSS filter, geocoder search (finds Tehran), no watermark, works in Iran.
+- ✅ Mobile bottom nav: sticky, 4 items + More button, active highlight.
+- ✅ 4 features: Fleet Dashboard, Maintenance, Referral, Insurance — all built, wired, translated, verified.
+- ✅ Live exchange rate: real USD→IRR from free API, auto-refreshes every 5 min.
+- ✅ PWA manifest: Persian app name, standalone, shortcuts.
+- Lint clean. No runtime errors. All features verified in browser.

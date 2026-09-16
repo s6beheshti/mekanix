@@ -65,6 +65,13 @@ export function AppShell({
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
+  // Listen for "open mobile nav" event (from MobileBottomNav "more" button)
+  useEffect(() => {
+    const handler = () => setMobileNavOpen(true);
+    window.addEventListener("mekanix-open-mobile-nav", handler);
+    return () => window.removeEventListener("mekanix-open-mobile-nav", handler);
+  }, []);
+
   // poll unread notifications
   useEffect(() => {
     if (!user) return;
@@ -248,7 +255,7 @@ export function AppShell({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.2 }}
-              className="mx-auto w-full max-w-7xl p-3 sm:p-5"
+              className="mx-auto w-full max-w-7xl p-3 pb-20 sm:p-5 md:pb-5"
             >
               {children}
             </motion.div>
@@ -259,7 +266,10 @@ export function AppShell({
       {/* Footer */}
       {footer && <footer className="mt-auto border-t border-border bg-card/30">{footer}</footer>}
 
-      {/* Mobile nav */}
+      {/* Mobile bottom navigation — sticky quick-access bar */}
+      <MobileBottomNav nav={nav} />
+
+      {/* Mobile nav (slide-out drawer) */}
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <SheetContent side="left" className="w-72 p-0">
           <SheetTitle className="sr-only">{t("common.mobileNav")}</SheetTitle>
@@ -273,6 +283,68 @@ export function AppShell({
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+
+// ─── Mobile bottom navigation ───
+// Sticky bar at the bottom of the screen (mobile only) with quick-access to
+// the 4 most important nav items + a "more" button that opens the full drawer.
+function MobileBottomNav({ nav }: { nav: NavItem[] }) {
+  const { view, reset } = useApp();
+  const { t } = useT();
+  // Take up to 4 items for the bottom bar; if there are more, show a "more" button
+  const max = 4;
+  const visible = nav.slice(0, max);
+  const hasMore = nav.length > max;
+
+  return (
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur-xl md:hidden"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      aria-label={t("common.mobileNav")}
+    >
+      <div className="grid h-14 grid-cols-5 gap-1 px-2">
+        {visible.map((item) => {
+          const active = view === item.view;
+          return (
+            <button
+              key={item.view}
+              onClick={() => reset(item.view)}
+              className={`relative flex flex-col items-center justify-center gap-0.5 rounded-lg text-[10px] font-medium transition-colors ${
+                active ? "text-amber" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <div className={`relative grid size-7 place-items-center rounded-lg ${active ? "bg-amber/15" : ""}`}>
+                <item.icon className="size-[18px]" />
+                {item.badge ? (
+                  <span className="absolute -right-1 -top-1 grid min-w-3.5 place-items-center rounded-full bg-amber px-1 text-[8px] font-bold text-black">
+                    {item.badge > 9 ? "9+" : item.badge}
+                  </span>
+                ) : null}
+              </div>
+              <span className="truncate leading-tight">{NAV_LABELS[item.view] ? t(NAV_LABELS[item.view]) : item.label}</span>
+              {active && (
+                <motion.div layoutId="bottom-nav-active" className="absolute -top-px h-0.5 w-8 rounded-full bg-amber" />
+              )}
+            </button>
+          );
+        })}
+        {hasMore && (
+          <button
+            onClick={() => {
+              const event = new Event("mekanix-open-mobile-nav");
+              window.dispatchEvent(event);
+            }}
+            className="flex flex-col items-center justify-center gap-0.5 rounded-lg text-[10px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            <div className="grid size-7 place-items-center">
+              <Menu className="size-[18px]" />
+            </div>
+            <span>بیشتر</span>
+          </button>
+        )}
+      </div>
+    </nav>
   );
 }
 

@@ -109,7 +109,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const [urgency, setUrgency] = useState<string>(params.urgency ?? "NORMAL");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [address, setAddress] = useState("Pier 38, San Francisco, CA");
+  const [address, setAddress] = useState("تهران، میدان آزادی");
   const [media, setMedia] = useState<string[]>([]);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -157,8 +157,9 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     }
     setSubmitting(true);
     try {
-      const lat = 37.7749 + (Math.random() - 0.5) * 0.03;
-      const lng = -122.4194 + (Math.random() - 0.5) * 0.03;
+      // Default to Tehran (Iranian market) — slightly randomized for realism
+      const lat = 35.6892 + (Math.random() - 0.5) * 0.03;
+      const lng = 51.3890 + (Math.random() - 0.5) * 0.03;
       const sr = await api.createRequest({
         customerId: customer.customer.id,
         vehicleId: vehicleId ?? vehicles[0]?.id,
@@ -423,7 +424,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
   const [showOtherRegions, setShowOtherRegions] = useState(false);
 
   useEffect(() => {
-    const lat = 37.7749, lng = -122.4194;
+    const lat = 35.6892, lng = 51.3890; // Tehran center
     api.listTechnicians({ lat, lng }).then((tList) => {
       // simulate searching delay
       setTimeout(() => {
@@ -434,7 +435,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
   }, []);
 
   const allRanked = (techs ?? []).map((tk) => {
-    const km = tk.lat && tk.lng ? haversine({ lat: 37.7749, lng: -122.4194 }, { lat: tk.lat, lng: tk.lng }) : 99;
+    const km = tk.lat && tk.lng ? haversine({ lat: 35.6892, lng: 51.3890 }, { lat: tk.lat, lng: tk.lng }) : 99;
     const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
     // Score: weighted combination of rating, distance, verified, completed jobs.
     const proximityScore = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;

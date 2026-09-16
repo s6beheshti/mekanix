@@ -1,0 +1,59 @@
+{
+  "name": "MEKANIX — تعمیر و نگهداری سیار",
+  "short_name": "مکانیکس",
+  "description": "تعمیر و نگهداری سیار در محل برای خودرو و ماشین‌آلات سنگین",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#050607",
+  "theme_color": "#050607",
+  "lang": "fa",
+  "dir": "rtl",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "درخواست مکانیک",
+      "short_name": "درخواست",
+      "url": "/?view=request-type",
+      "icons": [{ "src": "/logo.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "ناوگان من",
+      "short_name": "ناوگان",
+      "url": "/?view=vehicles",
+      "icons": [{ "src": "/logo.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "پشتیبانی",
+      "short_name": "پشتیبانی",
+      "url": "/?view=support",
+      "icons": [{ "src": "/logo.png", "sizes": "96x96", "type": "image/png" }]
+    }
+  ]
+}

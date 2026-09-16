@@ -238,6 +238,18 @@
   background: #0a0b0d;
   font-family: var(--font-geist-sans), sans-serif;
 }
+
+/* Dark-mode tile filter — inverts light OSM tiles to dark without watermarks.
+   Applied to .leaflet-tile-pane inside a .mek-map-dark container. */
+.mek-map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+/* Keep popups + markers un-inverted */
+.mek-map-dark .leaflet-popup-pane,
+.mek-map-dark .leaflet-marker-pane,
+.mek-map-dark .leaflet-overlay-pane {
+  filter: invert(1) hue-rotate(180deg);
+}
 .leaflet-popup-content-wrapper, .leaflet-popup-tip {
   background: var(--card, #17181c);
   color: var(--card-foreground, #fff);
