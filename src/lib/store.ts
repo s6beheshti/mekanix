@@ -78,6 +78,12 @@ interface AppState extends NavState {
   // Boot & portal
   bootStage: BootStage;
   portal: Portal; // which portal the user entered through
+  // Profile completion gate
+  profileCompleteRequired: boolean;
+  setProfileCompleteRequired: (v: boolean) => void;
+  // Onboarding gate — shows every time user enters app
+  onboardingRequired: boolean;
+  setOnboardingSeen: (v: boolean) => void;
   // Language
   lang: Lang;
   setLang: (lang: Lang) => void;
@@ -103,6 +109,10 @@ export const useApp = create<AppState>()(
     (set, get) => ({
       bootStage: "splash",
       portal: "customer",
+      profileCompleteRequired: false,
+      setProfileCompleteRequired: (v) => set({ profileCompleteRequired: v }),
+      onboardingRequired: true,
+      setOnboardingSeen: () => set({ onboardingRequired: false }),
       lang: "fa" as Lang,
       auth: { userId: null, phone: null, name: null, isGuest: false, verified: false },
       role: "CUSTOMER",
@@ -145,6 +155,7 @@ export const useApp = create<AppState>()(
           view: portal === "mechanic" ? "dashboard" : portal === "admin" ? "overview" : "home",
           params: {},
           history: [],
+          onboardingRequired: true,
         })),
 
       exitToSplash: () =>

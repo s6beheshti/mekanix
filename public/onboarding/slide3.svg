@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
+  <defs>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F1015"/>
+      <stop offset="100%" stop-color="#1A1B23"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="1280" fill="url(#g3)"/>
+  <circle cx="360" cy="400" r="120" fill="none" stroke="#F5A524" stroke-width="2" opacity="0.3"/>
+  <circle cx="360" cy="400" r="80" fill="none" stroke="#F5A524" stroke-width="1" opacity="0.2"/>
+  <text x="360" y="420" text-anchor="middle" fill="#F5A524" font-size="48" font-weight="900" font-family="sans-serif">MEKANIX</text>
+  <text x="360" y="470" text-anchor="middle" fill="#999" font-size="16" font-family="sans-serif">Slide 3</text>
+</svg>
