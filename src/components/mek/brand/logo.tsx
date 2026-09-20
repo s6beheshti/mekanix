@@ -28,7 +28,7 @@ export function Logo({
           objectPosition: "center 20%",
           // In dark mode: invert black to white so logo is visible on dark bg
           // Keep it simple — just invert, no hue-rotate which distorts colors
-          filter: isDark ? "invert(1) brightness(1.05)" : "none",
+          filter: isDark ? "invert(1) hue-rotate(180deg) brightness(1.1)" : "none",
         }}
         onError={(e) => {
           (e.target as HTMLImageElement).src = "/logo.png";
