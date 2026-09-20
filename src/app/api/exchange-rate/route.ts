@@ -1,45 +1,64 @@
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
 
-// In-memory cache of the exchange rate (refreshed periodically).
-// In production, this would fetch from Telegram (a bot scraping rate channels)
-// or an API like exir.io / tgju.org. For now we simulate a slowly-drifting rate
-// around the real-world USD→IRR rate (~60,000 IRR/USD as of 2024).
-let cachedRate: { rate: number; fetchedAt: number; source: string } | null = null;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-async function fetchLiveRate(): Promise<{ rate: number; source: string }> {
-  // Try free exchangerate-api-like endpoints first.
-  // These are public, no API key needed, work in Iran.
-  try {
-    const res = await fetch("https://open.er-api.com/v6/latest/USD", {
-      headers: { "Accept": "application/json" },
-      // Use a short timeout via signal
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const irr = data?.rates?.IRR;
-      if (typeof irr === "number" && irr > 0) {
-        return { rate: irr, source: "open.er-api.com" };
-      }
-    }
-  } catch {
-    // Fall through to fallback
-  }
-
-  // Fallback: simulate a rate around 60,000 with small random drift
-  // (±2%) so the UI shows a "live" updating rate even without network.
-  const base = 60000;
-  const drift = (Math.random() - 0.5) * 0.04; // ±2%
-  return { rate: Math.round(base * (1 + drift)), source: "mekanix-internal" };
-}
-
+// GET /api/exchange-rate
+// Returns the current USD→IRR exchange rate.
+// Priority: Telegram bot rate (@NerkhDollarIRT) > official API > fallback
+// Also applies admin-configured multiplier if set.
 export async function GET() {
-  const now = Date.now();
-  if (cachedRate && now - cachedRate.fetchedAt < CACHE_TTL_MS) {
-    return NextResponse.json(cachedRate);
+  // 1. Try Telegram rate (stored by mini-services/telegram-rate-bot)
+  let rate: number | null = null;
+  let source = "unknown";
+
+  try {
+    const telegramSetting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } });
+    const sourceSetting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_source" } });
+    
+    if (telegramSetting?.value) {
+      rate = parseFloat(telegramSetting.value);
+      source = sourceSetting?.value || "telegram";
+    }
+  } catch {}
+
+  // 2. Fallback to official API if Telegram rate not available
+  if (!rate || rate < 100000) {
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD", {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const irr = data?.rates?.IRR;
+        if (typeof irr === "number" && irr > 0) {
+          rate = irr;
+          source = "open.er-api.com";
+        }
+      }
+    } catch {}
   }
-  const { rate, source } = await fetchLiveRate();
-  cachedRate = { rate, fetchedAt: now, source };
-  return NextResponse.json(cachedRate);
+
+  // 3. Final fallback
+  if (!rate) {
+    rate = 6000000; // realistic Iranian free market rate
+    source = "mekanix-internal";
+  }
+
+  // 4. Apply admin-configured multiplier (default 1.0)
+  let multiplier = 1.0;
+  try {
+    const multSetting = await db.platformSetting.findUnique({ where: { key: "usd_irr_multiplier" } });
+    if (multSetting?.value) {
+      multiplier = parseFloat(multSetting.value);
+    }
+  } catch {}
+
+  const finalRate = Math.round(rate * multiplier);
+
+  return NextResponse.json({
+    rate: finalRate,
+    baseRate: rate,
+    multiplier,
+    source,
+    fetchedAt: Date.now(),
+  });
 }
