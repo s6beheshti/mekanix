@@ -13,35 +13,35 @@ datasource db {
 // ───────────────────────── Users & Roles ─────────────────────────
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  phone     String?  @unique
-  phoneVerified Boolean @default(false)
-  password  String   @default("demo") // demo only — never store plaintext in prod
-  name      String
-  avatar    String?
-  role      Role     @default(CUSTOMER)
-  status    UserStatus @default(ACTIVE)
-  country   String   @default("IR")
-  currency  String   @default("USD")
-  language  String   @default("en")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String     @id @default(cuid())
+  email         String     @unique
+  phone         String?    @unique
+  phoneVerified Boolean    @default(false)
+  password      String     @default("demo") // demo only — never store plaintext in prod
+  name          String
+  avatar        String?
+  role          Role       @default(CUSTOMER)
+  status        UserStatus @default(ACTIVE)
+  country       String     @default("IR")
+  currency      String     @default("USD")
+  language      String     @default("en")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
-  customer  Customer?
-  technician Technician?
-  notifications Notification[]
-  messagesSent   Message[]   @relation("msgFrom")
-  reviewsGiven   Review[]   @relation("revFrom")
-  payments       Payment[]
-  otps           OtpCode[]
+  customer            Customer?
+  technician          Technician?
+  notifications       Notification[]
+  messagesSent        Message[]             @relation("msgFrom")
+  reviewsGiven        Review[]              @relation("revFrom")
+  payments            Payment[]
+  otps                OtpCode[]
   mechanicApplication MechanicApplication?
-  vipSubscriptions UserVipSubscription[]
-  gatewayLogs   PaymentGatewayLog[]
-  supportTickets SupportTicket[]
-  referralsMade Referral[] @relation("referralsMade")
-  referralsReceived Referral[] @relation("referralsReceived")
-  insurancePolicies InsurancePolicy[]
+  vipSubscriptions    UserVipSubscription[]
+  gatewayLogs         PaymentGatewayLog[]
+  supportTickets      SupportTicket[]
+  referralsMade       Referral[]            @relation("referralsMade")
+  referralsReceived   Referral[]            @relation("referralsReceived")
+  insurancePolicies   InsurancePolicy[]
 
   @@index([role])
   @@index([phone])
@@ -69,43 +69,43 @@ model Customer {
   taxId     String?
   createdAt DateTime @default(now())
 
-  vehicles       Vehicle[]
+  vehicles        Vehicle[]
   serviceRequests ServiceRequest[]
 }
 
 // ───────────────────────── Technician ─────────────────────────
 
 model Technician {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bio            String?
-  experienceYears Int     @default(0)
-  completedJobs  Int     @default(0)
-  rating         Float   @default(0)
-  reviewCount    Int     @default(0)
-  hourlyRate     Float   @default(15) // USD; ~900k IRR — realistic Iranian mobile mechanic rate
-  travelFeeBase  Float   @default(3) // USD; ~180k IRR base travel fee (within-city)
-  inspectionFee  Float   @default(7) // USD passenger; ~420k IRR — Sanjaq-like Iranian market
-  inspectionFeeHeavy Float @default(20) // USD heavy machinery; ~1.2M IRR
-  status         TechStatus @default(OFFLINE)
-  verified       Boolean @default(false)
-  level          TechLevel @default(BRONZE)
-  lat            Float?
-  lng            Float?
-  heading        Float?
-  availableNow   Boolean @default(true)
-  responseMins   Int     @default(12)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                 String     @id @default(cuid())
+  userId             String     @unique
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio                String?
+  experienceYears    Int        @default(0)
+  completedJobs      Int        @default(0)
+  rating             Float      @default(0)
+  reviewCount        Int        @default(0)
+  hourlyRate         Float      @default(15) // USD; ~900k IRR — realistic Iranian mobile mechanic rate
+  travelFeeBase      Float      @default(3) // USD; ~180k IRR base travel fee (within-city)
+  inspectionFee      Float      @default(7) // USD passenger; ~420k IRR — Sanjaq-like Iranian market
+  inspectionFeeHeavy Float      @default(20) // USD heavy machinery; ~1.2M IRR
+  status             TechStatus @default(OFFLINE)
+  verified           Boolean    @default(false)
+  level              TechLevel  @default(BRONZE)
+  lat                Float?
+  lng                Float?
+  heading            Float?
+  availableNow       Boolean    @default(true)
+  responseMins       Int        @default(12)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  specialties    TechnicianSpecialty[]
-  certifications Certification[]
-  serviceAreas   ServiceArea[]
-  jobsAssigned   Job[]       @relation("jobTech")
-  requestsMatched ServiceRequest[] @relation("reqMatchTech")
-  reviews        Review[]    @relation("revTech")
-  wallet         Wallet?
+  specialties     TechnicianSpecialty[]
+  certifications  Certification[]
+  serviceAreas    ServiceArea[]
+  jobsAssigned    Job[]                 @relation("jobTech")
+  requestsMatched ServiceRequest[]      @relation("reqMatchTech")
+  reviews         Review[]              @relation("revTech")
+  wallet          Wallet?
 
   @@index([status, availableNow])
 }
@@ -124,7 +124,7 @@ enum TechLevel {
 }
 
 model TechnicianSpecialty {
-  id           String  @id @default(cuid())
+  id           String     @id @default(cuid())
   technicianId String
   technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
   category     String // e.g. "engine", "electrical", "hydraulic"
@@ -132,31 +132,31 @@ model TechnicianSpecialty {
 }
 
 model Certification {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   technicianId String
   technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
   name         String
   issuer       String
   year         Int
-  verified     Boolean @default(false)
+  verified     Boolean    @default(false)
 }
 
 model ServiceArea {
-  id           String  @id @default(cuid())
+  id           String     @id @default(cuid())
   technicianId String
   technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
   name         String
   lat          Float
   lng          Float
-  radiusKm     Float   @default(25)
+  radiusKm     Float      @default(25)
 }
 
 // ───────────────────────── Vehicles & Machinery ─────────────────────────
 
 model Vehicle {
-  id          String   @id @default(cuid())
+  id          String      @id @default(cuid())
   customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
   type        MachineType
   make        String
   model       String
@@ -169,11 +169,11 @@ model Vehicle {
   lng         Float?
   image       String?
   notes       String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime    @default(now())
 
-  serviceRequests ServiceRequest[]
+  serviceRequests      ServiceRequest[]
   maintenanceSchedules MaintenanceSchedule[]
-  insurancePolicies InsurancePolicy[]
+  insurancePolicies    InsurancePolicy[]
 }
 
 enum MachineType {
@@ -192,27 +192,27 @@ enum MachineType {
 // ───────────────────────── Service Requests & Jobs ─────────────────────────
 
 model ServiceRequest {
-  id          String   @id @default(cuid())
-  code        String   @unique // human friendly e.g. SR-2041
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  vehicleId   String
-  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id])
-  category    String   // service category slug
-  urgency     Urgency  @default(NORMAL)
-  title        String
-  description String
-  mediaUrls   String   // JSON array of uploaded media (sqlite has no native array)
-  voiceNote   String?
-  address     String
-  lat         Float
-  lng         Float
-  status      RequestStatus @default(OPEN)
+  id            String        @id @default(cuid())
+  code          String        @unique // human friendly e.g. SR-2041
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vehicleId     String
+  vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
+  category      String // service category slug
+  urgency       Urgency       @default(NORMAL)
+  title         String
+  description   String
+  mediaUrls     String // JSON array of uploaded media (sqlite has no native array)
+  voiceNote     String?
+  address       String
+  lat           Float
+  lng           Float
+  status        RequestStatus @default(OPEN)
   matchedTechId String?
-  matchedTech   Technician? @relation("reqMatchTech", fields: [matchedTechId], references: [id])
-  job         Job?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  matchedTech   Technician?   @relation("reqMatchTech", fields: [matchedTechId], references: [id])
+  job           Job?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@index([status])
   @@index([customerId])
@@ -233,42 +233,42 @@ enum RequestStatus {
 }
 
 model Job {
-  id           String   @id @default(cuid())
-  code         String   @unique // JOB-...
-  requestId    String   @unique
-  request      ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  technicianId String
-  technician   Technician @relation("jobTech", fields: [technicianId], references: [id])
-  status       JobStatus @default(REQUESTED)
-  etaMins      Int      @default(25)
-  customerApproved Boolean @default(false)
-  diagnosis    String?
-  technicianNotes String?
-  replacedParts String? // JSON
-  startedAt    DateTime?
-  arrivedAt    DateTime?
-  completedAt  DateTime?
+  id                 String         @id @default(cuid())
+  code               String         @unique // JOB-...
+  requestId          String         @unique
+  request            ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  technicianId       String
+  technician         Technician     @relation("jobTech", fields: [technicianId], references: [id])
+  status             JobStatus      @default(REQUESTED)
+  etaMins            Int            @default(25)
+  customerApproved   Boolean        @default(false)
+  diagnosis          String?
+  technicianNotes    String?
+  replacedParts      String? // JSON
+  startedAt          DateTime?
+  arrivedAt          DateTime?
+  completedAt        DateTime?
   // Pre-service payment
-  inspectionFee  Float   @default(0)
-  travelFee      Float   @default(0)
-  prepayPaid     Boolean @default(false)
-  prepayPaidAt   DateTime?
+  inspectionFee      Float          @default(0)
+  travelFee          Float          @default(0)
+  prepayPaid         Boolean        @default(false)
+  prepayPaidAt       DateTime?
   // Commission + hold period
-  platformCommission Float @default(0)
-  netEarnings   Float   @default(0)
-  holdUntil     DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  platformCommission Float          @default(0)
+  netEarnings        Float          @default(0)
+  holdUntil          DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
-  diagnosisRecords Diagnosis[]
-  parts      Part[]
-  invoice    Invoice?
-  messages   Message[]
-  reviews    Review[]  @relation("revJob")
-  tracking   TrackingEvent[]
-  warranty   Warranty?
+  diagnosisRecords   Diagnosis[]
+  parts              Part[]
+  invoice            Invoice?
+  messages           Message[]
+  reviews            Review[]            @relation("revJob")
+  tracking           TrackingEvent[]
+  warranty           Warranty?
   walletTransactions WalletTransaction[]
-  insuranceClaims InsuranceClaim[]
+  insuranceClaims    InsuranceClaim[]
 
   @@index([status])
   @@index([technicianId])
@@ -288,61 +288,61 @@ enum JobStatus {
 }
 
 model Diagnosis {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   jobId     String
-  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   summary   String
   faultCode String?
-  severity  String  @default("medium")
+  severity  String   @default("medium")
   mediaUrls String?
   createdAt DateTime @default(now())
 }
 
 model Part {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   jobId     String
-  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   name      String
   sku       String?
-  quantity  Int     @default(1)
+  quantity  Int      @default(1)
   unitPrice Float
   createdAt DateTime @default(now())
 }
 
 model TrackingEvent {
-  id        String  @id @default(cuid())
-  jobId     String
-  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  lat       Float
-  lng       Float
-  heading   Float?
-  ts        DateTime @default(now())
+  id      String   @id @default(cuid())
+  jobId   String
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lat     Float
+  lng     Float
+  heading Float?
+  ts      DateTime @default(now())
 }
 
 // ───────────────────────── Invoices & Payments ─────────────────────────
 
 model Invoice {
-  id        String  @id @default(cuid())
-  code      String  @unique // INV-...
-  jobId     String  @unique
-  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  laborHours Float  @default(1)
-  laborRate  Float  @default(45)
-  laborTotal Float  @default(0)
-  partsTotal Float  @default(0)
-  travelFee  Float  @default(0)
-  subtotal   Float  @default(0)
-  taxRate    Float  @default(0.09)
-  taxTotal   Float  @default(0)
-  discount   Float  @default(0)
-  total      Float  @default(0)
-  currency   String @default("USD")
+  id         String        @id @default(cuid())
+  code       String        @unique // INV-...
+  jobId      String        @unique
+  job        Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  laborHours Float         @default(1)
+  laborRate  Float         @default(45)
+  laborTotal Float         @default(0)
+  partsTotal Float         @default(0)
+  travelFee  Float         @default(0)
+  subtotal   Float         @default(0)
+  taxRate    Float         @default(0.09)
+  taxTotal   Float         @default(0)
+  discount   Float         @default(0)
+  total      Float         @default(0)
+  currency   String        @default("USD")
   notes      String?
   status     InvoiceStatus @default(DRAFT)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
-  payment    Payment?
+  payment Payment?
 }
 
 enum InvoiceStatus {
@@ -355,17 +355,17 @@ enum InvoiceStatus {
 }
 
 model Payment {
-  id         String  @id @default(cuid())
-  code       String  @unique
-  invoiceId  String?  @unique
-  invoice    Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  userId     String
-  user       User    @relation(fields: [userId], references: [id])
-  amount     Float
-  currency   String  @default("USD")
-  method     String  @default("card")
-  status     PaymentStatus @default(PENDING)
-  createdAt  DateTime @default(now())
+  id        String        @id @default(cuid())
+  code      String        @unique
+  invoiceId String?       @unique
+  invoice   Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  amount    Float
+  currency  String        @default("USD")
+  method    String        @default("card")
+  status    PaymentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
 }
 
 enum PaymentStatus {
@@ -378,31 +378,31 @@ enum PaymentStatus {
 // ───────────────────────── Reviews ─────────────────────────
 
 model Review {
-  id        String  @id @default(cuid())
-  jobId     String
-  job       Job     @relation("revJob", fields: [jobId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  jobId        String
+  job          Job        @relation("revJob", fields: [jobId], references: [id], onDelete: Cascade)
   technicianId String
   technician   Technician @relation("revTech", fields: [technicianId], references: [id])
-  fromUserId String
-  fromUser   User    @relation("revFrom", fields: [fromUserId], references: [id])
-  rating     Int
-  comment    String?
-  tags       String?
-  createdAt  DateTime @default(now())
+  fromUserId   String
+  fromUser     User       @relation("revFrom", fields: [fromUserId], references: [id])
+  rating       Int
+  comment      String?
+  tags         String?
+  createdAt    DateTime   @default(now())
 }
 
 // ───────────────────────── Messaging ─────────────────────────
 
 model Message {
-  id        String  @id @default(cuid())
-  jobId     String?
-  job       Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  jobId      String?
+  job        Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   fromUserId String
-  fromUser  User    @relation("msgFrom", fields: [fromUserId], references: [id])
-  kind      String  @default("text") // text | image | system | voice
-  body      String
-  readAt    DateTime?
-  createdAt DateTime @default(now())
+  fromUser   User      @relation("msgFrom", fields: [fromUserId], references: [id])
+  kind       String    @default("text") // text | image | system | voice
+  body       String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([jobId])
 }
@@ -410,15 +410,15 @@ model Message {
 // ───────────────────────── Notifications ─────────────────────────
 
 model Notification {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      String  // request_accepted | estimate_ready | payment_required | ...
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // request_accepted | estimate_ready | payment_required | ...
   title     String
   body      String
-  category  String  @default("general") // job | payment | message | system | maintenance
+  category  String   @default("general") // job | payment | message | system | maintenance
   link      String?
-  read      Boolean @default(false)
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
   @@index([userId, read])
@@ -427,27 +427,27 @@ model Notification {
 // ───────────────────────── Warranty ─────────────────────────
 
 model Warranty {
-  id        String  @id @default(cuid())
-  jobId     String  @unique
-  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  months    Int     @default(6)
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  months    Int      @default(6)
   kmLimit   Int?
   terms     String?
-  active    Boolean @default(true)
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
 }
 
 // ───────────────────────── Service Categories (platform) ─────────────────────────
 
 model ServiceCategory {
-  id        String  @id @default(cuid())
-  slug      String  @unique
-  name      String
-  icon      String
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  icon        String
   description String?
-  basePrice Float  @default(0)
-  active    Boolean @default(true)
-  order     Int    @default(0)
+  basePrice   Float   @default(0)
+  active      Boolean @default(true)
+  order       Int     @default(0)
 }
 
 // ───────────────────────── OTP / Phone Verification ─────────────────────────
@@ -456,7 +456,7 @@ model OtpCode {
   id        String   @id @default(cuid())
   phone     String
   code      String
-  consumed   Boolean  @default(false)
+  consumed  Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
   userId    String?
@@ -470,24 +470,24 @@ model OtpCode {
 // Admin reviews & approves → a User (role TECHNICIAN) + Technician profile is created.
 
 model MechanicApplication {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  fullName    String
-  phone       String
-  email       String?
-  city        String?
-  experienceYears Int  @default(0)
-  specialties String   // JSON array of category slugs
-  certifications String? // JSON array
-  bio         String?
-  vehicleOwned Boolean @default(false) // has own service vehicle
-  status      ApplicationStatus @default(PENDING)
-  adminNotes  String?
-  userId      String?  @unique
-  user        User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-  reviewerId  String?
-  createdAt   DateTime @default(now())
-  reviewedAt  DateTime?
+  id              String            @id @default(cuid())
+  code            String            @unique
+  fullName        String
+  phone           String
+  email           String?
+  city            String?
+  experienceYears Int               @default(0)
+  specialties     String // JSON array of category slugs
+  certifications  String? // JSON array
+  bio             String?
+  vehicleOwned    Boolean           @default(false) // has own service vehicle
+  status          ApplicationStatus @default(PENDING)
+  adminNotes      String?
+  userId          String?           @unique
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reviewerId      String?
+  createdAt       DateTime          @default(now())
+  reviewedAt      DateTime?
 
   @@index([status])
 }
@@ -505,10 +505,10 @@ enum ApplicationStatus {
 // triggers a notification when due.
 
 model MaintenanceSchedule {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   vehicleId     String
-  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  category      String   // oil | tires | battery | brake | filter | inspection | custom
+  vehicle       Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  category      String // oil | tires | battery | brake | filter | inspection | custom
   title         String
   intervalKm    Int?
   intervalHours Int?
@@ -519,9 +519,9 @@ model MaintenanceSchedule {
   nextDueKm     Int?
   nextDueDate   DateTime?
   notes         String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([vehicleId, active])
 }
@@ -531,18 +531,18 @@ model MaintenanceSchedule {
 // their first job, the referrer gets a commission credit.
 
 model Referral {
-  id            String   @id @default(cuid())
-  code          String   @unique // user's unique referral code
-  referrerId    String
-  referrer      User     @relation("referralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
-  referredEmail String?  // email of invited friend (before they sign up)
+  id             String    @id @default(cuid())
+  code           String    @unique // user's unique referral code
+  referrerId     String
+  referrer       User      @relation("referralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredEmail  String? // email of invited friend (before they sign up)
   referredUserId String? // userId of referred friend (after they sign up)
-  referredUser  User?    @relation("referralsReceived", fields: [referredUserId], references: [id], onDelete: SetNull)
-  status        String   @default("pending") // pending | signed_up | first_job | rewarded | expired
-  rewardAmount  Float    @default(5) // USD credit to referrer
-  rewardClaimed Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  completedAt   DateTime?
+  referredUser   User?     @relation("referralsReceived", fields: [referredUserId], references: [id], onDelete: SetNull)
+  status         String    @default("pending") // pending | signed_up | first_job | rewarded | expired
+  rewardAmount   Float     @default(5) // USD credit to referrer
+  rewardClaimed  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
 
   @@index([referrerId, status])
   @@index([referredUserId])
@@ -553,22 +553,22 @@ model Referral {
 // purchase through MEKANIX partners. Claims are tracked.
 
 model InsurancePolicy {
-  id            String   @id @default(cuid())
-  code          String   @unique // POL-...
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  vehicleId     String?
-  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
-  provider      String   // Iran-Mehr | Pasargad | Asia | Melli | etc
-  policyNumber  String
-  type          String   @default("third-party") // third-party | comprehensive | zero
-  startDate     DateTime
-  endDate       DateTime
-  premiumAmount Float    // USD
-  coverageAmount Float  @default(0)
-  status        String   @default("active") // active | expired | cancelled | claimed
-  notes         String?
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  code           String   @unique // POL-...
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleId      String?
+  vehicle        Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  provider       String // Iran-Mehr | Pasargad | Asia | Melli | etc
+  policyNumber   String
+  type           String   @default("third-party") // third-party | comprehensive | zero
+  startDate      DateTime
+  endDate        DateTime
+  premiumAmount  Float // USD
+  coverageAmount Float    @default(0)
+  status         String   @default("active") // active | expired | cancelled | claimed
+  notes          String?
+  createdAt      DateTime @default(now())
 
   claims InsuranceClaim[]
 
@@ -577,17 +577,17 @@ model InsurancePolicy {
 }
 
 model InsuranceClaim {
-  id            String   @id @default(cuid())
-  code          String   @unique // CLM-...
+  id            String          @id @default(cuid())
+  code          String          @unique // CLM-...
   policyId      String
   policy        InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
   jobId         String?
-  job           Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  job           Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
   description   String
-  amount        Float    // USD claimed
-  status        String   @default("submitted") // submitted | under_review | approved | rejected | paid
+  amount        Float // USD claimed
+  status        String          @default("submitted") // submitted | under_review | approved | rejected | paid
   reviewerNotes String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime        @default(now())
   resolvedAt    DateTime?
 
   @@index([policyId, status])
@@ -597,20 +597,20 @@ model InsuranceClaim {
 // Customer support center — users open tickets, admin replies, status tracked.
 
 model SupportTicket {
-  id          String   @id @default(cuid())
-  code        String   @unique // TKT-...
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject     String
-  category    String   // billing | jobs | account | technical | other
-  priority    String   @default("normal") // low | normal | high | urgent
-  status      String   @default("open") // open | pending | resolved | closed
-  message     String
-  reply       String?
-  replyById   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  resolvedAt  DateTime?
+  id         String    @id @default(cuid())
+  code       String    @unique // TKT-...
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject    String
+  category   String // billing | jobs | account | technical | other
+  priority   String    @default("normal") // low | normal | high | urgent
+  status     String    @default("open") // open | pending | resolved | closed
+  message    String
+  reply      String?
+  replyById  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
 
   @@index([userId, status])
   @@index([status])
@@ -622,80 +622,80 @@ model SupportTicket {
 // are held for 12 hours from job completion before becoming withdrawable.
 
 model Wallet {
-  id            String   @id @default(cuid())
-  technicianId  String   @unique
-  technician    Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
-  balance       Float    @default(0) // current withdrawable balance (USD)
-  pendingBalance Float   @default(0) // held balance (in 12h escrow, USD)
-  totalEarned   Float    @default(0) // lifetime gross earnings (USD)
-  totalCommission Float  @default(0) // lifetime platform commission (USD)
-  totalWithdrawn Float   @default(0) // lifetime withdrawn amount (USD)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String     @id @default(cuid())
+  technicianId    String     @unique
+  technician      Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  balance         Float      @default(0) // current withdrawable balance (USD)
+  pendingBalance  Float      @default(0) // held balance (in 12h escrow, USD)
+  totalEarned     Float      @default(0) // lifetime gross earnings (USD)
+  totalCommission Float      @default(0) // lifetime platform commission (USD)
+  totalWithdrawn  Float      @default(0) // lifetime withdrawn amount (USD)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  transactions  WalletTransaction[]
-  withdrawals   WithdrawalRequest[]
+  transactions WalletTransaction[]
+  withdrawals  WithdrawalRequest[]
 }
 
 enum TxnKind {
-  PREPAY        // customer paid inspection + travel fee
-  COMMISSION    // 10% platform cut (debit from technician balance)
-  PAYOUT        // withdrawal to bank card
-  REFUND        // refund to customer
-  ADJUSTMENT    // manual admin adjustment
+  PREPAY // customer paid inspection + travel fee
+  COMMISSION // 10% platform cut (debit from technician balance)
+  PAYOUT // withdrawal to bank card
+  REFUND // refund to customer
+  ADJUSTMENT // manual admin adjustment
 }
 
 enum TxnStatus {
-  PENDING       // held in escrow (12h countdown)
-  AVAILABLE     // released, withdrawable
-  PROCESSING    // payout in progress
+  PENDING // held in escrow (12h countdown)
+  AVAILABLE // released, withdrawable
+  PROCESSING // payout in progress
   COMPLETED
   FAILED
 }
 
 model WalletTransaction {
-  id            String   @id @default(cuid())
-  walletId      String
-  wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  jobId         String?
-  job           Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  kind          TxnKind
-  status        TxnStatus @default(PENDING)
-  grossAmount   Float    @default(0) // amount paid by customer (USD)
-  commissionAmount Float @default(0) // 10% platform cut (USD)
-  netAmount     Float    @default(0) // amount credited to technician (USD)
-  holdUntil     DateTime? // when funds become AVAILABLE (12h after job completion)
-  releasedAt    DateTime? // when actually released
-  description   String?
-  createdAt     DateTime @default(now())
+  id               String    @id @default(cuid())
+  walletId         String
+  wallet           Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  jobId            String?
+  job              Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  kind             TxnKind
+  status           TxnStatus @default(PENDING)
+  grossAmount      Float     @default(0) // amount paid by customer (USD)
+  commissionAmount Float     @default(0) // 10% platform cut (USD)
+  netAmount        Float     @default(0) // amount credited to technician (USD)
+  holdUntil        DateTime? // when funds become AVAILABLE (12h after job completion)
+  releasedAt       DateTime? // when actually released
+  description      String?
+  createdAt        DateTime  @default(now())
 
   @@index([walletId, status])
   @@index([jobId])
 }
 
 enum WithdrawalStatus {
-  REQUESTED     // mechanic requested
-  APPROVED      // admin approved, queued for payout
-  PAID          // sent to bank, completed
-  REJECTED      // admin rejected
+  REQUESTED // mechanic requested
+  APPROVED // admin approved, queued for payout
+  PAID // sent to bank, completed
+  REJECTED // admin rejected
 }
 
 model WithdrawalRequest {
-  id            String   @id @default(cuid())
-  code          String   @unique // WD-...
-  walletId      String
-  wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  amount        Float    // USD
-  method        String   @default("card") // card | bank | wallet-to-wallet
-  cardNumber   String?  // masked Iranian card number (shetab)
-  bankName     String?
-  shebaNumber  String?  // Iranian IBAN (IR...)
-  status        WithdrawalStatus @default(REQUESTED)
-  requestedAt   DateTime @default(now())
-  processedAt   DateTime?
-  adminNotes   String?
-  reviewerId   String?
-  txnId         String? // linked WalletTransaction (PAYOUT) once paid
+  id          String           @id @default(cuid())
+  code        String           @unique // WD-...
+  walletId    String
+  wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount      Float // USD
+  method      String           @default("card") // card | bank | wallet-to-wallet
+  cardNumber  String? // masked Iranian card number (shetab)
+  bankName    String?
+  shebaNumber String? // Iranian IBAN (IR...)
+  status      WithdrawalStatus @default(REQUESTED)
+  requestedAt DateTime         @default(now())
+  processedAt DateTime?
+  adminNotes  String?
+  reviewerId  String?
+  txnId       String? // linked WalletTransaction (PAYOUT) once paid
 
   @@index([walletId, status])
   @@index([status])
@@ -706,20 +706,20 @@ model WithdrawalRequest {
 // discounted inspection fees, extended warranty, dedicated support).
 
 model VipPlan {
-  id            String   @id @default(cuid())
-  slug          String   @unique // silver | gold | platinum
-  name          String   // display name (en) — UI uses i18n key vip.plan.<slug>
-  priceUSD      Float    // one-time price per duration
-  durationDays  Int      // validity period
-  discountPct   Float    @default(0) // % off inspection fees
-  priorityBoost Int      @default(0) // matching priority boost
-  warrantyMonths Int     @default(6)
-  dedicatedSupport Boolean @default(false)
-  freeInspectionsPerMonth Int @default(0)
-  active        Boolean  @default(true)
-  order         Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  slug                    String   @unique // silver | gold | platinum
+  name                    String // display name (en) — UI uses i18n key vip.plan.<slug>
+  priceUSD                Float // one-time price per duration
+  durationDays            Int // validity period
+  discountPct             Float    @default(0) // % off inspection fees
+  priorityBoost           Int      @default(0) // matching priority boost
+  warrantyMonths          Int      @default(6)
+  dedicatedSupport        Boolean  @default(false)
+  freeInspectionsPerMonth Int      @default(0)
+  active                  Boolean  @default(true)
+  order                   Int      @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   subscriptions UserVipSubscription[]
 }
@@ -732,17 +732,17 @@ enum VipStatus {
 }
 
 model UserVipSubscription {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  planId        String
-  plan          VipPlan  @relation(fields: [planId], references: [id])
-  status        VipStatus @default(PENDING_PAYMENT)
-  startedAt     DateTime?
-  expiresAt     DateTime? // null = lifetime
-  paymentId     String? // linked Payment
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      VipPlan   @relation(fields: [planId], references: [id])
+  status    VipStatus @default(PENDING_PAYMENT)
+  startedAt DateTime?
+  expiresAt DateTime? // null = lifetime
+  paymentId String? // linked Payment
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([userId, status])
 }
@@ -751,10 +751,10 @@ model UserVipSubscription {
 // Stores raw payment attempts for audit. In production this maps to Zarinpal/IDPay.
 
 enum GatewayType {
-  SHAPARAK_SIM  // built-in simulator
+  SHAPARAK_SIM // built-in simulator
   ZARINPAL
   IDPAY
-  WALLET       // wallet-to-wallet (no external gateway)
+  WALLET // wallet-to-wallet (no external gateway)
 }
 
 enum GatewayStatus {
@@ -766,25 +766,157 @@ enum GatewayStatus {
 }
 
 model PaymentGatewayLog {
-  id            String   @id @default(cuid())
-  code          String   @unique // PG-...
-  userId        String?
-  user          User?    @relation(fields: [userId], references: [id])
-  amount        Float    // USD
-  currency      String   @default("USD")
-  gateway       GatewayType @default(SHAPARAK_SIM)
-  status        GatewayStatus @default(INITIATED)
-  purpose       String   // vip | prepay | invoice | wallet_topup
-  referenceId   String?  // external gateway reference
-  cardNumber   String?  // masked card used
-  mobile        String?
-  description   String?
+  id              String        @id @default(cuid())
+  code            String        @unique // PG-...
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id])
+  amount          Float // USD
+  currency        String        @default("USD")
+  gateway         GatewayType   @default(SHAPARAK_SIM)
+  status          GatewayStatus @default(INITIATED)
+  purpose         String // vip | prepay | invoice | wallet_topup
+  referenceId     String? // external gateway reference
+  cardNumber      String? // masked card used
+  mobile          String?
+  description     String?
   callbackPayload String? // JSON callback
-  initiatedAt   DateTime @default(now())
-  verifiedAt    DateTime?
-  paymentId     String? // linked Payment on success
+  initiatedAt     DateTime      @default(now())
+  verifiedAt      DateTime?
+  paymentId       String? // linked Payment on success
 
   @@index([userId, status])
   @@index([status])
 }
 
+// ───────────────────────── Platform Settings ─────────────────────────
+model PlatformSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+// ───────────────────────── Admin Panel ─────────────────────────
+model AdminUser {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String
+  name          String
+  role          String   @default("ADMIN")
+  avatar        String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ───────────────────────── Onboarding Slides ─────────────────────────
+model OnboardingSlide {
+  id          String   @id @default(cuid())
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  image       String
+  titleFa     String
+  subtitleFa  String
+  tagFa       String
+  bulletsFa   String
+  titleEn     String
+  subtitleEn  String
+  tagEn       String
+  bulletsEn   String
+  accent      String   @default("amber")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, order])
+}
+
+// ───────────────────────── Audit Log ─────────────────────────
+model AuditLog {
+  id          String   @id @default(cuid())
+  adminId     String?
+  action      String
+  entity      String
+  entityId    String?
+  before      String?
+  after       String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([action])
+}
+
+// ───────────────────────── Exchange Rate History ─────────────────────────
+model ExchangeRateHistory {
+  id          String   @id @default(cuid())
+  baseRate    Float
+  multiplier  Float
+  finalRate   Float
+  source      String
+  channelName String?
+  recordedAt  DateTime @default(now())
+  updatedBy   String?
+
+  @@index([recordedAt])
+}
+
+// ───────────────────────── Discount Codes ─────────────────────────
+model DiscountCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  description String?
+  type        String   @default("PERCENT")
+  value       Float
+  maxUses     Int      @default(0)
+  usedCount   Int      @default(0)
+  validFrom   DateTime @default(now())
+  validUntil  DateTime?
+  active      Boolean  @default(true)
+  appliesTo   String   @default("ALL")
+  minAmount   Float?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([code, active])
+}
+
+// ───────────────────────── Banners ─────────────────────────
+model Banner {
+  id          String   @id @default(cuid())
+  title       String
+  subtitle    String?
+  image       String?
+  link        String?
+  position    String   @default("HOME_TOP")
+  bgColor     String?
+  textColor   String?
+  startAt     DateTime @default(now())
+  endAt       DateTime?
+  active      Boolean  @default(true)
+  priority    Int      @default(0)
+  targetRole  String   @default("ALL")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, position, priority])
+}
+
+// ───────────────────────── Push Notifications ─────────────────────────
+model PushNotification {
+  id          String   @id @default(cuid())
+  adminId     String?
+  title       String
+  body        String
+  targetRole  String   @default("ALL")
+  targetUserId String?
+  sentAt      DateTime @default(now())
+  deliveredAt DateTime?
+  readAt      DateTime?
+  status      String   @default("SENT")
+
+  @@index([targetRole, sentAt])
+}
