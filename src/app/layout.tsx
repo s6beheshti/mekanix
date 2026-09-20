@@ -29,8 +29,8 @@ export const metadata: Metadata = {
   keywords: ["MEKANIX", "mobile mechanic", "repair", "maintenance", "heavy machinery", "fleet"],
   manifest: "/manifest.json",
   icons: {
-    icon: "/logo.svg",
-    apple: "/logo.png",
+    icon: [{ url: "/logo.webp", type: "image/webp" }, { url: "/logo.png", sizes: "any" }],
+    apple: [{ url: "/logo.png", sizes: "180x180" }],
   },
   appleWebApp: {
     capable: true,

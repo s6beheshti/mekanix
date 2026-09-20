@@ -329,13 +329,14 @@ function HeroLogo() {
 
       {/* The real logo — inverted to light via CSS filter (logo is dark-colored on transparent bg) */}
       <motion.img
-        src="/logo.png"
+        src="/logo.webp"
         alt="MEKANIX"
         className="relative z-10 select-none object-contain"
-        style={{ width: 180, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.15)" }}
+        style={{ width: 180, height: "auto", filter: "invert(1) brightness(1.05)" }}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.6 }}
+        onError={(e) => { (e.target as HTMLImageElement).src = "/logo.png"; (e.target as HTMLImageElement).onerror = null; }}
       />
     </motion.div>
   );
