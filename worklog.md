@@ -1010,3 +1010,36 @@ Stage Summary:
 - ✅ All 94 OWASP audit items implemented
 - ✅ Backup system active (every 24h + manual trigger via API)
 - ✅ 4 services running: main app (3000), chat (3003), telegram (3004), backup (3005)
+
+---
+Task ID: 42
+Agent: orchestrator (main)
+Task: Add RollingText animation to splash screen with hover-to-replay
+
+Work Log:
+- INSTALLED gsap@3.15.0 + @gsap/react@2.1.2
+- CREATED src/components/ui/rolling-text.tsx:
+  * Slot-machine style text animation (letters spin and land)
+  * Deterministic PRNG (mulberry32) — no hydration mismatch
+  * Hover-to-replay: onMouseEnter triggers animation again
+  * Reduced-motion support (instant display for accessibility)
+  * Configurable: text, color, cycles, duration, variance
+- UPDATED splash.tsx HeroLogo:
+  * RollingText "MEKANIX" in amber (#F5A524) — animated on load
+  * Small logo.webp below with tagline "Repair · Maintain · Connect"
+  * Hover on MEKANIX text → animation replays
+  * Original logo preserved below (small, 30% opacity)
+  * Amber ambient glow behind text
+- VERIFIED:
+  * Page loads with heading "MEKANIX" (h3) ✅
+  * data-reel attributes present (animation active) ✅
+  * No console errors ✅
+  * Hover event dispatches correctly ✅
+  * HTTP 200 ✅
+
+Stage Summary:
+- ✅ RollingText animation on splash screen
+- ✅ Hover to replay — mouse over MEKANIX triggers re-roll
+- ✅ Original logo preserved (small, below text)
+- ✅ Reduced-motion accessible
+- ✅ No hydration errors
