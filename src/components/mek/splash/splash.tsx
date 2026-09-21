@@ -313,57 +313,64 @@ export function Splash() {
   );
 }
 
-// ─── Hero logo: Rolling text animation + brand mark below ───
+// ─── Hero logo: logo image with RollingText effect on the wordmark ───
+// The logo is split into 3 visual parts:
+// 1. M mark (top ~35%) — shown from the image
+// 2. "MEKANIX" wordmark (~25%) — REPLACED with RollingText animation
+// 3. Tagline (~40%) — shown from the image
+// This preserves the exact look while adding the rolling effect on the word.
 function HeroLogo() {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-      className="relative mx-auto grid place-items-center gap-6"
-      style={{ minHeight: 200 }}
+      className="relative mx-auto grid place-items-center"
+      style={{ width: 240, height: 200 }}
     >
       {/* Subtle amber ambient glow behind the mark */}
       <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 300, height: 300,
-          top: "-30%",
+          width: 200, height: 200,
           background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.1), transparent 60%)",
         }}
       />
 
-      {/* Rolling text — MEKANIX with slot-machine animation + hover to replay */}
-      <div className="relative z-10">
+      {/* Full logo image — same size as before (180px) */}
+      <motion.img
+        src="/logo.webp"
+        alt="MEKANIX"
+        className="relative z-10 select-none object-contain"
+        style={{ width: 180, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.1)" }}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.6 }}
+        onError={(e) => { (e.target as HTMLImageElement).src = "/logo.png"; (e.target as HTMLImageElement).onerror = null; }}
+      />
+
+      {/* RollingText overlay — positioned on the MEKANIX wordmark area of the logo */}
+      <div
+        className="absolute z-20"
+        style={{
+          top: "33%",
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "center",
+          pointerEvents: "auto",
+        }}
+      >
         <RollingText
           text="MEKANIX"
-          textColor="#F5A524"
+          textColor="#ffffff"
           minCycles={2}
-          cycleVariance={3}
+          cycleVariance={2}
           duration={2.0}
           durationVariance={1.0}
           hoverToRoll={true}
         />
       </div>
-
-      {/* Brand mark below — small logo with tagline */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 2.0, duration: 0.6 }}
-        className="relative z-10 flex flex-col items-center gap-2"
-      >
-        <img
-          src="/logo.webp"
-          alt="MEKANIX"
-          className="h-8 w-auto opacity-30 select-none object-contain"
-          style={{ filter: "invert(1) hue-rotate(180deg) brightness(1.1)" }}
-          onError={(e) => { (e.target as HTMLImageElement).src = "/logo.png"; (e.target as HTMLImageElement).onerror = null; }}
-        />
-        <p className="text-[10px] tracking-[0.3em] text-white/40 uppercase font-mono">
-          Repair · Maintain · Connect
-        </p>
-      </motion.div>
     </motion.div>
   );
 }
