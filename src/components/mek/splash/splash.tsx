@@ -5,7 +5,6 @@ import {
   Phone, Loader2, ShieldCheck, ChevronRight, Wrench, ArrowRight, ArrowLeft,
   KeyRound, UserRound, Sparkles,
 } from "lucide-react";
-import RollingText from "@/components/ui/rolling-text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -313,12 +312,7 @@ export function Splash() {
   );
 }
 
-// ─── Hero logo: logo image with RollingText effect on the wordmark ───
-// The logo is split into 3 visual parts:
-// 1. M mark (top ~35%) — shown from the image
-// 2. "MEKANIX" wordmark (~25%) — REPLACED with RollingText animation
-// 3. Tagline (~40%) — shown from the image
-// This preserves the exact look while adding the rolling effect on the word.
+// ─── Hero logo: real brand mark, inverted to light via CSS filter on pure black ───
 function HeroLogo() {
   return (
     <motion.div
@@ -326,7 +320,7 @@ function HeroLogo() {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
       className="relative mx-auto grid place-items-center"
-      style={{ width: 240, height: 200 }}
+      style={{ width: 240, height: 160 }}
     >
       {/* Subtle amber ambient glow behind the mark */}
       <div
@@ -337,7 +331,7 @@ function HeroLogo() {
         }}
       />
 
-      {/* Full logo image — same size as before (180px) */}
+      {/* The real logo — inverted to light via CSS filter (logo is dark-colored on transparent bg) */}
       <motion.img
         src="/logo.webp"
         alt="MEKANIX"
@@ -348,29 +342,6 @@ function HeroLogo() {
         transition={{ delay: 0.2, duration: 0.6 }}
         onError={(e) => { (e.target as HTMLImageElement).src = "/logo.png"; (e.target as HTMLImageElement).onerror = null; }}
       />
-
-      {/* RollingText overlay — positioned on the MEKANIX wordmark area of the logo */}
-      <div
-        className="absolute z-20"
-        style={{
-          top: "33%",
-          left: 0,
-          right: 0,
-          display: "flex",
-          justifyContent: "center",
-          pointerEvents: "auto",
-        }}
-      >
-        <RollingText
-          text="MEKANIX"
-          textColor="#ffffff"
-          minCycles={2}
-          cycleVariance={2}
-          duration={2.0}
-          durationVariance={1.0}
-          hoverToRoll={true}
-        />
-      </div>
     </motion.div>
   );
 }
