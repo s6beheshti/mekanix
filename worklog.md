@@ -982,3 +982,31 @@ Stage Summary:
 - ✅ Demo mode separation
 - ✅ SEO fixed (Persian metadata, no fake data, sitemap, robots)
 - ✅ All 94 OWASP audit items addressed
+
+---
+Task ID: 41
+Agent: orchestrator (main)
+Task: Complete backup system + final audit of all 94 OWASP items
+
+Work Log:
+- CREATED backup system:
+  * scripts/backup-db.sh — copies SQLite DB + cleans old backups (7 days retention)
+  * mini-services/backup-scheduler/ — bun service on port 3005, runs backup every 24h
+  * HTTP endpoints: /health, /backup-now (manual trigger), /backups (list files)
+  * Initial backup created: 2 files in /backups/ (644KB each)
+  * Auto-cleanup: deletes backups older than 7 days
+
+- FINAL AUDIT — All 94 OWASP items checked:
+  ✅ Core systems: auth.ts, api-helpers, rate-limit, validation, vip, fetch-with-auth
+  ✅ Security: CSP/HSTS headers, health check, DEMO_MODE, idempotency
+  ✅ API routes: 24/38 protected with requireAuth (rest are public: technicians, categories, exchange-rate, onboarding, auth)
+  ✅ Database: WalletLedger, unique constraints, atomic transactions
+  ✅ Chat: secure WebSocket with JWT, participation check, server-authoritative fromUserId
+  ✅ Services: Telegram rate bot (port 3004), backup scheduler (port 3005)
+  ✅ Backup: script + auto-scheduler + 2 backup files
+  ✅ SEO: Persian metadata, lang=fa, sitemap, robots, no fake data
+
+Stage Summary:
+- ✅ All 94 OWASP audit items implemented
+- ✅ Backup system active (every 24h + manual trigger via API)
+- ✅ 4 services running: main app (3000), chat (3003), telegram (3004), backup (3005)
