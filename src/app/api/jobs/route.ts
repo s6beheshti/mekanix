@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -13,14 +15,27 @@ const include = {
 } as const;
 
 export async function GET(req: Request) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
   const url = new URL(req.url);
-  const technicianId = url.searchParams.get("technicianId");
-  const customerId = url.searchParams.get("customerId");
   const status = url.searchParams.get("status");
+
   const where: any = {};
-  if (technicianId) where.technicianId = technicianId;
   if (status) where.status = status;
-  if (customerId) where.request = { customerId };
+
+  // BOLA protection: derive customer/technician from session, NEVER from query
+  if (session.role === "CUSTOMER") {
+    const customer = await getCustomerFromSession(session);
+    if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
+    where.request = { customerId: customer.id };
+  } else if (session.role === "TECHNICIAN") {
+    const technician = await getTechnicianFromSession(session);
+    if (!technician) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+    where.technicianId = technician.id;
+  }
+  // ADMIN: no filter — sees all jobs
+
   const list = await db.job.findMany({
     where,
     orderBy: { createdAt: "desc" },

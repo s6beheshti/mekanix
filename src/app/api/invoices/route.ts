@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 
 const FULL_INCLUDE = {
   job: {
@@ -13,66 +15,116 @@ const FULL_INCLUDE = {
   payment: true,
 } as const;
 
+// GET: returns invoice by jobId. Caller must be a participant in the job (BOLA).
 export async function GET(req: Request) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
   const url = new URL(req.url);
   const jobId = url.searchParams.get("jobId");
   if (!jobId) return NextResponse.json(null);
+
+  // Verify participation
+  const access = await requireJobParticipant(session, jobId);
+  if (access) return access;
+
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
   return NextResponse.json(inv);
 }
 
+// POST: creates an invoice. Only the technician assigned to the job (or admin) may issue it.
+// Server-authoritative: prices are computed from technician's rates + parts, NOT from client.
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { jobId, ...rest } = body;
-  // Recompute totals from job parts + labor if not supplied
-  let data: any = rest;
-  if (rest.auto !== false) {
-    const job = await db.job.findUnique({
-      where: { id: jobId },
-      include: { parts: true, technician: true },
-    });
-    if (job) {
-      const laborHours = rest.laborHours ?? 1.5;
-      const laborRate = rest.laborRate ?? job.technician.hourlyRate;
-      const laborTotal = laborHours * laborRate;
-      const partsTotal = job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0);
-      const travelFee = rest.travelFee ?? job.technician.travelFeeBase;
-      const discount = rest.discount ?? 0;
-      const subtotal = laborTotal + partsTotal + travelFee - discount;
-      const taxRate = rest.taxRate ?? 0.09;
-      const taxTotal = subtotal * taxRate;
-      const total = subtotal + taxTotal;
-      data = {
-        code: rest.code ?? `INV-${Math.floor(3000 + Math.random() * 6000)}`,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        discount,
-        subtotal,
-        taxRate,
-        taxTotal,
-        total,
-        currency: "USD",
-        status: rest.status ?? "SENT",
-        notes: rest.notes ?? "Parts & labor covered by 6-month MEKANIX warranty.",
-      };
-    }
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const inv = await db.invoice.create({ data: { jobId, ...data }, include: FULL_INCLUDE });
-  // Notify BOTH the customer and the mechanic that the invoice was issued.
+
+  const { jobId } = body;
+  if (typeof jobId !== "string" || !jobId) {
+    return NextResponse.json({ error: "jobId الزامی است" }, { status: 400 });
+  }
+
+  // BOLA: must be participant (customer OR assigned tech) OR admin to even read this job
+  const access = await requireJobParticipant(session, jobId);
+  if (access) return access;
+
+  // Only the assigned technician (or admin) can issue an invoice
+  if (session.role === "TECHNICIAN") {
+    const tech = await getTechnicianFromSession(session);
+    const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
+    if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+    if (!tech || tech.id !== job.technicianId) {
+      return NextResponse.json(
+        { error: "فقط مکانیک مسئول کار می‌تواند فاکتور صادر کند" },
+        { status: 403 }
+      );
+    }
+  } else if (session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+
+  // ──────────── Server-authoritative pricing ────────────
+  // Load job + parts + technician rates — IGNORE any client-supplied amounts.
   const job = await db.job.findUnique({
+    where: { id: jobId },
+    include: { parts: true, technician: true },
+  });
+  if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+
+  // laborHours may be overridden by technician (capped 0–100); everything else is server-derived.
+  const laborHoursRaw = typeof body.laborHours === "number" ? body.laborHours : 1.5;
+  const laborHours = Math.max(0, Math.min(100, laborHoursRaw));
+
+  const laborRate = job.technician.hourlyRate; // from technician record
+  const laborTotal = laborHours * laborRate;
+  const partsTotal = job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0);
+  const travelFee = job.technician.travelFeeBase;
+  const discount = 0; // server-controlled
+  const subtotal = laborTotal + partsTotal + travelFee - discount;
+  const taxRate = 0.09;
+  const taxTotal = subtotal * taxRate;
+  const total = subtotal + taxTotal;
+
+  const code = `INV-${Math.floor(3000 + Math.random() * 6000)}`;
+
+  const inv = await db.invoice.create({
+    data: {
+      code,
+      jobId,
+      laborHours,
+      laborRate,
+      laborTotal,
+      partsTotal,
+      travelFee,
+      discount,
+      subtotal,
+      taxRate,
+      taxTotal,
+      total,
+      currency: "USD",
+      status: "SENT",
+      notes: "Parts & labor covered by 6-month MEKANIX warranty.",
+    },
+    include: FULL_INCLUDE,
+  });
+
+  // Notify BOTH the customer and the mechanic that the invoice was issued.
+  const refreshed = await db.job.findUnique({
     where: { id: jobId },
     include: {
       request: { include: { customer: { include: { user: true } } } },
       technician: { include: { user: true } },
     },
   });
-  if (job) {
-    const cust = job.request.customer.user;
-    const tech = job.technician?.user;
-    // Notify customer
+  if (refreshed) {
+    const cust = refreshed.request.customer.user;
+    const tech = refreshed.technician?.user;
     await db.notification.create({
       data: {
         userId: cust.id,
@@ -83,7 +135,6 @@ export async function POST(req: Request) {
         link: "customer/invoice",
       },
     });
-    // Notify mechanic (so they know the invoice was sent to customer)
     if (tech) {
       await db.notification.create({
         data: {
@@ -96,10 +147,9 @@ export async function POST(req: Request) {
         },
       });
     }
-    // System message in the job chat
     await db.message.create({
       data: {
-        jobId: job.id,
+        jobId: refreshed.id,
         fromUserId: tech?.id ?? cust.id,
         kind: "system",
         body: `Invoice ${inv.code} issued — total ${inv.total} ${inv.currency}.`,

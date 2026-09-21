@@ -158,14 +158,21 @@ export const useApp = create<AppState>()(
           onboardingRequired: true,
         })),
 
-      exitToSplash: () =>
+      exitToSplash: () => {
+        // Clear JWT token from localStorage on sign-out
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("mekanix-token");
+        }
         set({
           bootStage: "splash",
           auth: { userId: null, phone: null, name: null, isGuest: false, verified: false },
           view: "home",
           params: {},
           history: [],
-        }),
+          profileCompleteRequired: false,
+          onboardingRequired: true,
+        });
+      },
 
       go: (view, params = {}) => {
         const { view: cur, params: curParams, history } = get();

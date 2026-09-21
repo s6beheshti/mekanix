@@ -1,27 +1,65 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth, checkRateLimit } from "@/lib/api-helpers";
+import { getTechnicianFromSession } from "@/lib/auth";
+import { RATE_LIMITS } from "@/lib/rate-limit";
 
 // Mechanic requests a withdrawal from their wallet balance.
-// Validates available balance, creates WithdrawalRequest (status=REQUESTED),
-// creates a PAYOUT WalletTransaction (status=PROCESSING), decrements wallet.balance.
-// Admin reviews → approves (PAID) or rejects (REFUND the balance back).
+// technicianId is derived from the session — NEVER from request body (BOLA protection).
 const MIN_WITHDRAWAL = 5; // USD minimum
 
+function maskCard(card: string): string {
+  const digits = card.replace(/\D/g, "");
+  if (digits.length < 4) return "****";
+  return `**** **** **** ${digits.slice(-4)}`;
+}
+
 export async function POST(req: Request) {
-  const { technicianId, amount, method, cardNumber, shebaNumber, bankName } = await req.json();
-  if (!technicianId) return NextResponse.json({ error: "technicianId is required" }, { status: 400 });
-  if (!amount || amount < MIN_WITHDRAWAL) {
-    return NextResponse.json({ error: `Minimum withdrawal is $${MIN_WITHDRAWAL}` }, { status: 400 });
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  // Tight rate limit on withdrawals
+  const limited = checkRateLimit(req, "withdraw", RATE_LIMITS.WITHDRAW.max, RATE_LIMITS.WITHDRAW.windowMs);
+  if (limited) return limited;
+
+  if (session.role !== "TECHNICIAN" && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Server-authoritative: resolve technician from session — IGNORE body.technicianId
+  let technicianId: string;
+  if (session.role === "ADMIN") {
+    // Admin can specify technicianId (e.g. for manual admin operations)
+    if (typeof body.technicianId !== "string" || !body.technicianId) {
+      return NextResponse.json({ error: "technicianId is required" }, { status: 400 });
+    }
+    technicianId = body.technicianId;
+  } else {
+    const tech = await getTechnicianFromSession(session);
+    if (!tech) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+    technicianId = tech.id;
+  }
+
+  const { amount, method, cardNumber, shebaNumber, bankName } = body;
+  if (typeof amount !== "number" || amount < MIN_WITHDRAWAL) {
+    return NextResponse.json({ error: `حداقل مبلغ برداشت $${MIN_WITHDRAWAL} است` }, { status: 400 });
   }
 
   const wallet = await db.wallet.findUnique({ where: { technicianId } });
-  if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
+  if (!wallet) return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   if (wallet.balance < amount) {
-    return NextResponse.json({ error: "Insufficient available balance" }, { status: 400 });
+    return NextResponse.json({ error: "موجودی قابل برداشت کافی نیست" }, { status: 400 });
   }
 
   const code = `WD-${Math.floor(4000 + Math.random() * 5000)}`;
-  const maskedCard = cardNumber ? maskCard(cardNumber) : null;
+  const maskedCard = cardNumber ? maskCard(String(cardNumber)) : null;
 
   // 1. Create withdrawal request
   const withdrawal = await db.withdrawalRequest.create({
@@ -29,15 +67,15 @@ export async function POST(req: Request) {
       code,
       walletId: wallet.id,
       amount,
-      method: method || "card",
+      method: ["card", "bank"].includes(method) ? method : "card",
       cardNumber: maskedCard,
-      shebaNumber: shebaNumber ?? null,
-      bankName: bankName ?? null,
+      shebaNumber: typeof shebaNumber === "string" ? shebaNumber.slice(0, 30) : null,
+      bankName: typeof bankName === "string" ? bankName.slice(0, 100) : null,
       status: "REQUESTED",
     },
   });
 
-  // 2. Create PAYOUT txn (PROCESSING — not yet COMPLETED, admin must approve)
+  // 2. Create PAYOUT txn (PROCESSING — admin must approve)
   await db.walletTransaction.create({
     data: {
       walletId: wallet.id,
@@ -59,10 +97,4 @@ export async function POST(req: Request) {
   });
 
   return NextResponse.json({ ok: true, withdrawal });
-}
-
-function maskCard(card: string): string {
-  const digits = card.replace(/\D/g, "");
-  if (digits.length < 4) return "****";
-  return `**** **** **** ${digits.slice(-4)}`;
 }

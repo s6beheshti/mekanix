@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -15,12 +17,110 @@ const include = {
 // 12-hour hold from job completion before funds become withdrawable
 const HOLD_HOURS = 12;
 
+// ──────────── Job State Machine ────────────
+// Per-role allowed transitions. The current job status must be one of
+// `from[]` for the transition into `to` to be valid for that role.
+
+type Status =
+  | "REQUESTED" | "ACCEPTED" | "EN_ROUTE" | "ARRIVED" | "DIAGNOSING"
+  | "REPAIRING" | "WAITING_APPROVAL" | "COMPLETED" | "CANCELLED" | "REJECTED";
+
+const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
+  { to: "ACCEPTED", from: ["REQUESTED"] },
+  { to: "EN_ROUTE", from: ["ACCEPTED"] },
+  { to: "ARRIVED", from: ["EN_ROUTE", "ACCEPTED"] },
+  { to: "DIAGNOSING", from: ["ARRIVED", "EN_ROUTE", "ACCEPTED"] },
+  { to: "REPAIRING", from: ["DIAGNOSING", "ARRIVED", "WAITING_APPROVAL"] },
+  { to: "WAITING_APPROVAL", from: ["REPAIRING", "DIAGNOSING"] },
+  { to: "COMPLETED", from: ["REPAIRING", "WAITING_APPROVAL"] },
+  { to: "REJECTED", from: ["REQUESTED"] },
+];
+
+// Customer transitions:
+//  - CANCEL only before technician arrives (REQUESTED, ACCEPTED, EN_ROUTE)
+//  - APPROVE_REPAIR (customerApproved=true) only when WAITING_APPROVAL
+const CUSTOMER_CANCEL_FROM: Status[] = ["REQUESTED", "ACCEPTED", "EN_ROUTE"];
+
+function isAllowedTransition(
+  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN",
+  currentStatus: string,
+  nextStatus: string,
+  customerApproved: boolean | undefined
+): boolean {
+  if (role === "ADMIN") return true;
+
+  // Special: customer setting customerApproved=true (approve repair)
+  if (role === "CUSTOMER") {
+    if (customerApproved === true) {
+      return currentStatus === "WAITING_APPROVAL";
+    }
+    if (nextStatus === "CANCELLED") {
+      return CUSTOMER_CANCEL_FROM.includes(currentStatus as Status);
+    }
+    return false;
+  }
+
+  if (role === "TECHNICIAN") {
+    const rule = TECH_TRANSITIONS.find((t) => t.to === (nextStatus as Status));
+    if (!rule) return false;
+    return rule.from.includes(currentStatus as Status);
+  }
+  return false;
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
   const { id } = await params;
-  const body = await req.json();
+
+  // BOLA: must be a job participant (or admin)
+  const access = await requireJobParticipant(session, id);
+  if (access) return access;
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const { status, ...extra } = body;
 
-  const data: any = { status };
+  // Load the current job so we can validate the transition
+  const existing = await db.job.findUnique({ where: { id }, select: { status: true, technicianId: true } });
+  if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+
+  // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
+  // For customers, ensure they own the request (requireJobParticipant already checked)
+
+  const customerApproved = extra.customerApproved != null ? Boolean(extra.customerApproved) : undefined;
+
+  // If neither status nor customerApproved is provided, nothing to do
+  if (!status && customerApproved === undefined) {
+    return NextResponse.json({ error: "status یا customerApproved الزامی است" }, { status: 400 });
+  }
+
+  // Validate state-machine transition
+  const targetStatus = status ?? existing.status;
+  const allowed = isAllowedTransition(session.role, existing.status, targetStatus, customerApproved);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: `انتقال مجاز نیست: ${existing.status} → ${targetStatus} برای نقش ${session.role}` },
+      { status: 403 }
+    );
+  }
+
+  // Additional check: only the ASSIGNED technician can advance a tech-allowed status
+  if (session.role === "TECHNICIAN" && status) {
+    const tech = await getTechnicianFromSession(session);
+    if (!tech || tech.id !== existing.technicianId) {
+      return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
+    }
+  }
+
+  const data: any = {};
+  if (status) data.status = status;
   if (status === "ACCEPTED") {
     data.startedAt = new Date();
     data.request = { update: { status: "ASSIGNED" } };
@@ -28,15 +128,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (status === "ARRIVED") data.arrivedAt = new Date();
   if (status === "COMPLETED") data.completedAt = new Date();
   if (status === "CANCELLED") data.request = { update: { status: "CANCELLED" } };
-  // REJECTED: technician declined the request — set request back to OPEN so it
-  // re-enters the matching pool, and remove the technician assignment so the
-  // request can be matched with another technician.
   if (status === "REJECTED") {
     data.request = { update: { status: "OPEN", matchedTechId: null } };
   }
 
   if (extra.technicianNotes != null) data.technicianNotes = extra.technicianNotes;
-  if (extra.customerApproved != null) data.customerApproved = extra.customerApproved;
+  if (customerApproved !== undefined) data.customerApproved = customerApproved;
 
   const job = await db.job.update({ where: { id }, data, include });
 
@@ -106,8 +203,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   };
   const notif = notifMap[status];
   if (notif) {
-    // For REJECTED, use a special "alert" category to trigger the special
-    // customer-facing alert UI (different from regular notifications).
     const notifCategory = status === "REJECTED" ? "alert" : notif.category;
     await db.notification.create({
       data: {

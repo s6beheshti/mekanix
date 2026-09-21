@@ -3,9 +3,20 @@ import { db } from "@/lib/db";
 
 // GET /api/exchange-rate
 // Returns the current USD→IRR exchange rate.
+// Public endpoint (no auth needed) — but cached for 60 seconds to limit upstream calls.
 // Priority: Telegram bot rate (@NerkhDollarIRT) > official API > fallback
 // Also applies admin-configured multiplier if set.
+
+// In-memory cache (per-server)
+let cache: { rate: number; baseRate: number; multiplier: number; source: string; fetchedAt: number } | null = null;
+const CACHE_TTL_MS = 60_000; // 60 seconds
+
 export async function GET() {
+  const now = Date.now();
+  if (cache && now - cache.fetchedAt < CACHE_TTL_MS) {
+    return NextResponse.json({ ...cache, cached: true });
+  }
+
   // 1. Try Telegram rate (stored by mini-services/telegram-rate-bot)
   let rate: number | null = null;
   let source = "unknown";
@@ -13,7 +24,7 @@ export async function GET() {
   try {
     const telegramSetting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } });
     const sourceSetting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_source" } });
-    
+
     if (telegramSetting?.value) {
       rate = parseFloat(telegramSetting.value);
       source = sourceSetting?.value || "telegram";
@@ -54,11 +65,19 @@ export async function GET() {
 
   const finalRate = Math.round(rate * multiplier);
 
+  cache = {
+    rate: finalRate,
+    baseRate: rate,
+    multiplier,
+    source,
+    fetchedAt: now,
+  };
+
   return NextResponse.json({
     rate: finalRate,
     baseRate: rate,
     multiplier,
     source,
-    fetchedAt: Date.now(),
+    fetchedAt: now,
   });
 }

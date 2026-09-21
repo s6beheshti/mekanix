@@ -69,6 +69,10 @@ export function Splash() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      // Store JWT token returned by the verify endpoint
+      if (data.token) {
+        localStorage.setItem("mekanix-token", data.token);
+      }
       toast.success(`${t("splash.welcome")}${data.user?.name ? "، " + data.user.name.split(" ")[0] + "!" : "!"}`);
 
       // If logging in as mechanic, check that the user has a technician profile

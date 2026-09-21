@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireJobParticipant } from "@/lib/auth";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -12,8 +14,14 @@ const include = {
   tracking: { orderBy: { ts: "asc" } },
 } as const;
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
   const { id } = await params;
+  const access = await requireJobParticipant(session, id);
+  if (access) return access;
+
   const job = await db.job.findUnique({ where: { id }, include });
   if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(job);

@@ -54,10 +54,27 @@ export type ApiResult<T> =
   | { ok: false; error: string };
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-  });
+  // Attach JWT token from localStorage (set by OTP verify flow) for auth.
+  let headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string> ?? {}),
+  };
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("mekanix-token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { ...init, headers });
+
+  if (res.status === 401) {
+    // Token expired or invalid — clear it and redirect to splash
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("mekanix-token");
+    }
+    throw new Error("احراز هویت نشده — لطفاً وارد شوید");
+  }
+  if (res.status === 429) {
+    throw new Error("درخواست‌های بیش از حد — لطفاً کمی صبر کنید");
+  }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {

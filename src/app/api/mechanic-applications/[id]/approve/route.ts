@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { verifySession, requireRole } from "@/lib/auth";
 
-// Approve a mechanic application → creates a User (TECHNICIAN) + Technician profile.
+// POST /api/mechanic-applications/[id]/approve — ADMIN ONLY.
+// Approves a mechanic application → creates a User (TECHNICIAN) + Technician profile.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = req.headers.get("authorization");
+  if (!auth?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const session = await verifySession(auth.slice(7));
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const forbidden = requireRole(session, "ADMIN");
+  if (forbidden) return forbidden;
+
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const app = await db.mechanicApplication.findUnique({ where: { id } });
@@ -26,7 +39,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     user = await db.user.update({ where: { id: user.id }, data: { role: "TECHNICIAN", phoneVerified: true } });
   }
 
-  // Create technician profile if missing
   let tech = await db.technician.findUnique({ where: { userId: user.id } });
   if (!tech) {
     const specialties = JSON.parse(app.specialties || "[]") as string[];
@@ -66,7 +78,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     include: { user: { include: { technician: true } } },
   });
 
-  // Notify the new mechanic
   await db.notification.create({
     data: {
       userId: user.id,

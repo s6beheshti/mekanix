@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -12,16 +13,43 @@ const include = {
   tracking: { orderBy: { ts: "asc" } },
 } as const;
 
-// Assign a technician to a service request and create a Job in REQUESTED state.
+// POST /api/service-requests/[id]/assign
+// Customer (owner of the request) accepts a matched technician → creates a Job in REQUESTED state.
+// - Request must belong to the calling customer (or be admin).
+// - technicianId is required in body (chosen by the customer).
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
   const { id } = await params;
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const { technicianId } = body;
+  if (typeof technicianId !== "string" || !technicianId) {
+    return NextResponse.json({ error: "technicianId الزامی است" }, { status: 400 });
+  }
 
   const sr = await db.serviceRequest.findUnique({ where: { id }, include: { vehicle: true } });
-  if (!sr) return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  if (!sr) return NextResponse.json({ error: "درخواست یافت نشد" }, { status: 404 });
+
+  // BOLA: customer must own the request, or be admin
+  if (session.role === "CUSTOMER") {
+    // Look up the customer profile for this user
+    const customer = await db.customer.findUnique({ where: { userId: session.userId } });
+    if (!customer || sr.customerId !== customer.id) {
+      return NextResponse.json({ error: "شما مالک این درخواست نیستید" }, { status: 403 });
+    }
+  } else if (session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+
   const tech = await db.technician.findUnique({ where: { id: technicianId } });
-  if (!tech) return NextResponse.json({ error: "Technician not found" }, { status: 404 });
+  if (!tech) return NextResponse.json({ error: "مکانیک یافت نشد" }, { status: 404 });
 
   // compute ETA from distance
   const km = tech.lat && tech.lng && sr.lat

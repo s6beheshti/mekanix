@@ -1,15 +1,31 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { getTechnicianFromSession } from "@/lib/auth";
 
-// Release any PENDING wallet transactions whose holdUntil has passed,
-// moving them to AVAILABLE status and transferring balance from pending to available.
-// Also returns the wallet + recent transactions for the requested technician.
+// GET /api/wallets
+// Returns the wallet + recent transactions for the authenticated technician.
+// technicianId is derived from the session — the query param is IGNORED (BOLA protection).
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const technicianId = url.searchParams.get("technicianId");
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
 
-  if (!technicianId) {
-    return NextResponse.json({ error: "technicianId is required" }, { status: 400 });
+  // Only TECHNICIAN or ADMIN can view a wallet
+  if (session.role !== "TECHNICIAN" && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+
+  let technicianId: string;
+  if (session.role === "ADMIN") {
+    // Admin may pass technicianId in query for inspection
+    const url = new URL(req.url);
+    const q = url.searchParams.get("technicianId");
+    if (!q) return NextResponse.json({ error: "technicianId is required" }, { status: 400 });
+    technicianId = q;
+  } else {
+    const tech = await getTechnicianFromSession(session);
+    if (!tech) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+    technicianId = tech.id;
   }
 
   // Find or create wallet
@@ -49,7 +65,6 @@ export async function GET(req: Request) {
     });
   }
 
-  // Re-fetch updated wallet
   const fresh = await db.wallet.findUnique({
     where: { technicianId },
     include: {

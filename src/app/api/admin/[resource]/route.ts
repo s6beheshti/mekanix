@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireRole } from "@/lib/auth";
 
 const HANDLERS: Record<string, () => Promise<any[]>> = {
   customers: async () => {
@@ -60,7 +62,14 @@ const HANDLERS: Record<string, () => Promise<any[]>> = {
   },
 };
 
-export async function GET(_req: Request, { params }: { params: Promise<{ resource: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ resource: string }> }) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  // Function-level authorization: only ADMIN role can access admin resources
+  const forbidden = requireRole(session, "ADMIN");
+  if (forbidden) return forbidden;
+
   const { resource } = await params;
   const handler = HANDLERS[resource];
   if (!handler) return NextResponse.json({ error: "Unknown resource" }, { status: 404 });

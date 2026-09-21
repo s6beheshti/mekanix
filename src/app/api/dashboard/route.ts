@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
 
-export async function GET() {
+// GET /api/dashboard — platform-wide stats.
+// Authenticated users only. Customer/Technician see aggregate stats (no PII).
+// Admin sees the same stats (the data is already aggregate).
+export async function GET(req: Request) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
   const now = Date.now();
   const day = 86400000;
   const since = new Date(now - 30 * day);
@@ -21,19 +28,16 @@ export async function GET() {
 
   const revenue30d = payments30d.reduce((s, p) => s + p.amount, 0);
 
-  // Average response minutes (from seed: responseMins)
   const techs = await db.technician.findMany({ select: { responseMins: true } });
   const avgResponseMins = techs.length
     ? Math.round(techs.reduce((s, t) => s + t.responseMins, 0) / techs.length)
     : 0;
 
-  // Customer satisfaction (avg rating across all reviews)
   const reviews = await db.review.findMany({ select: { rating: true } });
   const customerSatisfaction = reviews.length
     ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
     : 0;
 
-  // Revenue series last 14 days
   const revenueSeries: { date: string; revenue: number; jobs: number }[] = [];
   for (let i = 13; i >= 0; i--) {
     const start = new Date(now - (i + 1) * day);
@@ -47,11 +51,9 @@ export async function GET() {
     });
   }
 
-  // Status breakdown
   const statusGroups = await db.job.groupBy({ by: ["status"], _count: true });
   const statusBreakdown = statusGroups.map((g) => ({ status: g.status, count: g._count }));
 
-  // Category breakdown
   const cats = await db.serviceRequest.groupBy({ by: ["category"], _count: true });
   const categoryBreakdown = await Promise.all(
     cats.map(async (c) => {
@@ -67,9 +69,8 @@ export async function GET() {
     })
   );
 
-  // Tech performance
   const allTechs = await db.technician.findMany({
-    include: { user: true, reviews: { select: { rating: true } } },
+    include: { user: { select: { name: true } }, reviews: { select: { rating: true } } },
   });
   const techPerformance = await Promise.all(
     allTechs.map(async (t) => {
@@ -89,11 +90,13 @@ export async function GET() {
   );
   techPerformance.sort((a, b) => b.revenue - a.revenue);
 
-  // Recent activity feed
   const recentJobs = await db.job.findMany({
     take: 8,
     orderBy: { updatedAt: "desc" },
-    include: { request: { include: { customer: { include: { user: true } } } }, technician: { include: { user: true } } },
+    include: {
+      request: { include: { customer: { include: { user: { select: { name: true } } } } } },
+      technician: { include: { user: { select: { name: true } } } },
+    },
   });
   const recentActivity = recentJobs.map((j) => ({
     id: j.id,
