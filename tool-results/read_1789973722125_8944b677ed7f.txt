@@ -1,0 +1,2002 @@
+     1→مبنای دسته‌بندی را هم روی اصول OWASP API Security گذاشتم؛ مخصوصاً کنترل دسترسی در سطح آبجکت، سطح فیلد و سطح Function که دقیقاً با مشکلات فعلی پروژه منطبق‌اند.
+     2→
+     3→تصویر کلی
+     4→
+     5→من تغییرات را به ۱۵ بخش تقسیم می‌کنم:
+     6→
+     7→بخش     وضعیت فعلی      اهمیت
+     8→1. احراز هویت و Session ⚠️ نیاز به اصلاح        🔴
+     9→2. Authorization و Roleها       ❌ ناقص  🔴
+    10→3. مالکیت داده‌ها       ❌ ناقص  🔴
+    11→4. API Contract و Validation    ⚠️ ناقص 🔴
+    12→5. Chat/WebSocket       ❌ ناامن 🔴
+    13→6. Job State Machine    ⚠️ قابل دستکاری 🔴
+    14→7. Wallet و حساب مالی داخلی     ⚠️ نیازمند تراکنش دقیق  🔴
+    15→8. Database     ⚠️ مناسب Demo   🟠
+    16→9. Seed/Demo APIs       ❌ نباید Production باشند        🔴
+    17→10. Rate Limit / Abuse Protection       ⚠️ فقط ابتدایی  🟠
+    18→11. Security Headers / Deployment       ⚠️ ناقص 🟠
+    19→12. Logging / Audit     ❌ تقریباً غایب  🔴
+    20→13. File / Media / Maps ⚠️ نیازمند سخت‌گیری     🟠
+    21→14. Business Logic      ⚠️ چند مسیر قابل سوءاستفاده     🔴
+    22→15. Testing / QA / Monitoring   ❌ ناکافی        🔴
+    23→1. اول از همه: سیستم Authorization مرکزی
+    24→
+    25→این مهم‌ترین تغییر پروژه است.
+    26→
+    27→الان بعضی APIها requireAuth دارند، بعضی ندارند.
+    28→
+    29→مثلاً:
+    30→
+    31→/api/profile
+    32→/api/prepay
+    33→
+    34→از requireAuth استفاده می‌کنند، اما بسیاری از این‌ها نه:
+    35→
+    36→/api/vehicles
+    37→/api/jobs
+    38→/api/invoices
+    39→/api/messages
+    40→/api/notifications
+    41→/api/admin/*
+    42→/api/wallets
+    43→/api/reviews
+    44→/api/referral
+    45→/api/insurance
+    46→...
+    47→
+    48→این نباید این‌طور باشد.
+    49→
+    50→باید یک سیستم مرکزی داشته باشیم:
+    51→requireAuth()
+    52→requireRole("ADMIN")
+    53→requireRole("TECHNICIAN")
+    54→requireRole("CUSTOMER")
+    55→
+    56→requireOwnership()
+    57→requireJobParticipant()
+    58→requireVehicleOwner()
+    59→requireInvoiceAccess()
+    60→
+    61→مثلاً:
+    62→
+    63→const session = await requireAuth(req);
+    64→
+    65→if (session instanceof NextResponse) {
+    66→  return session;
+    67→}
+    68→
+    69→بعد:
+    70→
+    71→requireRole(session, "ADMIN")
+    72→
+    73→یا:
+    74→
+    75→requireRole(session, ["ADMIN", "TECHNICIAN"])
+    76→
+    77→اصل مهم این است که Default باید Deny باشد؛ یعنی API تا وقتی صراحتاً اجازه‌ای تعریف نشده، دسترسی ندهد. این دقیقاً با توصیه OWASP برای Function-Level Authorization منطبق است.
+    78→
+    79→2. مالکیت Objectها باید کامل شود
+    80→
+    81→این یکی از جدی‌ترین مشکلات فعلی است.
+    82→
+    83→مثلاً الان API خودرو می‌تواند چیزی شبیه این دریافت کند:
+    84→
+    85→{
+    86→  "customerId": "customer_123"
+    87→}
+    88→
+    89→اما:
+    90→
+    91→چرا Client باید بتواند تعیین کند این خودرو متعلق به چه کسی است؟
+    92→
+    93→نباید.
+    94→
+    95→باید از Session بفهمیم:
+    96→
+    97→session.userId
+    98→        ↓
+    99→Customer
+   100→        ↓
+   101→Vehicle
+   102→
+   103→مثلاً:
+   104→
+   105→const customer = await db.customer.findUnique({
+   106→  where: {
+   107→    userId: session.userId
+   108→  }
+   109→});
+   110→
+   111→و بعد:
+   112→
+   113→where: {
+   114→  id: vehicleId,
+   115→  customerId: customer.id
+   116→}
+   117→
+   118→یعنی اگر کاربر ID خودرو شخص دیگری را بفرستد:
+   119→
+   120→403 Forbidden
+   121→
+   122→نه اینکه خودرو را برگردانیم.
+   123→
+   124→OWASP دقیقاً این مسئله را BOLA می‌نامد و تأکید می‌کند هر endpointی که با ID به رکورد دسترسی دارد باید authorization همان object را بررسی کند.
+   125→
+   126→3. userId / customerId / technicianId نباید از Client قابل اعتماد باشند
+   127→
+   128→در پروژه فعلی این الگو زیاد وجود دارد:
+   129→
+   130→{
+   131→  "userId": "...",
+   132→  "customerId": "...",
+   133→  "technicianId": "..."
+   134→}
+   135→
+   136→این خطرناک است.
+   137→
+   138→قانون جدید:
+   139→برای Customer
+   140→
+   141→هیچ‌وقت:
+   142→
+   143→body.customerId
+   144→
+   145→منبع حقیقت نباشد.
+   146→
+   147→بلکه:
+   148→
+   149→session.userId
+   150→→ Customer
+   151→→ customer.id
+   152→برای Technician
+   153→
+   154→همین:
+   155→
+   156→session.userId
+   157→→ Technician
+   158→→ technician.id
+   159→Admin
+   160→
+   161→فقط Admin می‌تواند در صورت نیاز ID شخص دیگری را انتخاب کند.
+   162→
+   163→4. fromUserId در Chat باید حذف شود
+   164→
+   165→الان Schema این را دارد:
+   166→
+   167→fromUserId: z.string().min(1)
+   168→
+   169→و API هم آن را می‌گیرد.
+   170→
+   171→این اشتباه معماری است.
+   172→
+   173→کاربر می‌تواند بگوید:
+   174→
+   175→{
+   176→  "fromUserId": "ADMIN_ID"
+   177→}
+   178→
+   179→و خودش را Admin جا بزند.
+   180→
+   181→باید بشود:
+   182→const senderId = session.userId;
+   183→
+   184→و اصلاً:
+   185→
+   186→fromUserId
+   187→
+   188→از request حذف شود.
+   189→
+   190→این دقیقاً نمونه Broken Object Property / Mass Assignment است که OWASP درباره‌اش هشدار می‌دهد.
+   191→
+   192→5. WebSocket فعلی باید از نو امن شود
+   193→
+   194→این یکی را خیلی جدی بگیر.
+   195→
+   196→در:
+   197→
+   198→mini-services/chat-service/index.ts
+   199→
+   200→فعلاً Client می‌تواند بگوید:
+   201→
+   202→auth({
+   203→  userId: "...",
+   204→  name: "...",
+   205→  token: "..."
+   206→})
+   207→
+   208→ولی Server واقعاً Token را validate نمی‌کند.
+   209→
+   210→بعد می‌تواند:
+   211→
+   212→job:join
+   213→
+   214→بزند و وارد هر Job شود.
+   215→
+   216→حتی:
+   217→
+   218→subscribe:notifications
+   219→
+   220→با:
+   221→
+   222→{
+   223→  "userId": "somebody-else"
+   224→}
+   225→
+   226→ممکن است.
+   227→
+   228→باید:
+   229→
+   230→WebSocket هنگام اتصال:
+   231→
+   232→JWT
+   233→ ↓
+   234→verifySession()
+   235→ ↓
+   236→userId
+   237→ ↓
+   238→role
+   239→
+   240→را validate کند.
+   241→
+   242→بعد وقتی:
+   243→
+   244→job:join(jobId)
+   245→
+   246→آمد:
+   247→
+   248→Server باید DB را چک کند:
+   249→
+   250→آیا این User:
+   251→  Customer این Job است؟
+   252→یا
+   253→  Technician این Job است؟
+   254→یا
+   255→  Admin است؟
+   256→
+   257→فقط در این صورت:
+   258→
+   259→socket.join(...)
+   260→6. WebSocket نباید fromUserId قبول کند
+   261→
+   262→در:
+   263→
+   264→message:send
+   265→
+   266→الان:
+   267→
+   268→fromUserId
+   269→
+   270→از Client می‌آید.
+   271→
+   272→باید حذف شود.
+   273→
+   274→Server باید از:
+   275→
+   276→socket.userId
+   277→
+   278→استفاده کند.
+   279→
+   280→همین موضوع برای:
+   281→
+   282→typing:start
+   283→typing:stop
+   284→job:status
+   285→subscribe:notifications
+   286→
+   287→هم باید اعمال شود.
+   288→
+   289→7. Job Status باید State Machine واقعی داشته باشد
+   290→
+   291→الان Client می‌تواند Status بفرستد:
+   292→
+   293→{
+   294→  "status": "COMPLETED"
+   295→}
+   296→
+   297→ولی این کافی نیست.
+   298→
+   299→باید انتقال وضعیت کنترل شود.
+   300→
+   301→مثلاً:
+   302→
+   303→REQUESTED
+   304→ ↓
+   305→ACCEPTED
+   306→ ↓
+   307→EN_ROUTE
+   308→ ↓
+   309→ARRIVED
+   310→ ↓
+   311→DIAGNOSING
+   312→ ↓
+   313→WAITING_APPROVAL
+   314→ ↓
+   315→REPAIRING
+   316→ ↓
+   317→COMPLETED
+   318→
+   319→نباید تکنسین بتواند:
+   320→
+   321→REQUESTED → COMPLETED
+   322→
+   323→را مستقیم انجام دهد.
+   324→
+   325→یا:
+   326→
+   327→CUSTOMER → COMPLETED
+   328→
+   329→را تغییر دهد.
+   330→
+   331→Permission Matrix:
+   332→Action  Customer        Technician      Admin
+   333→ACCEPT  ❌       ✅       ✅
+   334→EN_ROUTE        ❌       ✅       ✅
+   335→ARRIVED ❌       ✅       ✅
+   336→DIAGNOSING      ❌       ✅       ✅
+   337→WAITING_APPROVAL        ❌       ✅       ✅
+   338→APPROVE_REPAIR  ✅       ❌       ✅
+   339→REPAIRING       ❌       ✅       ✅
+   340→COMPLETED       ❌       محدود   ✅
+   341→CANCEL  محدود   محدود   ✅
+   342→
+   343→این باید در Backend enforce شود، نه UI.
+   344→
+   345→8. Diagnosis و Parts هم باید Permission داشته باشند
+   346→
+   347→الان:
+   348→
+   349→/jobs/[id]/diagnosis
+   350→/jobs/[id]/parts
+   351→
+   352→نباید صرفاً با داشتن Job ID کار کنند.
+   353→
+   354→باید مشخص شود:
+   355→
+   356→آیا این Technician همان Technician این Job است؟
+   357→
+   358→برای Diagnosis:
+   359→
+   360→Technician assigned → اجازه
+   361→Admin → اجازه
+   362→Customer → فقط read
+   363→
+   364→برای Parts:
+   365→
+   366→Technician assigned → create/delete
+   367→Admin → create/delete
+   368→Customer → read
+   369→9. Invoice باید مالکیت + وضعیت داشته باشد
+   370→
+   371→Invoice نباید با یک PATCH ساده قابل تغییر باشد.
+   372→
+   373→باید مشخص شود:
+   374→
+   375→DRAFT
+   376→→ ISSUED
+   377→→ AWAITING_PAYMENT
+   378→→ PAID
+   379→→ CANCELLED
+   380→→ REFUNDED
+   381→
+   382→و هر transition permission داشته باشد.
+   383→
+   384→مثلاً Customer نباید:
+   385→
+   386→amount = 0
+   387→
+   388→کند.
+   389→
+   390→یا:
+   391→
+   392→status = PAID
+   393→
+   394→کند.
+   395→
+   396→همچنین قیمت‌ها باید از Client نیایند.
+   397→
+   398→10. قیمت‌گذاری باید Server-authoritative باشد
+   399→
+   400→این موضوع برای MEKANIX خیلی مهم است.
+   401→
+   402→Client نباید بگوید:
+   403→
+   404→{
+   405→  "laborHours": 1,
+   406→  "unitPrice": 10
+   407→}
+   408→
+   409→و Server کورکورانه قبول کند.
+   410→
+   411→باید:
+   412→
+   413→Service
+   414→+ Vehicle Type
+   415→+ Technician Rate
+   416→+ Travel Fee
+   417→+ Parts
+   418→+ Emergency Fee
+   419→+ VIP rules
+   420→+ Tax/Discount
+   421→= Server calculated total
+   422→
+   423→باشد.
+   424→
+   425→یعنی Client فقط:
+   426→
+   427→"من این سرویس را می‌خواهم"
+   428→
+   429→را بفرستد.
+   430→
+   431→محاسبه مبلغ:
+   432→
+   433→فقط Backend.
+   434→
+   435→11. Wallet نیاز به Ledger واقعی دارد
+   436→
+   437→این بخش برای MEKANIX خیلی مهم است.
+   438→
+   439→Wallet نباید فقط:
+   440→
+   441→balance = 100
+   442→
+   443→باشد.
+   444→
+   445→باید Ledger داشته باشیم:
+   446→
+   447→Wallet
+   448→ ├── CREDIT
+   449→ ├── DEBIT
+   450→ ├── HOLD
+   451→ ├── RELEASE
+   452→ ├── REFUND
+   453→ ├── COMMISSION
+   454→ └── WITHDRAWAL
+   455→
+   456→هر transaction:
+   457→
+   458→id
+   459→walletId
+   460→type
+   461→amount
+   462→balanceBefore
+   463→balanceAfter
+   464→referenceType
+   465→referenceId
+   466→createdAt
+   467→
+   468→داشته باشد.
+   469→
+   470→و balance نباید صرفاً یک عدد قابل تغییر باشد.
+   471→
+   472→12. Withdrawal باید Atomic Transaction باشد
+   473→
+   474→در:
+   475→
+   476→/api/wallets/withdraw
+   477→
+   478→الان بخش زیادی از منطق وجود دارد، ولی باید به transaction واقعی Prisma تبدیل شود.
+   479→
+   480→یعنی:
+   481→
+   482→BEGIN
+   483→  check balance
+   484→  create withdrawal
+   485→  create ledger entry
+   486→  hold amount
+   487→COMMIT
+   488→
+   489→اگر وسط کار خطا شد:
+   490→
+   491→ROLLBACK
+   492→
+   493→نه اینکه موجودی کم شود ولی Withdrawal ساخته نشود.
+   494→
+   495→13. Admin API باید کاملاً قفل شود
+   496→
+   497→این:
+   498→
+   499→/api/admin/[resource]
+   500→
+   501→در وضعیت فعلی یکی از بزرگ‌ترین موارد اصلاحی است.
+   502→
+   503→باید:
+   504→
+   505→requireAuth
+   506→+
+   507→requireRole(ADMIN)
+   508→
+   509→داشته باشد.
+   510→
+   511→و حتی بهتر:
+   512→
+   513→ADMIN
+   514→SUPER_ADMIN
+   515→SUPPORT
+   516→FINANCE
+   517→OPERATIONS
+   518→
+   519→را از الان در Architecture در نظر بگیریم.
+   520→
+   521→چون بعدها نمی‌خواهیم یک Admin به همه‌چیز دسترسی داشته باشد.
+   522→
+   523→14. reviewerId و adminNotes نباید از Client اعتماد شوند
+   524→
+   525→مثلاً:
+   526→
+   527→{
+   528→  "reviewerId": "admin-123"
+   529→}
+   530→
+   531→نباید پذیرفته شود.
+   532→
+   533→باید:
+   534→
+   535→reviewerId = session.userId
+   536→
+   537→باشد.
+   538→
+   539→همین برای:
+   540→
+   541→approve application
+   542→reject application
+   543→withdraw approval
+   544→support reply
+   545→admin actions
+   546→15. /api/seed باید از Production حذف شود
+   547→
+   548→این Endpoint:
+   549→
+   550→POST /api/seed
+   551→
+   552→الان:
+   553→
+   554→bun run prisma/seed.ts
+   555→
+   556→را اجرا می‌کند.
+   557→
+   558→یعنی API عمومی به command execution روی سرور وصل شده.
+   559→
+   560→حتی اگر فعلاً فقط Seed باشد، نباید در Production وجود داشته باشد.
+   561→
+   562→بهترین راه:
+   563→
+   564→seed فقط CLI
+   565→
+   566→مثلاً:
+   567→
+   568→bun prisma/seed.ts
+   569→
+   570→و API route:
+   571→
+   572→حذف کامل.
+   573→
+   574→16. /api/auth/demo هم Production نباید داشته باشد
+   575→
+   576→این Endpoint اطلاعات:
+   577→
+   578→CUSTOMER
+   579→TECHNICIAN
+   580→ADMIN
+   581→
+   582→را برمی‌گرداند.
+   583→
+   584→برای Demo خوب است.
+   585→
+   586→برای Production:
+   587→
+   588→حذف.
+   589→
+   590→17. localStorage JWT باید حذف شود
+   591→
+   592→الان:
+   593→
+   594→localStorage.getItem("mekanix-token")
+   595→
+   596→است.
+   597→
+   598→برای Production ترجیح من:
+   599→
+   600→HttpOnly
+   601→Secure
+   602→SameSite=Lax/Strict
+   603→
+   604→Cookie است.
+   605→
+   606→مزیت اصلی:
+   607→
+   608→JavaScript → نمی‌تواند Token را بخواند
+   609→
+   610→در نتیجه سطح حمله XSS برای دزدیدن Session کمتر می‌شود.
+   611→
+   612→18. Query Parameter برای Token را حذف کن
+   613→
+   614→در auth.ts:
+   615→
+   616→?token=...
+   617→
+   618→پشتیبانی شده.
+   619→
+   620→این خطرناک است چون Token می‌تواند وارد:
+   621→
+   622→Browser history
+   623→access logs
+   624→analytics
+   625→referrer
+   626→monitoring
+   627→
+   628→شود.
+   629→
+   630→برای Production:
+   631→
+   632→Authorization Header
+   633→یا
+   634→HttpOnly Cookie
+   635→
+   636→کافی است.
+   637→
+   638→19. JWT Secret نباید fallback داشته باشد
+   639→
+   640→الان:
+   641→
+   642→process.env.JWT_SECRET ||
+   643→"mekanix-dev-secret-change-in-production-please"
+   644→
+   645→است.
+   646→
+   647→این باید بشود:
+   648→
+   649→if (!process.env.JWT_SECRET) {
+   650→  throw new Error("JWT_SECRET is required");
+   651→}
+   652→
+   653→یعنی اگر Secret نیست:
+   654→
+   655→Application اصلاً بالا نیاید.
+   656→
+   657→20. Secretهای پروژه را مدیریت کن
+   658→
+   659→.env فعلی تقریباً خالی است، ولی Production باید Secret Management داشته باشد.
+   660→
+   661→مثلاً:
+   662→
+   663→JWT_SECRET
+   664→DATABASE_URL
+   665→TELEGRAM_BOT_TOKEN
+   666→MAP_API_KEY
+   667→SMS_PROVIDER_KEY
+   668→STORAGE_ACCESS_KEY
+   669→STORAGE_SECRET
+   670→
+   671→و:
+   672→
+   673→.env
+   674→.env.production
+   675→
+   676→نباید وارد Git شوند.
+   677→
+   678→21. SQLite → PostgreSQL
+   679→
+   680→برای Prototype:
+   681→
+   682→SQLite
+   683→
+   684→خوب است.
+   685→
+   686→برای MEKANIX واقعی:
+   687→
+   688→PostgreSQL.
+   689→
+   690→چون قرار است داشته باشیم:
+   691→
+   692→کاربران
+   693→Job
+   694→Chat
+   695→GPS
+   696→Wallet
+   697→Invoice
+   698→Notification
+   699→Fleet
+   700→Technician
+   701→Analytics
+   702→Audit
+   703→Real-time
+   704→
+   705→و PostgreSQL برای این معماری مناسب‌تر است.
+   706→
+   707→22. Transactionهای Database باید جدی شوند
+   708→
+   709→هر جایی که چند تغییر وابسته داریم:
+   710→
+   711→Job
+   712→+ Invoice
+   713→+ Payment
+   714→+ Notification
+   715→+ Wallet
+   716→
+   717→باید:
+   718→
+   719→db.$transaction(...)
+   720→
+   721→استفاده شود.
+   722→
+   723→مثلاً Completion یک Job نباید بتواند:
+   724→
+   725→Job = COMPLETED
+   726→Invoice = DRAFT
+   727→Wallet = unchanged
+   728→Notification = failed
+   729→
+   730→شود.
+   731→
+   732→یا همه با هم موفق شوند یا rollback.
+   733→
+   734→23. Unique Constraintهای بیشتری لازم است
+   735→
+   736→مثلاً:
+   737→
+   738→Review
+   739→
+   740→باید احتمالاً:
+   741→
+   742→@@unique([jobId, fromUserId])
+   743→
+   744→داشته باشد.
+   745→
+   746→تا یک Customer نتواند برای یک Job ده Review ایجاد کند.
+   747→
+   748→همین مفهوم برای:
+   749→
+   750→active VIP
+   751→referral
+   752→withdrawal
+   753→invoice
+   754→job assignment
+   755→
+   756→هم باید بررسی شود.
+   757→
+   758→24. Mass Assignment را کامل ببند
+   759→
+   760→در APIهایی که:
+   761→
+   762→...body
+   763→
+   764→یا مشابه آن دارند، خطر وجود دارد.
+   765→
+   766→مثلاً Client نباید بتواند این‌ها را تغییر دهد:
+   767→
+   768→role
+   769→status
+   770→verified
+   771→rating
+   772→reviewCount
+   773→balance
+   774→completedJobs
+   775→phoneVerified
+   776→profileCompleted
+   777→
+   778→حتی اگر این فیلدها در JSON فرستاده شوند.
+   779→
+   780→OWASP توصیه می‌کند فقط propertyهایی که Client واقعاً مجاز به تغییر آنهاست bind شوند.
+   781→
+   782→25. Validation باید فقط Type Validation نباشد
+   783→
+   784→Zod فعلی خوب است، ولی validation باید شامل Business Validation هم بشود.
+   785→
+   786→مثلاً:
+   787→
+   788→year = 2027
+   789→
+   790→از نظر Zod معتبر است.
+   791→
+   792→ولی:
+   793→
+   794→vehicleType = EXCAVATOR
+   795→make = Toyota
+   796→
+   797→ممکن است از نظر Business Catalog نامعتبر باشد.
+   798→
+   799→پس دو لایه:
+   800→
+   801→Schema Validation
+   802→+
+   803→Business Validation
+   804→
+   805→لازم است.
+   806→
+   807→26. Coordinate Validation
+   808→
+   809→الان:
+   810→
+   811→lat: z.number()
+   812→lng: z.number()
+   813→
+   814→کافی نیست.
+   815→
+   816→باید:
+   817→
+   818→lat >= -90
+   819→lat <= 90
+   820→
+   821→lng >= -180
+   822→lng <= 180
+   823→
+   824→و برای ایران حتی اگر Business Rule می‌خواهیم:
+   825→
+   826→country/region boundary
+   827→
+   828→بررسی شود.
+   829→
+   830→27. File Upload Security
+   831→
+   832→اگر بعدها:
+   833→
+   834→عکس خودرو
+   835→مدارک تکنسین
+   836→بیمه
+   837→کارت ملی
+   838→فاکتور
+   839→عکس قطعه
+   840→
+   841→آپلود می‌شود، باید:
+   842→
+   843→MIME validation
+   844→extension validation
+   845→size limit
+   846→virus scan
+   847→random filename
+   848→private storage
+   849→signed URL
+   850→
+   851→داشته باشیم.
+   852→
+   853→هیچ‌وقت:
+   854→
+   855→/user-uploaded-file-name
+   856→
+   857→را مستقیم executable/public نکنیم.
+   858→
+   859→28. اطلاعات حساس را در API Response نریزیم
+   860→
+   861→یکی از مشکلاتی که باید در کل پروژه اصلاح شود:
+   862→
+   863→include: {
+   864→  user: true
+   865→}
+   866→
+   867→به شکل گسترده.
+   868→
+   869→این می‌تواند چیزهایی مثل:
+   870→
+   871→email
+   872→phone
+   873→nationalId
+   874→password
+   875→status
+   876→
+   877→را ناخواسته برگرداند.
+   878→
+   879→بهتر:
+   880→
+   881→select: {
+   882→  id: true,
+   883→  name: true,
+   884→  avatar: true
+   885→}
+   886→
+   887→OWASP همین موضوع را در API3 با عنوان Property-Level Authorization / Excessive Data Exposure مطرح می‌کند.
+   888→
+   889→29. Password در User Model را حذف کن
+   890→
+   891→الان:
+   892→
+   893→password String @default("demo")
+   894→
+   895→در حالی که معماری MEKANIX فعلاً OTP-based است.
+   896→
+   897→اگر Password واقعاً استفاده نمی‌شود:
+   898→
+   899→حذف شود.
+   900→
+   901→اگر روزی لازم شد:
+   902→
+   903→passwordHash
+   904→
+   905→نه:
+   906→
+   907→password
+   908→30. National ID و اطلاعات هویتی باید Protected باشند
+   909→
+   910→این‌ها:
+   911→
+   912→nationalId
+   913→address
+   914→postalCode
+   915→phone
+   916→
+   917→PII هستند.
+   918→
+   919→باید:
+   920→
+   921→کمترین exposure
+   922→access control
+   923→logging نکردن
+   924→masking در Admin
+   925→encryption در صورت نیاز
+   926→retention policy
+   927→
+   928→داشته باشند.
+   929→
+   930→31. Logging حرفه‌ای لازم است
+   931→
+   932→الان Logging محدود است.
+   933→
+   934→باید Audit Log داشته باشیم:
+   935→
+   936→actorUserId
+   937→action
+   938→resource
+   939→resourceId
+   940→before
+   941→after
+   942→ip
+   943→userAgent
+   944→createdAt
+   945→
+   946→مثلاً:
+   947→
+   948→ADMIN_APPROVED_TECHNICIAN
+   949→ADMIN_REJECTED_WITHDRAWAL
+   950→TECHNICIAN_CHANGED_JOB_STATUS
+   951→CUSTOMER_CANCELLED_JOB
+   952→ADMIN_CHANGED_PRICE
+   953→32. Audit Log نباید قابل حذف توسط Admin عادی باشد
+   954→
+   955→حتی Admin نباید بتواند:
+   956→
+   957→DELETE audit_logs
+   958→
+   959→کند.
+   960→
+   961→Audit باید append-only باشد.
+   962→
+   963→33. Error Handling
+   964→
+   965→نباید Error واقعی سرور را برگردانیم:
+   966→
+   967→error: e.message
+   968→
+   969→مثل /api/seed.
+   970→
+   971→در Production:
+   972→
+   973→{
+   974→  "error": "خطایی در پردازش درخواست رخ داد",
+   975→  "requestId": "..."
+   976→}
+   977→
+   978→و جزئیات واقعی فقط در server logs.
+   979→
+   980→34. Request ID اضافه شود
+   981→
+   982→هر Request:
+   983→
+   984→X-Request-ID
+   985→
+   986→داشته باشد.
+   987→
+   988→مثلاً:
+   989→
+   990→MEK-20260913-8F4A2
+   991→
+   992→تا وقتی کاربر می‌گوید:
+   993→
+   994→«پرداخت من خطا داد»
+   995→
+   996→بتوانیم در Log پیدا کنیم.
+   997→
+   998→35. Rate Limit فعلی In-Memory است
+   999→
+  1000→این:
+  1001→
+  1002→Map
+  1003→
+  1004→برای یک Instance Demo خوب است.
+  1005→
+  1006→اما اگر:
+  1007→
+  1008→2 server
+  1009→3 server
+  1010→Docker replicas
+  1011→Cloud deployment
+  1012→
+  1013→داشته باشیم، هر Instance Rate Limit خودش را دارد.
+  1014→
+  1015→بهتر:
+  1016→
+  1017→Redis / Upstash Redis
+  1018→
+  1019→یا rate limiter مرکزی.
+  1020→
+  1021→36. Rate Limit فقط 60 request/min کافی نیست
+  1022→
+  1023→برای Endpointها باید متفاوت باشد:
+  1024→
+  1025→Search
+  1026→GET → 120/min
+  1027→
+  1028→Create request → 10/min
+  1029→
+  1030→Messages → 30/min
+  1031→
+  1032→Reviews → 5/hour
+  1033→
+  1034→Referral → 3/day
+  1035→
+  1036→Withdraw → 3/hour
+  1037→
+  1038→Admin → strict
+  1039→
+  1040→Export → very strict
+  1041→
+  1042→OWASP نیز Unrestricted Resource Consumption را یکی از ریسک‌های اصلی API می‌داند.
+  1043→
+  1044→37. Pagination واقعی
+  1045→
+  1046→Endpointهایی مثل:
+  1047→
+  1048→/users
+  1049→/jobs
+  1050→/messages
+  1051→/notifications
+  1052→/reviews
+  1053→
+  1054→نباید همه رکوردها را یک‌جا بدهند.
+  1055→
+  1056→باید:
+  1057→
+  1058→page
+  1059→limit
+  1060→cursor
+  1061→
+  1062→و حداکثر مثلاً:
+  1063→
+  1064→limit <= 100
+  1065→
+  1066→داشته باشند.
+  1067→
+  1068→38. Search باید محدود باشد
+  1069→
+  1070→Searchهایی که:
+  1071→
+  1072→LIKE "%..."
+  1073→
+  1074→روی هزاران رکورد اجرا می‌شوند باید:
+  1075→
+  1076→limit
+  1077→pagination
+  1078→index
+  1079→debounce
+  1080→query length limit
+  1081→
+  1082→داشته باشند.
+  1083→
+  1084→39. WebSocket Rate Limit
+  1085→
+  1086→برای:
+  1087→
+  1088→message:send
+  1089→typing:start
+  1090→job:status
+  1091→
+  1092→Rate Limit لازم است.
+  1093→
+  1094→مثلاً:
+  1095→
+  1096→message:send → 20/min
+  1097→typing → 30/min
+  1098→status → 10/min
+  1099→
+  1100→وگرنه یک Socket می‌تواند سیستم را spam کند.
+  1101→
+  1102→40. CORS فعلی Chat خطرناک است
+  1103→
+  1104→در Chat:
+  1105→
+  1106→origin: "*"
+  1107→
+  1108→وجود دارد.
+  1109→
+  1110→برای Production باید:
+  1111→
+  1112→https://mekanix.ir
+  1113→https://www.mekanix.ir
+  1114→
+  1115→یا Originهای دقیق مورد نیاز باشد.
+  1116→
+  1117→نه:
+  1118→
+  1119→*
+  1120→41. WebSocket باید Connection Limit داشته باشد
+  1121→
+  1122→باید:
+  1123→
+  1124→max connections / IP
+  1125→max connections / user
+  1126→heartbeat
+  1127→idle timeout
+  1128→message size
+  1129→
+  1130→داشته باشیم.
+  1131→
+  1132→42. Message Size Limit
+  1133→
+  1134→مثلاً:
+  1135→
+  1136→body <= 5000
+  1137→
+  1138→در API هست، ولی WebSocket هم باید مستقل محدود کند.
+  1139→
+  1140→چون WebSocket می‌تواند API validation را دور بزند.
+  1141→
+  1142→43. SSRF / External APIs
+  1143→
+  1144→پروژه به سرویس‌هایی مثل:
+  1145→
+  1146→Nominatim
+  1147→OSRM
+  1148→Exchange Rate API
+  1149→Telegram
+  1150→
+  1151→وصل می‌شود.
+  1152→
+  1153→برای URLهایی که User کنترل می‌کند باید whitelist داشته باشیم.
+  1154→
+  1155→در حال حاضر map requests client-side هستند که بهتر است؛ ولی اگر بعداً server-side proxy اضافه شود باید SSRF protection داشته باشد.
+  1156→
+  1157→OWASP SSRF را هم در Top 10 API آورده است.
+  1158→
+  1159→44. Nominatim باید Policy صحیح داشته باشد
+  1160→
+  1161→برای Production باید:
+  1162→
+  1163→User-Agent مناسب
+  1164→caching
+  1165→rate limit
+  1166→timeout
+  1167→fallback provider
+  1168→
+  1169→داشته باشیم.
+  1170→
+  1171→به سرویس عمومی OSM/Nominatim نباید بی‌نهایت درخواست بزنیم.
+  1172→
+  1173→45. Exchange Rate باید Cache شود
+  1174→
+  1175→/api/exchange-rate هر بار نباید مستقیم External API را صدا بزند.
+  1176→
+  1177→باید:
+  1178→
+  1179→cache 5–15 min
+  1180→fallback آخرین مقدار سالم
+  1181→timeout
+  1182→validation
+  1183→
+  1184→داشته باشد.
+  1185→
+  1186→و مقدار خارجی نباید بدون sanity check وارد pricing شود.
+  1187→
+  1188→46. SEO یک ایراد مهم دارد که قبلاً دیده نشده بود
+  1189→
+  1190→در layout.tsx:
+  1191→
+  1192→"ratingValue": "4.8",
+  1193→"reviewCount": "1200"
+  1194→
+  1195→اگر واقعاً MEKANIX هنوز 1200 Review ندارد:
+  1196→
+  1197→این نباید در Schema باشد.
+  1198→
+  1199→این اطلاعات باید واقعی و قابل اثبات باشند.
+  1200→
+  1201→همچنین:
+  1202→
+  1203→telephone: "+98"
+  1204→
+  1205→شماره تلفن معتبر نیست.
+  1206→
+  1207→این‌ها را باید اصلاح کنیم.
+  1208→
+  1209→47. Schema باید از داده واقعی بیاید
+  1210→
+  1211→بهتر:
+  1212→
+  1213→AggregateRating
+  1214→
+  1215→فقط وقتی واقعاً وجود دارد.
+  1216→
+  1217→و:
+  1218→
+  1219→reviewCount
+  1220→ratingValue
+  1221→telephone
+  1222→address
+  1223→openingHours
+  1224→
+  1225→همگی واقعی.
+  1226→
+  1227→48. Admin Settings باید Audit شود
+  1228→
+  1229→هر تغییر در:
+  1230→
+  1231→hourly rate
+  1232→travel fee
+  1233→VIP price
+  1234→exchange rate
+  1235→commission
+  1236→warranty
+  1237→
+  1238→باید ثبت شود:
+  1239→
+  1240→چه کسی
+  1241→چه چیزی
+  1242→از چه مقداری
+  1243→به چه مقداری
+  1244→چه زمانی
+  1245→49. قیمت‌ها نباید Float باشند
+  1246→
+  1247→در Schema مقدارهایی مثل:
+  1248→
+  1249→Float
+  1250→
+  1251→برای پول داریم.
+  1252→
+  1253→برای Money بهتر است:
+  1254→
+  1255→Decimal
+  1256→
+  1257→یا:
+  1258→
+  1259→integer minor units
+  1260→
+  1261→استفاده شود.
+  1262→
+  1263→مثلاً:
+  1264→
+  1265→amount = 1250000
+  1266→currency = IRR
+  1267→
+  1268→نه Float.
+  1269→
+  1270→50. Currency باید جدی‌تر طراحی شود
+  1271→
+  1272→الان:
+  1273→
+  1274→USD
+  1275→IRR
+  1276→
+  1277→در چند جا دیده می‌شود.
+  1278→
+  1279→باید Money model استاندارد داشته باشیم:
+  1280→
+  1281→amount
+  1282→currency
+  1283→exchangeRate
+  1284→baseCurrency
+  1285→
+  1286→و هر Invoice نرخ زمان خودش را نگه دارد.
+  1287→
+  1288→نه اینکه بعداً با نرخ جدید دوباره مبلغ تاریخی تغییر کند.
+  1289→
+  1290→51. VIP باید Server-side enforce شود
+  1291→
+  1292→نباید UI فقط بگوید:
+  1293→
+  1294→VIP = true
+  1295→
+  1296→و سرویس رایگان شود.
+  1297→
+  1298→Backend باید هنگام ایجاد Service:
+  1299→
+  1300→subscription active?
+  1301→expiresAt > now?
+  1302→service covered?
+  1303→
+  1304→را چک کند.
+  1305→
+  1306→و Repair همچنان طبق Business Rule پولی بماند.
+  1307→
+  1308→52. Warranty باید واقعی شود
+  1309→
+  1310→برای هر Job Completed:
+  1311→
+  1312→warrantyStart
+  1313→warrantyEnd
+  1314→warrantyTerms
+  1315→
+  1316→ثبت شود.
+  1317→
+  1318→اگر Customer دوباره همان مشکل را گزارش کرد:
+  1319→
+  1320→isUnderWarranty()
+  1321→
+  1322→Backend تعیین کند که:
+  1323→
+  1324→FREE
+  1325→یا
+  1326→PAID
+  1327→
+  1328→است.
+  1329→
+  1330→53. Cancellation Policy
+  1331→
+  1332→Customer و Technician نباید آزادانه هر زمان Cancel کنند.
+  1333→
+  1334→باید:
+  1335→
+  1336→قبل از قبول
+  1337→بعد از قبول
+  1338→در مسیر
+  1339→بعد از رسیدن
+  1340→در حال تعمیر
+  1341→بعد از تعمیر
+  1342→
+  1343→قوانین متفاوت داشته باشد.
+  1344→
+  1345→مثلاً Cancellation fee.
+  1346→
+  1347→54. Assignment باید Atomic باشد
+  1348→
+  1349→وقتی یک Technician به Job assign می‌شود:
+  1350→
+  1351→باید همزمان:
+  1352→
+  1353→Job
+  1354→Technician availability
+  1355→ServiceRequest
+  1356→Notification
+  1357→
+  1358→به‌روزرسانی شوند.
+  1359→
+  1360→و اگر دو Admin همزمان دو Technician را assign کردند:
+  1361→
+  1362→Race condition نباید ایجاد شود.
+  1363→
+  1364→55. Technician availability باید server-side باشد
+  1365→
+  1366→نباید فقط:
+  1367→
+  1368→availableNow = true
+  1369→
+  1370→باشد.
+  1371→
+  1372→باید با:
+  1373→
+  1374→ON_JOB
+  1375→OFFLINE
+  1376→ONLINE
+  1377→
+  1378→و Jobهای active sync شود.
+  1379→
+  1380→56. Location Privacy
+  1381→
+  1382→مختصات:
+  1383→
+  1384→lat
+  1385→lng
+  1386→
+  1387→اطلاعات حساس هستند.
+  1388→
+  1389→Customer نباید موقعیت دقیق Technicianهای دیگر را ببیند.
+  1390→
+  1391→Technician هم نباید قبل از Assignment اطلاعات دقیق Customer را بگیرد مگر Business Rule اجازه دهد.
+  1392→
+  1393→57. Tracking باید time-limited باشد
+  1394→
+  1395→وقتی Job تمام شد:
+  1396→
+  1397→live tracking
+  1398→
+  1399→باید متوقف شود.
+  1400→
+  1401→و داده Location قدیمی باید retention policy داشته باشد.
+  1402→
+  1403→مثلاً:
+  1404→
+  1405→30/90 روز
+  1406→
+  1407→بعد anonymize/delete.
+  1408→
+  1409→58. Notification Ownership
+  1410→
+  1411→الان endpointهایی مثل:
+  1412→
+  1413→/api/notifications?userId=
+  1414→
+  1415→نباید اجازه دهند User:
+  1416→
+  1417→userId = دیگری
+  1418→
+  1419→بفرستد.
+  1420→
+  1421→باید:
+  1422→
+  1423→session.userId
+  1424→
+  1425→باشد.
+  1426→
+  1427→59. Invoice History همین مشکل را دارد
+  1428→
+  1429→Frontend:
+  1430→
+  1431→/api/invoices/list?customerId=
+  1432→
+  1433→صدا می‌زند.
+  1434→
+  1435→برای UI شاید منطقی به نظر برسد، ولی API باید Customer واقعی را از Session استخراج کند.
+  1436→
+  1437→Client ID فقط برای Admin/Fleet use cases مجاز باشد.
+  1438→
+  1439→60. Support Ticket
+  1440→
+  1441→Customer نباید بتواند:
+  1442→
+  1443→userId = anotherUser
+  1444→
+  1445→ارسال کند.
+  1446→
+  1447→همچنین Reply فقط:
+  1448→
+  1449→ADMIN / SUPPORT
+  1450→
+  1451→باشد.
+  1452→
+  1453→Customer فقط Ticket خودش را ببیند.
+  1454→
+  1455→61. Insurance
+  1456→
+  1457→هم:
+  1458→
+  1459→/api/insurance?userId=
+  1460→
+  1461→و هم:
+  1462→
+  1463→createPolicy(userId)
+  1464→
+  1465→باید مالکیت داشته باشند.
+  1466→
+  1467→Claim هم باید بررسی کند:
+  1468→
+  1469→policy.userId === session.userId
+  1470→
+  1471→یا Admin.
+  1472→
+  1473→62. Referral
+  1474→
+  1475→Referral نباید Client-controlled باشد.
+  1476→
+  1477→نباید کاربر بتواند:
+  1478→
+  1479→referrerId = دیگری
+  1480→
+  1481→بسازد.
+  1482→
+  1483→همچنین self-referral:
+  1484→
+  1485→A → A
+  1486→
+  1487→باید ممنوع باشد.
+  1488→
+  1489→و abuse protection لازم است.
+  1490→
+  1491→63. Technician API
+  1492→
+  1493→PATCH /technicians/[id] باید بررسی کند:
+  1494→
+  1495→Technician خودش
+  1496→یا Admin
+  1497→
+  1498→نه هر User.
+  1499→
+  1500→و Technician نباید بتواند:
+  1501→
+  1502→verified
+  1503→rating
+  1504→reviewCount
+  1505→completedJobs
+  1506→level
+  1507→
+  1508→را تغییر دهد.
+  1509→
+  1510→64. Admin Dashboard باید Data Minimization داشته باشد
+  1511→
+  1512→Admin لازم نیست همیشه:
+  1513→
+  1514→nationalId
+  1515→phone
+  1516→address
+  1517→wallet
+  1518→messages
+  1519→
+  1520→همه را یکجا دریافت کند.
+  1521→
+  1522→هر صفحه باید فقط داده مورد نیاز خودش را بگیرد.
+  1523→
+  1524→65. Database Backup
+  1525→
+  1526→Production باید داشته باشد:
+  1527→
+  1528→daily backup
+  1529→point-in-time recovery
+  1530→retention
+  1531→offsite backup
+  1532→restore test
+  1533→
+  1534→Backup بدون Restore Test عملاً کافی نیست.
+  1535→
+  1536→66. Migration Strategy
+  1537→
+  1538→وقتی PostgreSQL رفتیم:
+  1539→
+  1540→prisma migrate
+  1541→
+  1542→باید محیط‌ها جدا باشند:
+  1543→
+  1544→development
+  1545→staging
+  1546→production
+  1547→
+  1548→و Migration دستی/تصادفی روی Production ممنوع شود.
+  1549→
+  1550→67. Staging Environment
+  1551→
+  1552→قبل از Production:
+  1553→
+  1554→mekanix.ir
+  1555→staging.mekanix.ir
+  1556→
+  1557→یا محیط مشابه.
+  1558→
+  1559→هر Feature اول:
+  1560→
+  1561→DEV
+  1562→→ STAGING
+  1563→→ QA
+  1564→→ PRODUCTION
+  1565→68. CI/CD
+  1566→
+  1567→هر Pull/Build باید حداقل:
+  1568→
+  1569→TypeScript
+  1570→ESLint
+  1571→Prisma validation
+  1572→Unit tests
+  1573→API tests
+  1574→Build
+  1575→
+  1576→را اجرا کند.
+  1577→
+  1578→و این مورد فعلی:
+  1579→
+  1580→typescript.ignoreBuildErrors = true
+  1581→
+  1582→باید حذف شود.
+  1583→
+  1584→69. reactStrictMode: false
+  1585→
+  1586→این را هم بهتر است:
+  1587→
+  1588→reactStrictMode: true
+  1589→
+  1590→کنیم و مشکلاتی که Strict Mode پیدا می‌کند واقعاً اصلاح شوند.
+  1591→
+  1592→70. Automated Security Tests
+  1593→
+  1594→برای هر Resource باید تست BOLA داشته باشیم.
+  1595→
+  1596→مثلاً:
+  1597→
+  1598→User A
+  1599→Vehicle A
+  1600→User B
+  1601→
+  1602→درخواست:
+  1603→
+  1604→GET /api/vehicles/vehicle-A
+  1605→
+  1606→باید:
+  1607→
+  1608→403
+  1609→
+  1610→بدهد.
+  1611→
+  1612→همین تست برای:
+  1613→
+  1614→Vehicle
+  1615→Job
+  1616→Invoice
+  1617→Message
+  1618→Notification
+  1619→Insurance
+  1620→Wallet
+  1621→Review
+  1622→Ticket
+  1623→Referral
+  1624→
+  1625→لازم است.
+  1626→
+  1627→این دقیقاً همان تستی است که OWASP برای جلوگیری از BOLA توصیه می‌کند.
+  1628→
+  1629→71. تست Role Matrix
+  1630→
+  1631→باید Matrix خودکار داشته باشیم:
+  1632→
+  1633→CUSTOMER
+  1634→TECHNICIAN
+  1635→ADMIN
+  1636→ANONYMOUS
+  1637→
+  1638→برای هر endpoint.
+  1639→
+  1640→مثلاً:
+  1641→
+  1642→GET /admin/users
+  1643→
+  1644→Anonymous → 401
+  1645→Customer  → 403
+  1646→Technician → 403
+  1647→Admin → 200
+  1648→72. تست Business Logic
+  1649→
+  1650→فقط Security Test کافی نیست.
+  1651→
+  1652→باید تست کنیم:
+  1653→
+  1654→Job lifecycle
+  1655→VIP
+  1656→Warranty
+  1657→Cancellation
+  1658→Assignment
+  1659→Invoice
+  1660→Wallet
+  1661→Referral
+  1662→Review
+  1663→
+  1664→مثلاً:
+  1665→
+  1666→Completed Job
+  1667→→ دوباره Repair
+  1668→→ نباید State خراب شود
+  1669→73. API Versioning
+  1670→
+  1671→بعداً که اپ موبایل واقعی منتشر شد:
+  1672→
+  1673→/api/v1
+  1674→
+  1675→بهتر است داشته باشیم.
+  1676→
+  1677→چون اگر:
+  1678→
+  1679→App v1
+  1680→App v2
+  1681→Web
+  1682→Admin
+  1683→Technician App
+  1684→
+  1685→همزمان باشند، تغییر API بدون Versioning خطرناک می‌شود.
+  1686→
+  1687→OWASP هم API inventory و مدیریت نسخه‌های قدیمی را جزو ریسک‌های API می‌داند.
+  1688→
+  1689→74. API Documentation
+  1690→
+  1691→OpenAPI/Swagger برای Backend لازم است.
+  1692→
+  1693→مثلاً:
+  1694→
+  1695→GET /api/v1/jobs
+  1696→POST /api/v1/jobs
+  1697→PATCH /api/v1/jobs/{id}/status
+  1698→
+  1699→با:
+  1700→
+  1701→Auth
+  1702→Role
+  1703→Request schema
+  1704→Response schema
+  1705→Error codes
+  1706→75. Error Code استاندارد
+  1707→
+  1708→به جای اینکه هر API:
+  1709→
+  1710→error: "something"
+  1711→
+  1712→بدهد:
+  1713→
+  1714→{
+  1715→  "code": "JOB_NOT_ACCESSIBLE",
+  1716→  "message": "دسترسی به این درخواست مجاز نیست",
+  1717→  "requestId": "..."
+  1718→}
+  1719→
+  1720→داشته باشیم.
+  1721→
+  1722→76. CORS / CSP / Security Headers
+  1723→
+  1724→Production باید حداقل بررسی کند:
+  1725→
+  1726→Content-Security-Policy
+  1727→Strict-Transport-Security
+  1728→X-Content-Type-Options
+  1729→Referrer-Policy
+  1730→Permissions-Policy
+  1731→frame-ancestors
+  1732→
+  1733→و CORS دقیق باشد.
+  1734→
+  1735→مخصوصاً Chat فعلی:
+  1736→
+  1737→origin: "*"
+  1738→
+  1739→باید اصلاح شود.
+  1740→
+  1741→77. HTTPS اجباری
+  1742→
+  1743→تمام:
+  1744→
+  1745→HTTP → HTTPS
+  1746→
+  1747→redirect شود.
+  1748→
+  1749→Cookie:
+  1750→
+  1751→Secure
+  1752→
+  1753→باشد.
+  1754→
+  1755→78. Content Security Policy
+  1756→
+  1757→با توجه به اینکه پروژه:
+  1758→
+  1759→Leaflet
+  1760→Google Fonts
+  1761→Socket.io
+  1762→External maps
+  1763→
+  1764→دارد، CSP باید دقیق طراحی شود، نه اینکه * بدهیم.
+  1765→
+  1766→79. Dependency Audit
+  1767→
+  1768→باید مرتب:
+  1769→
+  1770→bun audit
+  1771→
+  1772→یا ابزار معادل اجرا شود.
+  1773→
+  1774→و Dependencyهای:
+  1775→
+  1776→Next
+  1777→React
+  1778→Prisma
+  1779→Socket.io
+  1780→Leaflet
+  1781→Zod
+  1782→
+  1783→به‌روز نگه داشته شوند.
+  1784→
+  1785→80. Observability
+  1786→
+  1787→Production باید داشته باشد:
+  1788→
+  1789→Error tracking
+  1790→Performance monitoring
+  1791→API latency
+  1792→DB latency
+  1793→WebSocket connections
+  1794→Failed jobs
+  1795→Failed notifications
+  1796→Failed external APIs
+  1797→
+  1798→ابزاری مثل Sentry می‌تواند این بخش را پوشش دهد.
+  1799→
+  1800→81. Health Check
+  1801→
+  1802→مثلاً:
+  1803→
+  1804→/api/health
+  1805→
+  1806→که بررسی کند:
+  1807→
+  1808→App
+  1809→Database
+  1810→Redis
+  1811→External APIs
+  1812→WebSocket
+  1813→
+  1814→و خروجی بدهد.
+  1815→
+  1816→82. Readiness / Liveness
+  1817→
+  1818→برای Deployment حرفه‌ای:
+  1819→
+  1820→/health/live
+  1821→/health/ready
+  1822→
+  1823→داشته باشیم.
+  1824→
+  1825→83. Queue برای عملیات Async
+  1826→
+  1827→بعضی کارها نباید داخل Request اصلی انجام شوند:
+  1828→
+  1829→Notification
+  1830→SMS
+  1831→Email
+  1832→Push
+  1833→Image processing
+  1834→Invoice PDF
+  1835→Analytics
+  1836→
+  1837→بهتر است Queue داشته باشند.
+  1838→
+  1839→مثلاً:
+  1840→
+  1841→Redis + BullMQ
+  1842→84. Notification باید Idempotent باشد
+  1843→
+  1844→اگر Request دوبار اجرا شد:
+  1845→
+  1846→دو Notification
+  1847→
+  1848→نباید ساخته شود.
+  1849→
+  1850→همین برای:
+  1851→
+  1852→invoice
+  1853→assignment
+  1854→wallet
+  1855→referral
+  1856→
+  1857→هم مهم است.
+  1858→
+  1859→85. Idempotency Key
+  1860→
+  1861→برای عملیات حساس:
+  1862→
+  1863→POST /service-requests
+  1864→POST /withdraw
+  1865→POST /subscribe
+  1866→POST /invoice
+  1867→
+  1868→می‌توان:
+  1869→
+  1870→Idempotency-Key: ...
+  1871→
+  1872→داشت.
+  1873→
+  1874→86. Race Condition
+  1875→
+  1876→این‌ها باید ضد Race باشند:
+  1877→
+  1878→assign technician
+  1879→accept job
+  1880→complete job
+  1881→withdraw wallet
+  1882→VIP subscribe
+  1883→review
+  1884→
+  1885→چون دو درخواست همزمان می‌توانند وضعیت را خراب کنند.
+  1886→
+  1887→87. Data Retention
+  1888→
+  1889→از الان باید مشخص کنیم:
+  1890→
+  1891→Messages → چند ماه؟
+  1892→GPS → چند روز؟
+  1893→Notifications → چند ماه؟
+  1894→Audit → چند سال؟
+  1895→Documents → چند سال؟
+  1896→
+  1897→این برای محصول واقعی مهم است.
+  1898→
+  1899→88. Privacy Policy / Terms
+  1900→
+  1901→قبل از Production باید:
+  1902→
+  1903→حریم خصوصی
+  1904→شرایط استفاده
+  1905→شرایط خدمات
+  1906→شرایط گارانتی
+  1907→شرایط VIP
+  1908→شرایط لغو
+  1909→شرایط پرداخت
+  1910→شرایط نگهداری اطلاعات
+  1911→
+  1912→وجود داشته باشد.
+  1913→
+  1914→89. Consent
+  1915→
+  1916→برای:
+  1917→
+  1918→Location
+  1919→Notifications
+  1920→Camera
+  1921→Photos
+  1922→Microphone
+  1923→Marketing
+  1924→
+  1925→Consent باید explicit باشد.
+  1926→
+  1927→90. Location Permission
+  1928→
+  1929→اپ نباید بدون نیاز:
+  1930→
+  1931→location
+  1932→
+  1933→بگیرد.
+  1934→
+  1935→و باید دو حالت داشته باشد:
+  1936→
+  1937→Approximate
+  1938→Precise
+  1939→
+  1940→در صورت نیاز.
+  1941→
+  1942→91. SEO فعلی را هم یک بار اصلاح کن
+  1943→
+  1944→این بخش مربوط به امنیت نیست ولی در Audit دیدم:
+  1945→
+  1946→"ratingValue": "4.8",
+  1947→"reviewCount": "1200"
+  1948→
+  1949→اگر این اعداد واقعی نیستند، حذف شوند.
+  1950→
+  1951→همچنین:
+  1952→
+  1953→telephone: "+98"
+  1954→
+  1955→باید شماره واقعی باشد یا حذف شود.
+  1956→
+  1957→این‌ها نباید برای SEO جعل شوند.
+  1958→
+  1959→92. Demo Code باید از Production جدا شود
+  1960→
+  1961→پروژه فعلی هنوز چند اثر Demo دارد:
+  1962→
+  1963→/api/auth/demo
+  1964→/api/seed
+  1965→fallback JWT secret
+  1966→demo password
+  1967→fake payment logic
+  1968→
+  1969→بهتر است ساختار داشته باشیم:
+  1970→
+  1971→DEMO_MODE=true
+  1972→
+  1973→و وقتی:
+  1974→
+  1975→NODE_ENV=production
+  1976→
+  1977→است:
+  1978→
+  1979→هیچ Demo Endpointی حتی Register هم نشود.
+  1980→
+  1981→93. Frontend نباید منبع Security باشد
+  1982→
+  1983→این خیلی مهم است.
+  1984→
+  1985→مثلاً اگر UI دکمه:
+  1986→
+  1987→Admin
+  1988→
+  1989→را نشان نمی‌دهد، این امنیت نیست.
+  1990→
+  1991→کاربر می‌تواند مستقیم API را صدا بزند.
+  1992→
+  1993→تمام permissionها باید در Backend enforce شوند.
+  1994→
+  1995→94. Customer / Technician / Admin باید سه تجربه جدا داشته باشند
+  1996→
+  1997→نه فقط سه UI متفاوت.
+  1998→
+  1999→Backend نیز باید سه Policy جدا داشته باشد:
+  2000→
+
+[showing lines 1-2000 of 2200; use offset=2001 with limit to continue reading]

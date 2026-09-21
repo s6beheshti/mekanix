@@ -1,0 +1,2199 @@
+مبنای دسته‌بندی را هم روی اصول OWASP API Security گذاشتم؛ مخصوصاً کنترل دسترسی در سطح آبجکت، سطح فیلد و سطح Function که دقیقاً با مشکلات فعلی پروژه منطبق‌اند.
+
+تصویر کلی
+
+من تغییرات را به ۱۵ بخش تقسیم می‌کنم:
+
+بخش	وضعیت فعلی	اهمیت
+1. احراز هویت و Session	⚠️ نیاز به اصلاح	🔴
+2. Authorization و Roleها	❌ ناقص	🔴
+3. مالکیت داده‌ها	❌ ناقص	🔴
+4. API Contract و Validation	⚠️ ناقص	🔴
+5. Chat/WebSocket	❌ ناامن	🔴
+6. Job State Machine	⚠️ قابل دستکاری	🔴
+7. Wallet و حساب مالی داخلی	⚠️ نیازمند تراکنش دقیق	🔴
+8. Database	⚠️ مناسب Demo	🟠
+9. Seed/Demo APIs	❌ نباید Production باشند	🔴
+10. Rate Limit / Abuse Protection	⚠️ فقط ابتدایی	🟠
+11. Security Headers / Deployment	⚠️ ناقص	🟠
+12. Logging / Audit	❌ تقریباً غایب	🔴
+13. File / Media / Maps	⚠️ نیازمند سخت‌گیری	🟠
+14. Business Logic	⚠️ چند مسیر قابل سوءاستفاده	🔴
+15. Testing / QA / Monitoring	❌ ناکافی	🔴
+1. اول از همه: سیستم Authorization مرکزی
+
+این مهم‌ترین تغییر پروژه است.
+
+الان بعضی APIها requireAuth دارند، بعضی ندارند.
+
+مثلاً:
+
+/api/profile
+/api/prepay
+
+از requireAuth استفاده می‌کنند، اما بسیاری از این‌ها نه:
+
+/api/vehicles
+/api/jobs
+/api/invoices
+/api/messages
+/api/notifications
+/api/admin/*
+/api/wallets
+/api/reviews
+/api/referral
+/api/insurance
+...
+
+این نباید این‌طور باشد.
+
+باید یک سیستم مرکزی داشته باشیم:
+requireAuth()
+requireRole("ADMIN")
+requireRole("TECHNICIAN")
+requireRole("CUSTOMER")
+
+requireOwnership()
+requireJobParticipant()
+requireVehicleOwner()
+requireInvoiceAccess()
+
+مثلاً:
+
+const session = await requireAuth(req);
+
+if (session instanceof NextResponse) {
+  return session;
+}
+
+بعد:
+
+requireRole(session, "ADMIN")
+
+یا:
+
+requireRole(session, ["ADMIN", "TECHNICIAN"])
+
+اصل مهم این است که Default باید Deny باشد؛ یعنی API تا وقتی صراحتاً اجازه‌ای تعریف نشده، دسترسی ندهد. این دقیقاً با توصیه OWASP برای Function-Level Authorization منطبق است.
+
+2. مالکیت Objectها باید کامل شود
+
+این یکی از جدی‌ترین مشکلات فعلی است.
+
+مثلاً الان API خودرو می‌تواند چیزی شبیه این دریافت کند:
+
+{
+  "customerId": "customer_123"
+}
+
+اما:
+
+چرا Client باید بتواند تعیین کند این خودرو متعلق به چه کسی است؟
+
+نباید.
+
+باید از Session بفهمیم:
+
+session.userId
+        ↓
+Customer
+        ↓
+Vehicle
+
+مثلاً:
+
+const customer = await db.customer.findUnique({
+  where: {
+    userId: session.userId
+  }
+});
+
+و بعد:
+
+where: {
+  id: vehicleId,
+  customerId: customer.id
+}
+
+یعنی اگر کاربر ID خودرو شخص دیگری را بفرستد:
+
+403 Forbidden
+
+نه اینکه خودرو را برگردانیم.
+
+OWASP دقیقاً این مسئله را BOLA می‌نامد و تأکید می‌کند هر endpointی که با ID به رکورد دسترسی دارد باید authorization همان object را بررسی کند.
+
+3. userId / customerId / technicianId نباید از Client قابل اعتماد باشند
+
+در پروژه فعلی این الگو زیاد وجود دارد:
+
+{
+  "userId": "...",
+  "customerId": "...",
+  "technicianId": "..."
+}
+
+این خطرناک است.
+
+قانون جدید:
+برای Customer
+
+هیچ‌وقت:
+
+body.customerId
+
+منبع حقیقت نباشد.
+
+بلکه:
+
+session.userId
+→ Customer
+→ customer.id
+برای Technician
+
+همین:
+
+session.userId
+→ Technician
+→ technician.id
+Admin
+
+فقط Admin می‌تواند در صورت نیاز ID شخص دیگری را انتخاب کند.
+
+4. fromUserId در Chat باید حذف شود
+
+الان Schema این را دارد:
+
+fromUserId: z.string().min(1)
+
+و API هم آن را می‌گیرد.
+
+این اشتباه معماری است.
+
+کاربر می‌تواند بگوید:
+
+{
+  "fromUserId": "ADMIN_ID"
+}
+
+و خودش را Admin جا بزند.
+
+باید بشود:
+const senderId = session.userId;
+
+و اصلاً:
+
+fromUserId
+
+از request حذف شود.
+
+این دقیقاً نمونه Broken Object Property / Mass Assignment است که OWASP درباره‌اش هشدار می‌دهد.
+
+5. WebSocket فعلی باید از نو امن شود
+
+این یکی را خیلی جدی بگیر.
+
+در:
+
+mini-services/chat-service/index.ts
+
+فعلاً Client می‌تواند بگوید:
+
+auth({
+  userId: "...",
+  name: "...",
+  token: "..."
+})
+
+ولی Server واقعاً Token را validate نمی‌کند.
+
+بعد می‌تواند:
+
+job:join
+
+بزند و وارد هر Job شود.
+
+حتی:
+
+subscribe:notifications
+
+با:
+
+{
+  "userId": "somebody-else"
+}
+
+ممکن است.
+
+باید:
+
+WebSocket هنگام اتصال:
+
+JWT
+ ↓
+verifySession()
+ ↓
+userId
+ ↓
+role
+
+را validate کند.
+
+بعد وقتی:
+
+job:join(jobId)
+
+آمد:
+
+Server باید DB را چک کند:
+
+آیا این User:
+  Customer این Job است؟
+یا
+  Technician این Job است؟
+یا
+  Admin است؟
+
+فقط در این صورت:
+
+socket.join(...)
+6. WebSocket نباید fromUserId قبول کند
+
+در:
+
+message:send
+
+الان:
+
+fromUserId
+
+از Client می‌آید.
+
+باید حذف شود.
+
+Server باید از:
+
+socket.userId
+
+استفاده کند.
+
+همین موضوع برای:
+
+typing:start
+typing:stop
+job:status
+subscribe:notifications
+
+هم باید اعمال شود.
+
+7. Job Status باید State Machine واقعی داشته باشد
+
+الان Client می‌تواند Status بفرستد:
+
+{
+  "status": "COMPLETED"
+}
+
+ولی این کافی نیست.
+
+باید انتقال وضعیت کنترل شود.
+
+مثلاً:
+
+REQUESTED
+ ↓
+ACCEPTED
+ ↓
+EN_ROUTE
+ ↓
+ARRIVED
+ ↓
+DIAGNOSING
+ ↓
+WAITING_APPROVAL
+ ↓
+REPAIRING
+ ↓
+COMPLETED
+
+نباید تکنسین بتواند:
+
+REQUESTED → COMPLETED
+
+را مستقیم انجام دهد.
+
+یا:
+
+CUSTOMER → COMPLETED
+
+را تغییر دهد.
+
+Permission Matrix:
+Action	Customer	Technician	Admin
+ACCEPT	❌	✅	✅
+EN_ROUTE	❌	✅	✅
+ARRIVED	❌	✅	✅
+DIAGNOSING	❌	✅	✅
+WAITING_APPROVAL	❌	✅	✅
+APPROVE_REPAIR	✅	❌	✅
+REPAIRING	❌	✅	✅
+COMPLETED	❌	محدود	✅
+CANCEL	محدود	محدود	✅
+
+این باید در Backend enforce شود، نه UI.
+
+8. Diagnosis و Parts هم باید Permission داشته باشند
+
+الان:
+
+/jobs/[id]/diagnosis
+/jobs/[id]/parts
+
+نباید صرفاً با داشتن Job ID کار کنند.
+
+باید مشخص شود:
+
+آیا این Technician همان Technician این Job است؟
+
+برای Diagnosis:
+
+Technician assigned → اجازه
+Admin → اجازه
+Customer → فقط read
+
+برای Parts:
+
+Technician assigned → create/delete
+Admin → create/delete
+Customer → read
+9. Invoice باید مالکیت + وضعیت داشته باشد
+
+Invoice نباید با یک PATCH ساده قابل تغییر باشد.
+
+باید مشخص شود:
+
+DRAFT
+→ ISSUED
+→ AWAITING_PAYMENT
+→ PAID
+→ CANCELLED
+→ REFUNDED
+
+و هر transition permission داشته باشد.
+
+مثلاً Customer نباید:
+
+amount = 0
+
+کند.
+
+یا:
+
+status = PAID
+
+کند.
+
+همچنین قیمت‌ها باید از Client نیایند.
+
+10. قیمت‌گذاری باید Server-authoritative باشد
+
+این موضوع برای MEKANIX خیلی مهم است.
+
+Client نباید بگوید:
+
+{
+  "laborHours": 1,
+  "unitPrice": 10
+}
+
+و Server کورکورانه قبول کند.
+
+باید:
+
+Service
++ Vehicle Type
++ Technician Rate
++ Travel Fee
++ Parts
++ Emergency Fee
++ VIP rules
++ Tax/Discount
+= Server calculated total
+
+باشد.
+
+یعنی Client فقط:
+
+"من این سرویس را می‌خواهم"
+
+را بفرستد.
+
+محاسبه مبلغ:
+
+فقط Backend.
+
+11. Wallet نیاز به Ledger واقعی دارد
+
+این بخش برای MEKANIX خیلی مهم است.
+
+Wallet نباید فقط:
+
+balance = 100
+
+باشد.
+
+باید Ledger داشته باشیم:
+
+Wallet
+ ├── CREDIT
+ ├── DEBIT
+ ├── HOLD
+ ├── RELEASE
+ ├── REFUND
+ ├── COMMISSION
+ └── WITHDRAWAL
+
+هر transaction:
+
+id
+walletId
+type
+amount
+balanceBefore
+balanceAfter
+referenceType
+referenceId
+createdAt
+
+داشته باشد.
+
+و balance نباید صرفاً یک عدد قابل تغییر باشد.
+
+12. Withdrawal باید Atomic Transaction باشد
+
+در:
+
+/api/wallets/withdraw
+
+الان بخش زیادی از منطق وجود دارد، ولی باید به transaction واقعی Prisma تبدیل شود.
+
+یعنی:
+
+BEGIN
+  check balance
+  create withdrawal
+  create ledger entry
+  hold amount
+COMMIT
+
+اگر وسط کار خطا شد:
+
+ROLLBACK
+
+نه اینکه موجودی کم شود ولی Withdrawal ساخته نشود.
+
+13. Admin API باید کاملاً قفل شود
+
+این:
+
+/api/admin/[resource]
+
+در وضعیت فعلی یکی از بزرگ‌ترین موارد اصلاحی است.
+
+باید:
+
+requireAuth
++
+requireRole(ADMIN)
+
+داشته باشد.
+
+و حتی بهتر:
+
+ADMIN
+SUPER_ADMIN
+SUPPORT
+FINANCE
+OPERATIONS
+
+را از الان در Architecture در نظر بگیریم.
+
+چون بعدها نمی‌خواهیم یک Admin به همه‌چیز دسترسی داشته باشد.
+
+14. reviewerId و adminNotes نباید از Client اعتماد شوند
+
+مثلاً:
+
+{
+  "reviewerId": "admin-123"
+}
+
+نباید پذیرفته شود.
+
+باید:
+
+reviewerId = session.userId
+
+باشد.
+
+همین برای:
+
+approve application
+reject application
+withdraw approval
+support reply
+admin actions
+15. /api/seed باید از Production حذف شود
+
+این Endpoint:
+
+POST /api/seed
+
+الان:
+
+bun run prisma/seed.ts
+
+را اجرا می‌کند.
+
+یعنی API عمومی به command execution روی سرور وصل شده.
+
+حتی اگر فعلاً فقط Seed باشد، نباید در Production وجود داشته باشد.
+
+بهترین راه:
+
+seed فقط CLI
+
+مثلاً:
+
+bun prisma/seed.ts
+
+و API route:
+
+حذف کامل.
+
+16. /api/auth/demo هم Production نباید داشته باشد
+
+این Endpoint اطلاعات:
+
+CUSTOMER
+TECHNICIAN
+ADMIN
+
+را برمی‌گرداند.
+
+برای Demo خوب است.
+
+برای Production:
+
+حذف.
+
+17. localStorage JWT باید حذف شود
+
+الان:
+
+localStorage.getItem("mekanix-token")
+
+است.
+
+برای Production ترجیح من:
+
+HttpOnly
+Secure
+SameSite=Lax/Strict
+
+Cookie است.
+
+مزیت اصلی:
+
+JavaScript → نمی‌تواند Token را بخواند
+
+در نتیجه سطح حمله XSS برای دزدیدن Session کمتر می‌شود.
+
+18. Query Parameter برای Token را حذف کن
+
+در auth.ts:
+
+?token=...
+
+پشتیبانی شده.
+
+این خطرناک است چون Token می‌تواند وارد:
+
+Browser history
+access logs
+analytics
+referrer
+monitoring
+
+شود.
+
+برای Production:
+
+Authorization Header
+یا
+HttpOnly Cookie
+
+کافی است.
+
+19. JWT Secret نباید fallback داشته باشد
+
+الان:
+
+process.env.JWT_SECRET ||
+"mekanix-dev-secret-change-in-production-please"
+
+است.
+
+این باید بشود:
+
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is required");
+}
+
+یعنی اگر Secret نیست:
+
+Application اصلاً بالا نیاید.
+
+20. Secretهای پروژه را مدیریت کن
+
+.env فعلی تقریباً خالی است، ولی Production باید Secret Management داشته باشد.
+
+مثلاً:
+
+JWT_SECRET
+DATABASE_URL
+TELEGRAM_BOT_TOKEN
+MAP_API_KEY
+SMS_PROVIDER_KEY
+STORAGE_ACCESS_KEY
+STORAGE_SECRET
+
+و:
+
+.env
+.env.production
+
+نباید وارد Git شوند.
+
+21. SQLite → PostgreSQL
+
+برای Prototype:
+
+SQLite
+
+خوب است.
+
+برای MEKANIX واقعی:
+
+PostgreSQL.
+
+چون قرار است داشته باشیم:
+
+کاربران
+Job
+Chat
+GPS
+Wallet
+Invoice
+Notification
+Fleet
+Technician
+Analytics
+Audit
+Real-time
+
+و PostgreSQL برای این معماری مناسب‌تر است.
+
+22. Transactionهای Database باید جدی شوند
+
+هر جایی که چند تغییر وابسته داریم:
+
+Job
++ Invoice
++ Payment
++ Notification
++ Wallet
+
+باید:
+
+db.$transaction(...)
+
+استفاده شود.
+
+مثلاً Completion یک Job نباید بتواند:
+
+Job = COMPLETED
+Invoice = DRAFT
+Wallet = unchanged
+Notification = failed
+
+شود.
+
+یا همه با هم موفق شوند یا rollback.
+
+23. Unique Constraintهای بیشتری لازم است
+
+مثلاً:
+
+Review
+
+باید احتمالاً:
+
+@@unique([jobId, fromUserId])
+
+داشته باشد.
+
+تا یک Customer نتواند برای یک Job ده Review ایجاد کند.
+
+همین مفهوم برای:
+
+active VIP
+referral
+withdrawal
+invoice
+job assignment
+
+هم باید بررسی شود.
+
+24. Mass Assignment را کامل ببند
+
+در APIهایی که:
+
+...body
+
+یا مشابه آن دارند، خطر وجود دارد.
+
+مثلاً Client نباید بتواند این‌ها را تغییر دهد:
+
+role
+status
+verified
+rating
+reviewCount
+balance
+completedJobs
+phoneVerified
+profileCompleted
+
+حتی اگر این فیلدها در JSON فرستاده شوند.
+
+OWASP توصیه می‌کند فقط propertyهایی که Client واقعاً مجاز به تغییر آنهاست bind شوند.
+
+25. Validation باید فقط Type Validation نباشد
+
+Zod فعلی خوب است، ولی validation باید شامل Business Validation هم بشود.
+
+مثلاً:
+
+year = 2027
+
+از نظر Zod معتبر است.
+
+ولی:
+
+vehicleType = EXCAVATOR
+make = Toyota
+
+ممکن است از نظر Business Catalog نامعتبر باشد.
+
+پس دو لایه:
+
+Schema Validation
++
+Business Validation
+
+لازم است.
+
+26. Coordinate Validation
+
+الان:
+
+lat: z.number()
+lng: z.number()
+
+کافی نیست.
+
+باید:
+
+lat >= -90
+lat <= 90
+
+lng >= -180
+lng <= 180
+
+و برای ایران حتی اگر Business Rule می‌خواهیم:
+
+country/region boundary
+
+بررسی شود.
+
+27. File Upload Security
+
+اگر بعدها:
+
+عکس خودرو
+مدارک تکنسین
+بیمه
+کارت ملی
+فاکتور
+عکس قطعه
+
+آپلود می‌شود، باید:
+
+MIME validation
+extension validation
+size limit
+virus scan
+random filename
+private storage
+signed URL
+
+داشته باشیم.
+
+هیچ‌وقت:
+
+/user-uploaded-file-name
+
+را مستقیم executable/public نکنیم.
+
+28. اطلاعات حساس را در API Response نریزیم
+
+یکی از مشکلاتی که باید در کل پروژه اصلاح شود:
+
+include: {
+  user: true
+}
+
+به شکل گسترده.
+
+این می‌تواند چیزهایی مثل:
+
+email
+phone
+nationalId
+password
+status
+
+را ناخواسته برگرداند.
+
+بهتر:
+
+select: {
+  id: true,
+  name: true,
+  avatar: true
+}
+
+OWASP همین موضوع را در API3 با عنوان Property-Level Authorization / Excessive Data Exposure مطرح می‌کند.
+
+29. Password در User Model را حذف کن
+
+الان:
+
+password String @default("demo")
+
+در حالی که معماری MEKANIX فعلاً OTP-based است.
+
+اگر Password واقعاً استفاده نمی‌شود:
+
+حذف شود.
+
+اگر روزی لازم شد:
+
+passwordHash
+
+نه:
+
+password
+30. National ID و اطلاعات هویتی باید Protected باشند
+
+این‌ها:
+
+nationalId
+address
+postalCode
+phone
+
+PII هستند.
+
+باید:
+
+کمترین exposure
+access control
+logging نکردن
+masking در Admin
+encryption در صورت نیاز
+retention policy
+
+داشته باشند.
+
+31. Logging حرفه‌ای لازم است
+
+الان Logging محدود است.
+
+باید Audit Log داشته باشیم:
+
+actorUserId
+action
+resource
+resourceId
+before
+after
+ip
+userAgent
+createdAt
+
+مثلاً:
+
+ADMIN_APPROVED_TECHNICIAN
+ADMIN_REJECTED_WITHDRAWAL
+TECHNICIAN_CHANGED_JOB_STATUS
+CUSTOMER_CANCELLED_JOB
+ADMIN_CHANGED_PRICE
+32. Audit Log نباید قابل حذف توسط Admin عادی باشد
+
+حتی Admin نباید بتواند:
+
+DELETE audit_logs
+
+کند.
+
+Audit باید append-only باشد.
+
+33. Error Handling
+
+نباید Error واقعی سرور را برگردانیم:
+
+error: e.message
+
+مثل /api/seed.
+
+در Production:
+
+{
+  "error": "خطایی در پردازش درخواست رخ داد",
+  "requestId": "..."
+}
+
+و جزئیات واقعی فقط در server logs.
+
+34. Request ID اضافه شود
+
+هر Request:
+
+X-Request-ID
+
+داشته باشد.
+
+مثلاً:
+
+MEK-20260913-8F4A2
+
+تا وقتی کاربر می‌گوید:
+
+«پرداخت من خطا داد»
+
+بتوانیم در Log پیدا کنیم.
+
+35. Rate Limit فعلی In-Memory است
+
+این:
+
+Map
+
+برای یک Instance Demo خوب است.
+
+اما اگر:
+
+2 server
+3 server
+Docker replicas
+Cloud deployment
+
+داشته باشیم، هر Instance Rate Limit خودش را دارد.
+
+بهتر:
+
+Redis / Upstash Redis
+
+یا rate limiter مرکزی.
+
+36. Rate Limit فقط 60 request/min کافی نیست
+
+برای Endpointها باید متفاوت باشد:
+
+Search
+GET → 120/min
+
+Create request → 10/min
+
+Messages → 30/min
+
+Reviews → 5/hour
+
+Referral → 3/day
+
+Withdraw → 3/hour
+
+Admin → strict
+
+Export → very strict
+
+OWASP نیز Unrestricted Resource Consumption را یکی از ریسک‌های اصلی API می‌داند.
+
+37. Pagination واقعی
+
+Endpointهایی مثل:
+
+/users
+/jobs
+/messages
+/notifications
+/reviews
+
+نباید همه رکوردها را یک‌جا بدهند.
+
+باید:
+
+page
+limit
+cursor
+
+و حداکثر مثلاً:
+
+limit <= 100
+
+داشته باشند.
+
+38. Search باید محدود باشد
+
+Searchهایی که:
+
+LIKE "%..."
+
+روی هزاران رکورد اجرا می‌شوند باید:
+
+limit
+pagination
+index
+debounce
+query length limit
+
+داشته باشند.
+
+39. WebSocket Rate Limit
+
+برای:
+
+message:send
+typing:start
+job:status
+
+Rate Limit لازم است.
+
+مثلاً:
+
+message:send → 20/min
+typing → 30/min
+status → 10/min
+
+وگرنه یک Socket می‌تواند سیستم را spam کند.
+
+40. CORS فعلی Chat خطرناک است
+
+در Chat:
+
+origin: "*"
+
+وجود دارد.
+
+برای Production باید:
+
+https://mekanix.ir
+https://www.mekanix.ir
+
+یا Originهای دقیق مورد نیاز باشد.
+
+نه:
+
+*
+41. WebSocket باید Connection Limit داشته باشد
+
+باید:
+
+max connections / IP
+max connections / user
+heartbeat
+idle timeout
+message size
+
+داشته باشیم.
+
+42. Message Size Limit
+
+مثلاً:
+
+body <= 5000
+
+در API هست، ولی WebSocket هم باید مستقل محدود کند.
+
+چون WebSocket می‌تواند API validation را دور بزند.
+
+43. SSRF / External APIs
+
+پروژه به سرویس‌هایی مثل:
+
+Nominatim
+OSRM
+Exchange Rate API
+Telegram
+
+وصل می‌شود.
+
+برای URLهایی که User کنترل می‌کند باید whitelist داشته باشیم.
+
+در حال حاضر map requests client-side هستند که بهتر است؛ ولی اگر بعداً server-side proxy اضافه شود باید SSRF protection داشته باشد.
+
+OWASP SSRF را هم در Top 10 API آورده است.
+
+44. Nominatim باید Policy صحیح داشته باشد
+
+برای Production باید:
+
+User-Agent مناسب
+caching
+rate limit
+timeout
+fallback provider
+
+داشته باشیم.
+
+به سرویس عمومی OSM/Nominatim نباید بی‌نهایت درخواست بزنیم.
+
+45. Exchange Rate باید Cache شود
+
+/api/exchange-rate هر بار نباید مستقیم External API را صدا بزند.
+
+باید:
+
+cache 5–15 min
+fallback آخرین مقدار سالم
+timeout
+validation
+
+داشته باشد.
+
+و مقدار خارجی نباید بدون sanity check وارد pricing شود.
+
+46. SEO یک ایراد مهم دارد که قبلاً دیده نشده بود
+
+در layout.tsx:
+
+"ratingValue": "4.8",
+"reviewCount": "1200"
+
+اگر واقعاً MEKANIX هنوز 1200 Review ندارد:
+
+این نباید در Schema باشد.
+
+این اطلاعات باید واقعی و قابل اثبات باشند.
+
+همچنین:
+
+telephone: "+98"
+
+شماره تلفن معتبر نیست.
+
+این‌ها را باید اصلاح کنیم.
+
+47. Schema باید از داده واقعی بیاید
+
+بهتر:
+
+AggregateRating
+
+فقط وقتی واقعاً وجود دارد.
+
+و:
+
+reviewCount
+ratingValue
+telephone
+address
+openingHours
+
+همگی واقعی.
+
+48. Admin Settings باید Audit شود
+
+هر تغییر در:
+
+hourly rate
+travel fee
+VIP price
+exchange rate
+commission
+warranty
+
+باید ثبت شود:
+
+چه کسی
+چه چیزی
+از چه مقداری
+به چه مقداری
+چه زمانی
+49. قیمت‌ها نباید Float باشند
+
+در Schema مقدارهایی مثل:
+
+Float
+
+برای پول داریم.
+
+برای Money بهتر است:
+
+Decimal
+
+یا:
+
+integer minor units
+
+استفاده شود.
+
+مثلاً:
+
+amount = 1250000
+currency = IRR
+
+نه Float.
+
+50. Currency باید جدی‌تر طراحی شود
+
+الان:
+
+USD
+IRR
+
+در چند جا دیده می‌شود.
+
+باید Money model استاندارد داشته باشیم:
+
+amount
+currency
+exchangeRate
+baseCurrency
+
+و هر Invoice نرخ زمان خودش را نگه دارد.
+
+نه اینکه بعداً با نرخ جدید دوباره مبلغ تاریخی تغییر کند.
+
+51. VIP باید Server-side enforce شود
+
+نباید UI فقط بگوید:
+
+VIP = true
+
+و سرویس رایگان شود.
+
+Backend باید هنگام ایجاد Service:
+
+subscription active?
+expiresAt > now?
+service covered?
+
+را چک کند.
+
+و Repair همچنان طبق Business Rule پولی بماند.
+
+52. Warranty باید واقعی شود
+
+برای هر Job Completed:
+
+warrantyStart
+warrantyEnd
+warrantyTerms
+
+ثبت شود.
+
+اگر Customer دوباره همان مشکل را گزارش کرد:
+
+isUnderWarranty()
+
+Backend تعیین کند که:
+
+FREE
+یا
+PAID
+
+است.
+
+53. Cancellation Policy
+
+Customer و Technician نباید آزادانه هر زمان Cancel کنند.
+
+باید:
+
+قبل از قبول
+بعد از قبول
+در مسیر
+بعد از رسیدن
+در حال تعمیر
+بعد از تعمیر
+
+قوانین متفاوت داشته باشد.
+
+مثلاً Cancellation fee.
+
+54. Assignment باید Atomic باشد
+
+وقتی یک Technician به Job assign می‌شود:
+
+باید همزمان:
+
+Job
+Technician availability
+ServiceRequest
+Notification
+
+به‌روزرسانی شوند.
+
+و اگر دو Admin همزمان دو Technician را assign کردند:
+
+Race condition نباید ایجاد شود.
+
+55. Technician availability باید server-side باشد
+
+نباید فقط:
+
+availableNow = true
+
+باشد.
+
+باید با:
+
+ON_JOB
+OFFLINE
+ONLINE
+
+و Jobهای active sync شود.
+
+56. Location Privacy
+
+مختصات:
+
+lat
+lng
+
+اطلاعات حساس هستند.
+
+Customer نباید موقعیت دقیق Technicianهای دیگر را ببیند.
+
+Technician هم نباید قبل از Assignment اطلاعات دقیق Customer را بگیرد مگر Business Rule اجازه دهد.
+
+57. Tracking باید time-limited باشد
+
+وقتی Job تمام شد:
+
+live tracking
+
+باید متوقف شود.
+
+و داده Location قدیمی باید retention policy داشته باشد.
+
+مثلاً:
+
+30/90 روز
+
+بعد anonymize/delete.
+
+58. Notification Ownership
+
+الان endpointهایی مثل:
+
+/api/notifications?userId=
+
+نباید اجازه دهند User:
+
+userId = دیگری
+
+بفرستد.
+
+باید:
+
+session.userId
+
+باشد.
+
+59. Invoice History همین مشکل را دارد
+
+Frontend:
+
+/api/invoices/list?customerId=
+
+صدا می‌زند.
+
+برای UI شاید منطقی به نظر برسد، ولی API باید Customer واقعی را از Session استخراج کند.
+
+Client ID فقط برای Admin/Fleet use cases مجاز باشد.
+
+60. Support Ticket
+
+Customer نباید بتواند:
+
+userId = anotherUser
+
+ارسال کند.
+
+همچنین Reply فقط:
+
+ADMIN / SUPPORT
+
+باشد.
+
+Customer فقط Ticket خودش را ببیند.
+
+61. Insurance
+
+هم:
+
+/api/insurance?userId=
+
+و هم:
+
+createPolicy(userId)
+
+باید مالکیت داشته باشند.
+
+Claim هم باید بررسی کند:
+
+policy.userId === session.userId
+
+یا Admin.
+
+62. Referral
+
+Referral نباید Client-controlled باشد.
+
+نباید کاربر بتواند:
+
+referrerId = دیگری
+
+بسازد.
+
+همچنین self-referral:
+
+A → A
+
+باید ممنوع باشد.
+
+و abuse protection لازم است.
+
+63. Technician API
+
+PATCH /technicians/[id] باید بررسی کند:
+
+Technician خودش
+یا Admin
+
+نه هر User.
+
+و Technician نباید بتواند:
+
+verified
+rating
+reviewCount
+completedJobs
+level
+
+را تغییر دهد.
+
+64. Admin Dashboard باید Data Minimization داشته باشد
+
+Admin لازم نیست همیشه:
+
+nationalId
+phone
+address
+wallet
+messages
+
+همه را یکجا دریافت کند.
+
+هر صفحه باید فقط داده مورد نیاز خودش را بگیرد.
+
+65. Database Backup
+
+Production باید داشته باشد:
+
+daily backup
+point-in-time recovery
+retention
+offsite backup
+restore test
+
+Backup بدون Restore Test عملاً کافی نیست.
+
+66. Migration Strategy
+
+وقتی PostgreSQL رفتیم:
+
+prisma migrate
+
+باید محیط‌ها جدا باشند:
+
+development
+staging
+production
+
+و Migration دستی/تصادفی روی Production ممنوع شود.
+
+67. Staging Environment
+
+قبل از Production:
+
+mekanix.ir
+staging.mekanix.ir
+
+یا محیط مشابه.
+
+هر Feature اول:
+
+DEV
+→ STAGING
+→ QA
+→ PRODUCTION
+68. CI/CD
+
+هر Pull/Build باید حداقل:
+
+TypeScript
+ESLint
+Prisma validation
+Unit tests
+API tests
+Build
+
+را اجرا کند.
+
+و این مورد فعلی:
+
+typescript.ignoreBuildErrors = true
+
+باید حذف شود.
+
+69. reactStrictMode: false
+
+این را هم بهتر است:
+
+reactStrictMode: true
+
+کنیم و مشکلاتی که Strict Mode پیدا می‌کند واقعاً اصلاح شوند.
+
+70. Automated Security Tests
+
+برای هر Resource باید تست BOLA داشته باشیم.
+
+مثلاً:
+
+User A
+Vehicle A
+User B
+
+درخواست:
+
+GET /api/vehicles/vehicle-A
+
+باید:
+
+403
+
+بدهد.
+
+همین تست برای:
+
+Vehicle
+Job
+Invoice
+Message
+Notification
+Insurance
+Wallet
+Review
+Ticket
+Referral
+
+لازم است.
+
+این دقیقاً همان تستی است که OWASP برای جلوگیری از BOLA توصیه می‌کند.
+
+71. تست Role Matrix
+
+باید Matrix خودکار داشته باشیم:
+
+CUSTOMER
+TECHNICIAN
+ADMIN
+ANONYMOUS
+
+برای هر endpoint.
+
+مثلاً:
+
+GET /admin/users
+
+Anonymous → 401
+Customer  → 403
+Technician → 403
+Admin → 200
+72. تست Business Logic
+
+فقط Security Test کافی نیست.
+
+باید تست کنیم:
+
+Job lifecycle
+VIP
+Warranty
+Cancellation
+Assignment
+Invoice
+Wallet
+Referral
+Review
+
+مثلاً:
+
+Completed Job
+→ دوباره Repair
+→ نباید State خراب شود
+73. API Versioning
+
+بعداً که اپ موبایل واقعی منتشر شد:
+
+/api/v1
+
+بهتر است داشته باشیم.
+
+چون اگر:
+
+App v1
+App v2
+Web
+Admin
+Technician App
+
+همزمان باشند، تغییر API بدون Versioning خطرناک می‌شود.
+
+OWASP هم API inventory و مدیریت نسخه‌های قدیمی را جزو ریسک‌های API می‌داند.
+
+74. API Documentation
+
+OpenAPI/Swagger برای Backend لازم است.
+
+مثلاً:
+
+GET /api/v1/jobs
+POST /api/v1/jobs
+PATCH /api/v1/jobs/{id}/status
+
+با:
+
+Auth
+Role
+Request schema
+Response schema
+Error codes
+75. Error Code استاندارد
+
+به جای اینکه هر API:
+
+error: "something"
+
+بدهد:
+
+{
+  "code": "JOB_NOT_ACCESSIBLE",
+  "message": "دسترسی به این درخواست مجاز نیست",
+  "requestId": "..."
+}
+
+داشته باشیم.
+
+76. CORS / CSP / Security Headers
+
+Production باید حداقل بررسی کند:
+
+Content-Security-Policy
+Strict-Transport-Security
+X-Content-Type-Options
+Referrer-Policy
+Permissions-Policy
+frame-ancestors
+
+و CORS دقیق باشد.
+
+مخصوصاً Chat فعلی:
+
+origin: "*"
+
+باید اصلاح شود.
+
+77. HTTPS اجباری
+
+تمام:
+
+HTTP → HTTPS
+
+redirect شود.
+
+Cookie:
+
+Secure
+
+باشد.
+
+78. Content Security Policy
+
+با توجه به اینکه پروژه:
+
+Leaflet
+Google Fonts
+Socket.io
+External maps
+
+دارد، CSP باید دقیق طراحی شود، نه اینکه * بدهیم.
+
+79. Dependency Audit
+
+باید مرتب:
+
+bun audit
+
+یا ابزار معادل اجرا شود.
+
+و Dependencyهای:
+
+Next
+React
+Prisma
+Socket.io
+Leaflet
+Zod
+
+به‌روز نگه داشته شوند.
+
+80. Observability
+
+Production باید داشته باشد:
+
+Error tracking
+Performance monitoring
+API latency
+DB latency
+WebSocket connections
+Failed jobs
+Failed notifications
+Failed external APIs
+
+ابزاری مثل Sentry می‌تواند این بخش را پوشش دهد.
+
+81. Health Check
+
+مثلاً:
+
+/api/health
+
+که بررسی کند:
+
+App
+Database
+Redis
+External APIs
+WebSocket
+
+و خروجی بدهد.
+
+82. Readiness / Liveness
+
+برای Deployment حرفه‌ای:
+
+/health/live
+/health/ready
+
+داشته باشیم.
+
+83. Queue برای عملیات Async
+
+بعضی کارها نباید داخل Request اصلی انجام شوند:
+
+Notification
+SMS
+Email
+Push
+Image processing
+Invoice PDF
+Analytics
+
+بهتر است Queue داشته باشند.
+
+مثلاً:
+
+Redis + BullMQ
+84. Notification باید Idempotent باشد
+
+اگر Request دوبار اجرا شد:
+
+دو Notification
+
+نباید ساخته شود.
+
+همین برای:
+
+invoice
+assignment
+wallet
+referral
+
+هم مهم است.
+
+85. Idempotency Key
+
+برای عملیات حساس:
+
+POST /service-requests
+POST /withdraw
+POST /subscribe
+POST /invoice
+
+می‌توان:
+
+Idempotency-Key: ...
+
+داشت.
+
+86. Race Condition
+
+این‌ها باید ضد Race باشند:
+
+assign technician
+accept job
+complete job
+withdraw wallet
+VIP subscribe
+review
+
+چون دو درخواست همزمان می‌توانند وضعیت را خراب کنند.
+
+87. Data Retention
+
+از الان باید مشخص کنیم:
+
+Messages → چند ماه؟
+GPS → چند روز؟
+Notifications → چند ماه؟
+Audit → چند سال؟
+Documents → چند سال؟
+
+این برای محصول واقعی مهم است.
+
+88. Privacy Policy / Terms
+
+قبل از Production باید:
+
+حریم خصوصی
+شرایط استفاده
+شرایط خدمات
+شرایط گارانتی
+شرایط VIP
+شرایط لغو
+شرایط پرداخت
+شرایط نگهداری اطلاعات
+
+وجود داشته باشد.
+
+89. Consent
+
+برای:
+
+Location
+Notifications
+Camera
+Photos
+Microphone
+Marketing
+
+Consent باید explicit باشد.
+
+90. Location Permission
+
+اپ نباید بدون نیاز:
+
+location
+
+بگیرد.
+
+و باید دو حالت داشته باشد:
+
+Approximate
+Precise
+
+در صورت نیاز.
+
+91. SEO فعلی را هم یک بار اصلاح کن
+
+این بخش مربوط به امنیت نیست ولی در Audit دیدم:
+
+"ratingValue": "4.8",
+"reviewCount": "1200"
+
+اگر این اعداد واقعی نیستند، حذف شوند.
+
+همچنین:
+
+telephone: "+98"
+
+باید شماره واقعی باشد یا حذف شود.
+
+این‌ها نباید برای SEO جعل شوند.
+
+92. Demo Code باید از Production جدا شود
+
+پروژه فعلی هنوز چند اثر Demo دارد:
+
+/api/auth/demo
+/api/seed
+fallback JWT secret
+demo password
+fake payment logic
+
+بهتر است ساختار داشته باشیم:
+
+DEMO_MODE=true
+
+و وقتی:
+
+NODE_ENV=production
+
+است:
+
+هیچ Demo Endpointی حتی Register هم نشود.
+
+93. Frontend نباید منبع Security باشد
+
+این خیلی مهم است.
+
+مثلاً اگر UI دکمه:
+
+Admin
+
+را نشان نمی‌دهد، این امنیت نیست.
+
+کاربر می‌تواند مستقیم API را صدا بزند.
+
+تمام permissionها باید در Backend enforce شوند.
+
+94. Customer / Technician / Admin باید سه تجربه جدا داشته باشند
+
+نه فقط سه UI متفاوت.
+
+Backend نیز باید سه Policy جدا داشته باشد:
+
+CustomerPolicy
+TechnicianPolicy
+AdminPolicy
+
+این برای رشد پروژه خیلی مهم است.
+
+95. Fleet Dashboard
+
+چون MEKANIX قرار است Fleet هم داشته باشد، از الان:
+
+Fleet
+FleetUser
+FleetVehicle
+FleetPermission
+
+را از Customer عادی جدا کنیم.
+
+تا بعداً مجبور نشویم Customer را تبدیل به Fleet کنیم.
+
+96. Admin Audit Trail برای تغییرات قیمت
+
+این یکی مخصوص MEKANIX بسیار مهم است.
+
+اگر Admin تغییر دهد:
+
+Labor = 2,000,000
+→ 2,500,000
+
+باید معلوم باشد:
+
+چه کسی
+چه زمانی
+از چه
+به چه
+
+و Invoiceهای قبلی نباید تغییر کنند.
+
+97. Snapshot قیمت روی Job
+
+وقتی Job ساخته شد:
+
+laborRateSnapshot
+travelFeeSnapshot
+inspectionFeeSnapshot
+
+ذخیره شود.
+
+اگر فردا قیمت Admin تغییر کرد:
+
+Job دیروز نباید تغییر قیمت پیدا کند.
+
+98. AI Layer را هم Server Controlled طراحی کنیم
+
+بعداً اگر AI اضافه کنیم:
+
+Diagnosis
+Price estimate
+Technician recommendation
+
+AI نباید مستقیماً:
+
+Job status
+Price
+Payment
+Technician assignment
+
+را تغییر دهد.
+
+AI باید:
+
+recommendation
+confidence
+reason
+
+بدهد.
+
+تصمیم نهایی Backend/Business Rule.
+
+99. در نهایت یک Security Boundary مشخص
+
+من برای MEKANIX این معماری را پیشنهاد می‌کنم:
+
+                ┌───────────────┐
+                │    Browser    │
+                └───────┬───────┘
+                        │
+                HTTPS / Secure
+                        │
+              ┌─────────▼─────────┐
+              │ Next.js / API v1  │
+              └─────────┬─────────┘
+                        │
+          ┌─────────────┼─────────────┐
+          │             │             │
+       Auth        Authorization   Validation
+          │             │             │
+          └─────────────┼─────────────┘
+                        │
+                 Business Rules
+                        │
+                ┌───────▼───────┐
+                │  PostgreSQL   │
+                └───────────────┘
+                        │
+              ┌─────────┼─────────┐
+              │         │         │
+            Redis      Queue    Storage
+              │
+         Rate / Cache
+
+و WebSocket:
+
+Client
+  ↓
+Authenticated Socket
+  ↓
+User Identity
+  ↓
+Job Authorization
+  ↓
+Room
+چیزی که من برای MEKANIX پیشنهاد می‌کنم
+
+اگر قرار است این پروژه واقعاً محصول اصلی شود، بهتر نیست این ۹۰ مورد را پراکنده و یکی‌یکی اصلاح کنیم.
+
+من آن را در ۵ فاز مهندسی می‌برم:
+
+فاز 01 — Security Hardening
+
+تمام:
+
+Auth
+Authorization
+Ownership
+Admin
+WebSocket
+API validation
+Secret
+Headers
+فاز 02 — Domain Integrity
+
+تمام:
+
+Job State Machine
+Invoice
+Warranty
+VIP
+Cancellation
+Assignment
+Pricing
+Referral
+Review
+فاز 03 — Financial Core
+
+بدون درگاه واقعی هم می‌شود:
+
+Wallet Ledger
+Decimal Money
+Transaction
+Commission
+Withdrawal
+Refund
+Audit
+فاز 04 — Production Infrastructure
+PostgreSQL
+Redis
+Queue
+Storage
+Backup
+Monitoring
+CI/CD
+Staging
+Health Checks
+فاز 05 — Security & QA Certification
+
+تست تمام:
+
+Anonymous
+Customer
+Technician
+Admin
+
+روی تمام Endpointها + تست BOLA + تست Race Condition + تست Business Logic.
+
+یک نکته خیلی مهم
+
+من بعد از بررسی Snapshot فعلی، این پروژه را خراب یا بی‌ارزش نمی‌بینم؛ برعکس، Foundation آن خیلی جلو رفته و حتی Worklog نشان می‌دهد بخش UI، RTL، SEO و Hybrid Glass/Solid به شکل قابل‌قبولی جلو رفته‌اند.
+
+مشکل اصلی این است که الان پروژه در وضعیت:
+
+High-fidelity product prototype + backend demo
+
+است، نه:
+
+Production-grade platform
+
+و این دو مرحله را نباید با هم قاطی کنیم.
+
+اگر این ۵ فاز را درست اجرا کنیم، بعد از آن می‌توانیم UI را بدون ترس از اینکه Backend دوباره مجبورمان کند Flowها را عوض کنیم، به همان سطح جهانی که برای MEKANIX می‌خواهی برسانیم.
