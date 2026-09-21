@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -93,7 +94,7 @@ export function AppShell({
   const reseed = async () => {
     toast.loading(t("common.reseedLoading"), { id: "reseed" });
     try {
-      await fetch("/api/seed", { method: "POST" });
+      await authFetch("/api/seed", { method: "POST" });
       toast.success(t("common.reseedSuccess"), { id: "reseed", description: t("common.reseedReloading") });
       setTimeout(() => window.location.reload(), 800);
     } catch {

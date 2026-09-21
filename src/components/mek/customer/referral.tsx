@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -68,7 +69,7 @@ export function CustomerReferral({ userId }: { userId: string }) {
     let cancelled = false;
     const init = async () => {
       try {
-        const codeRes = await fetch("/api/referral", {
+        const codeRes = await authFetch("/api/referral", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId }),
@@ -143,7 +144,7 @@ export function CustomerReferral({ userId }: { userId: string }) {
   const claim = async (referralId: string) => {
     setClaimingId(referralId);
     try {
-      const res = await fetch("/api/referral", {
+      const res = await authFetch("/api/referral", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ referralId, action: "claim" }),

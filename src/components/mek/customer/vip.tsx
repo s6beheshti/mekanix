@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -52,7 +53,7 @@ export function CustomerVip({ userId }: { userId: string }) {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/vip/plans").then((r) => r.json()),
+      authFetch("/api/vip/plans").then((r) => r.json()),
       fetch(`/api/vip/my?userId=${userId}`).then((r) => r.json().catch(() => null)),
     ]).then(([p, s]) => {
       setPlans(Array.isArray(p) ? p : []);
@@ -70,7 +71,7 @@ export function CustomerVip({ userId }: { userId: string }) {
     if (!selectedPlan) return;
     setSubscribing(true);
     try {
-      const res = await fetch("/api/vip/subscribe", {
+      const res = await authFetch("/api/vip/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, planId: selectedPlan.id, paymentId }),

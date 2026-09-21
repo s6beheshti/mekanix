@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -390,7 +391,7 @@ function AddPolicyDialog({
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/insurance", {
+      const res = await authFetch("/api/insurance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -585,7 +586,7 @@ function FileClaimDialog({
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/insurance/claim", {
+      const res = await authFetch("/api/insurance/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

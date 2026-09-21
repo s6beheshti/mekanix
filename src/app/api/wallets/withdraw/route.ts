@@ -4,97 +4,102 @@ import { requireAuth, checkRateLimit } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 
-// Mechanic requests a withdrawal from their wallet balance.
-// technicianId is derived from the session — NEVER from request body (BOLA protection).
-const MIN_WITHDRAWAL = 5; // USD minimum
-
-function maskCard(card: string): string {
-  const digits = card.replace(/\D/g, "");
-  if (digits.length < 4) return "****";
-  return `**** **** **** ${digits.slice(-4)}`;
-}
-
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  // Tight rate limit on withdrawals
+  if (session.role !== "TECHNICIAN") {
+    return NextResponse.json({ error: "فقط مکانیک‌ها می‌توانند برداشت کنند" }, { status: 403 });
+  }
+
+  // Rate limit: 3 per hour
   const limited = checkRateLimit(req, "withdraw", RATE_LIMITS.WITHDRAW.max, RATE_LIMITS.WITHDRAW.windowMs);
   if (limited) return limited;
 
-  if (session.role !== "TECHNICIAN" && session.role !== "ADMIN") {
-    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  const body = await req.json();
+  const { amount, method, cardNumber, bankName, shebaNumber } = body;
+
+  if (!amount || amount <= 0) {
+    return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
   }
 
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const technician = await getTechnicianFromSession(session);
+  if (!technician) {
+    return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 404 });
   }
 
-  // Server-authoritative: resolve technician from session — IGNORE body.technicianId
-  let technicianId: string;
-  if (session.role === "ADMIN") {
-    // Admin can specify technicianId (e.g. for manual admin operations)
-    if (typeof body.technicianId !== "string" || !body.technicianId) {
-      return NextResponse.json({ error: "technicianId is required" }, { status: 400 });
-    }
-    technicianId = body.technicianId;
-  } else {
-    const tech = await getTechnicianFromSession(session);
-    if (!tech) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
-    technicianId = tech.id;
+  const wallet = await db.wallet.findUnique({ where: { technicianId: technician.id } });
+  if (!wallet) {
+    return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   }
 
-  const { amount, method, cardNumber, shebaNumber, bankName } = body;
-  if (typeof amount !== "number" || amount < MIN_WITHDRAWAL) {
-    return NextResponse.json({ error: `حداقل مبلغ برداشت $${MIN_WITHDRAWAL} است` }, { status: 400 });
-  }
-
-  const wallet = await db.wallet.findUnique({ where: { technicianId } });
-  if (!wallet) return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   if (wallet.balance < amount) {
-    return NextResponse.json({ error: "موجودی قابل برداشت کافی نیست" }, { status: 400 });
+    return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
   }
 
-  const code = `WD-${Math.floor(4000 + Math.random() * 5000)}`;
-  const maskedCard = cardNumber ? maskCard(String(cardNumber)) : null;
+  // ATOMIC TRANSACTION — all or nothing
+  try {
+    const result = await db.$transaction(async (tx) => {
+      // 1. Re-check balance inside transaction (prevent race condition)
+      const lockedWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      if (!lockedWallet || lockedWallet.balance < amount) {
+        throw new Error("موجودی کافی نیست");
+      }
 
-  // 1. Create withdrawal request
-  const withdrawal = await db.withdrawalRequest.create({
-    data: {
-      code,
-      walletId: wallet.id,
-      amount,
-      method: ["card", "bank"].includes(method) ? method : "card",
-      cardNumber: maskedCard,
-      shebaNumber: typeof shebaNumber === "string" ? shebaNumber.slice(0, 30) : null,
-      bankName: typeof bankName === "string" ? bankName.slice(0, 100) : null,
-      status: "REQUESTED",
-    },
-  });
+      const balanceBefore = lockedWallet.balance;
+      const balanceAfter = balanceBefore - amount;
 
-  // 2. Create PAYOUT txn (PROCESSING — admin must approve)
-  await db.walletTransaction.create({
-    data: {
-      walletId: wallet.id,
-      kind: "PAYOUT",
-      status: "PROCESSING",
-      grossAmount: amount,
-      commissionAmount: 0,
-      netAmount: -amount,
-      description: `Withdrawal request ${code}`,
-    },
-  });
+      // 2. Create withdrawal request
+      const withdrawal = await tx.withdrawalRequest.create({
+        data: {
+          code: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
+          walletId: wallet.id,
+          amount,
+          method: method || "card",
+          cardNumber: cardNumber?.replace(/.(?=.{4})/g, "*"),
+          bankName,
+          shebaNumber,
+          status: "REQUESTED",
+        },
+      });
 
-  // 3. Decrement balance (held until admin pays)
-  await db.wallet.update({
-    where: { id: wallet.id },
-    data: {
-      balance: { decrement: amount },
-    },
-  });
+      // 3. Deduct balance
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
 
-  return NextResponse.json({ ok: true, withdrawal });
+      // 4. Create ledger entry
+      await tx.walletLedger.create({
+        data: {
+          walletId: wallet.id,
+          type: "WITHDRAWAL",
+          amount: -amount,
+          balanceBefore,
+          balanceAfter,
+          referenceType: "Withdrawal",
+          referenceId: withdrawal.id,
+          description: `Withdrawal request ${withdrawal.code}`,
+        },
+      });
+
+      // 5. Create notification
+      await tx.notification.create({
+        data: {
+          userId: session.userId,
+          type: "withdrawal_requested",
+          title: `درخواست برداشت ${amount} ثبت شد`,
+          body: `درخواست برداشت شما ثبت شد و در انتظار تأیید است.`,
+          category: "payment",
+          link: "technician/earnings",
+        },
+      });
+
+      return { withdrawal, newBalance: balanceAfter };
+    });
+
+    return NextResponse.json(result);
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "خطا در پردازش برداشت" }, { status: 400 });
+  }
 }

@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -78,7 +79,7 @@ export function CustomerSupport({ userId }: { userId: string }) {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/support/tickets", {
+      const res = await authFetch("/api/support/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, subject, category, priority, message }),

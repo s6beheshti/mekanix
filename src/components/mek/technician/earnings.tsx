@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -125,7 +126,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
     }
     setWithdrawing(true);
     try {
-      const res = await fetch("/api/wallets/withdraw", {
+      const res = await authFetch("/api/wallets/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

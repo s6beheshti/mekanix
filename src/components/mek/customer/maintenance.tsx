@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -135,7 +136,7 @@ export function CustomerMaintenance({ customer }: { customer: DemoUser }) {
   const markDone = async (id: string) => {
     setMarkingId(id);
     try {
-      const res = await fetch("/api/maintenance", {
+      const res = await authFetch("/api/maintenance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action: "markDone" }),
@@ -387,7 +388,7 @@ function AddScheduleDialog({
       if (intervalType === "days") body.intervalDays = parseInt(intervalDays) || null;
       if (intervalType === "hours") body.intervalHours = parseInt(intervalHours) || null;
 
-      const res = await fetch("/api/maintenance", {
+      const res = await authFetch("/api/maintenance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

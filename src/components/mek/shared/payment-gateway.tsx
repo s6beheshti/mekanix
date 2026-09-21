@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -80,7 +81,7 @@ export function PaymentGatewayDialog({
     }
     setStage("processing");
     try {
-      const res = await fetch("/api/gateway/initiate", {
+      const res = await authFetch("/api/gateway/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,7 +112,7 @@ export function PaymentGatewayDialog({
     }
     setStage("processing");
     try {
-      const res = await fetch("/api/gateway/verify", {
+      const res = await authFetch("/api/gateway/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, otp, purpose, userId }),

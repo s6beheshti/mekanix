@@ -1,4 +1,5 @@
 "use client";
+import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -287,7 +288,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
             onSuccess={async (_paymentId) => {
               setPrepayBusy(true);
               try {
-                const res = await fetch("/api/prepay", {
+                const res = await authFetch("/api/prepay", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ jobId: job.id, method: "card" }),

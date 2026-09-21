@@ -250,3 +250,31 @@ export function apiError(message: string, status: number = 400, requestId?: stri
     { status }
   );
 }
+
+// ──────────── Idempotency ────────────
+
+export function getIdempotencyKey(req: Request): string | null {
+  return req.headers.get("x-idempotency-key") || req.headers.get("Idempotency-Key");
+}
+
+// In-memory idempotency store (use Redis in production)
+const idempotencyStore = new Map<string, { response: any; expiresAt: number }>();
+
+export async function withIdempotency<T>(
+  req: Request,
+  fn: () => Promise<T>
+): Promise<{ cached: boolean; data: T } | null> {
+  const key = getIdempotencyKey(req);
+  if (!key) return null;
+
+  // Check if already processed
+  const existing = idempotencyStore.get(key);
+  if (existing && existing.expiresAt > Date.now()) {
+    return { cached: true, data: existing.response };
+  }
+
+  // Execute and cache
+  const result = await fn();
+  idempotencyStore.set(key, { response: result, expiresAt: Date.now() + 24 * 60 * 60 * 1000 }); // 24h
+  return { cached: false, data: result };
+}

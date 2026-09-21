@@ -23,11 +23,21 @@ const display = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "MEKANIX — On-Demand Mobile Repair & Maintenance",
+  title: {
+    default: "مکانیکس | تعمیر و نگهداری سیار خودرو و ماشین‌آلات سنگین در محل",
+    template: "%s | مکانیکس",
+  },
   description:
-    "MEKANIX connects you with qualified mobile technicians for vehicles, trucks, buses, and heavy machinery. Diagnose, repair, and maintain — anywhere.",
-  keywords: ["MEKANIX", "mobile mechanic", "repair", "maintenance", "heavy machinery", "fleet"],
+    "مکانیکس پلتفرم تعمیر و نگهداری سیار در ایران است. مکانیک‌های تأییدشده برای خودرو، کامیون، اتوبوس، بیل، لودر و ماشین‌آلات سنگین — عیب‌یابی، تعمیر و نگهداری در محل شما، با گارانتی ۶ ماهه و پرداخت امن.",
+  keywords: [
+    "مکانیک سیار", "تعمیرکار سیار", "تعمیر ماشین در محل", "تعمیر خودرو در محل",
+    "مکانیک سنگین", "تعمیر ماشین‌آلات سنگین", "تعمیر بیل", "تعمیر لودر",
+    "تعمیر کامیون", "تعمیر اتوبوس", "عیب‌یابی خودرو", "تعمیر اضطراری جاده‌ای",
+    "نگهداری ناوگان", "سرویس دوره‌ای خودرو", "مکانیک ایران", "تعمیر در محل تهران",
+    "MEKANIX", "mobile mechanic", "on-site repair", "heavy machinery repair",
+  ],
   manifest: "/manifest.json",
+  robots: { index: true, follow: true },
   icons: {
     icon: [{ url: "/logo.webp", type: "image/webp" }, { url: "/logo.png", sizes: "any" }],
     apple: [{ url: "/logo.png", sizes: "180x180" }],
@@ -35,7 +45,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "MEKANIX",
+    title: "مکانیکس",
   },
 };
 
@@ -45,7 +55,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${display.variable} antialiased bg-background text-foreground`}
       >
