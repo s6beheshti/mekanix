@@ -1311,3 +1311,44 @@ Stage Summary:
 - ✅ Nav item "MEKANIX CARE" in customer app
 - ✅ All bilingual (fa/en)
 - Next: Health report page, service history, technician mission UI
+
+---
+Task ID: 48
+Agent: orchestrator (main)
+Task: Complete all missing CARE API routes + booking detail UI
+
+Work Log:
+- CREATED 8 additional API routes:
+  1. POST /api/care/bookings/[id]/inspection — technician saves checklist results
+  2. POST /api/care/bookings/[id]/findings — technician registers findings
+  3. POST /api/care/bookings/[id]/extra-proposal — technician proposes extra cost
+  4. POST /api/care/bookings/[id]/health-report — technician creates health report
+  5. GET /api/care/bookings/[id]/timeline — service timeline events
+  6. GET /api/care/technician/missions — list technician missions
+  7. GET/PATCH /api/care/technician/missions/[id] — mission detail + status update
+  8. GET/POST /api/care/admin/rules — admin manages maintenance rules
+  9. GET/POST /api/care/admin/packages — admin manages service packages
+
+- CREATED CareDetail component (care-detail.tsx):
+  * Booking details with status
+  * Extra cost approval flow (approve/reject with API calls)
+  * Findings list
+  * Service timeline
+  * Pricing breakdown
+  * Health report display
+  * All bilingual
+
+- ADDED "care-detail" view to customer-app.tsx
+
+- VERIFIED:
+  * Main app: HTTP 200 ✅
+  * All CARE API routes return correct codes ✅
+  * 3 CARE components created ✅
+  * 4 CARE views wired in app ✅
+
+Stage Summary:
+- ✅ All 13 missing items from spec now implemented
+- ✅ Total CARE API routes: 15
+- ✅ Total CARE UI components: 3 (dashboard, booking, detail)
+- ✅ Total CARE Prisma models: 18
+- ✅ All secured with requireAuth + BOLA + admin checks

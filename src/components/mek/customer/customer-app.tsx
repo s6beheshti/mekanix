@@ -24,6 +24,7 @@ import { CustomerMaintenance } from "./maintenance";
 import { CustomerReferral } from "./referral";
 import { CareDashboard } from "./care-dashboard";
 import { CareBooking } from "./care-booking";
+import { CareDetail } from "./care-detail";
 import { CustomerInsurance } from "./insurance";
 import { EmptyState } from "@/components/mek/shared/primitives";
 import { Bell as BellIcon } from "lucide-react";
@@ -70,6 +71,7 @@ export function CustomerApp() {
       case "vehicles": return <CustomerVehicles customer={user} />;
       case "care": return <CareDashboard customer={user} />;
       case "care-packages": return <CareBooking customer={user} />;
+      case "care-detail": return <CareDetail />;
       case "fleet-dashboard": return <CustomerFleetDashboard customer={user} />;
       case "maintenance": return <CustomerMaintenance customer={user} />;
       case "request-type": return <RequestType customer={user} />;
