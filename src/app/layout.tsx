@@ -1,25 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { Vazirmatn } from "next/font/google";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/mek/theme-provider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const display = Space_Grotesk({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const vazirmatn = Vazirmatn({
+  subsets: ["arabic", "latin"],
+  display: "swap",
+  variable: "--font-vazirmatn",
 });
 
 export const metadata: Metadata = {
@@ -32,9 +22,7 @@ export const metadata: Metadata = {
   keywords: [
     "مکانیک سیار", "تعمیرکار سیار", "تعمیر ماشین در محل", "تعمیر خودرو در محل",
     "مکانیک سنگین", "تعمیر ماشین‌آلات سنگین", "تعمیر بیل", "تعمیر لودر",
-    "تعمیر کامیون", "تعمیر اتوبوس", "عیب‌یابی خودرو", "تعمیر اضطراری جاده‌ای",
-    "نگهداری ناوگان", "سرویس دوره‌ای خودرو", "مکانیک ایران", "تعمیر در محل تهران",
-    "MEKANIX", "mobile mechanic", "on-site repair", "heavy machinery repair",
+    "MEKANIX", "mobile mechanic", "on-site repair",
   ],
   manifest: "/manifest.json",
   robots: { index: true, follow: true },
@@ -56,10 +44,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${display.variable} antialiased bg-background text-foreground`}
-      >
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <body className={`${vazirmatn.variable} font-sans antialiased bg-background text-foreground`}>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           {children}
           <Toaster />
           <SonnerToaster position="top-right" richColors closeButton />

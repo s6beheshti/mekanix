@@ -1146,3 +1146,59 @@ Stage Summary:
 - ✅ Iranian passenger brands removed
 - ✅ Tax rate configurable via admin
 - ✅ Guest write restriction
+
+---
+Task ID: 45
+Agent: orchestrator (main)
+Task: Complete remaining audit items — chat service, $transaction, font, theme
+
+Work Log:
+- 1. CHAT SERVICE (mini-services/chat-service/index.ts):
+  * JWT authentication on WebSocket connection (io.use middleware)
+  * Job participation verification before joining room
+  * fromUserId server-authoritative (socket.userId, NOT from client)
+  * Rate limiting: 20 messages/min per user
+  * Connection limit: 3 per user
+  * CORS: production-only origins
+  * Message size limit: 5000 chars
+  * Running on port 3003 ✅
+
+- 2. JOB COMPLETION $transaction:
+  * Wrapped post-completion operations in db.$transaction():
+    - Wallet transaction hold countdown
+    - Completion notification
+    - System chat message
+  * All atomic — rollback on failure
+
+- 3. INVOICE STATE TRANSITIONS (already implemented):
+  * DRAFT → SENT (technician/admin only)
+  * PAID only via /api/payments (not direct PATCH)
+  * Customer cannot set PAID
+  * Mass assignment protection on amounts
+
+- 4. FONT: Changed from Geist/Space Grotesk to Vazirmatn
+  * Persian-optimized font
+  * Supports Arabic + Latin subsets
+  * variable: --font-vazirmatn
+  * Applied to body class
+
+- 5. THEME: Changed defaultTheme from "dark" to "light"
+  * enableSystem={false} — fixed theme, no system detection
+  * Matches MEKANIX brand direction (white + graphite + orange)
+
+- VERIFICATION:
+  * Main app: HTTP 200 ✅
+  * Chat service: running on 3003 ✅
+  * Telegram bot: running on 3004 ✅
+  * Backup scheduler: running on 3005 ✅
+  * Health check: healthy ✅
+  * Vazirmatn font: loaded ✅
+  * Theme: light ✅
+
+Stage Summary:
+- ✅ Chat service secured (JWT + participation + server-authoritative fromUserId)
+- ✅ Job completion atomic transaction
+- ✅ Invoice state machine enforced
+- ✅ Vazirmatn font for Persian
+- ✅ Default theme light
+- ✅ All 4 services running

@@ -155,18 +155,44 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Fetch updated job with relations
+  const cust = job.request.customer.user;
+  const tech = job.technician.user;
   const job = await db.job.findUnique({ where: { id }, include });
 
-  // When job is COMPLETED, start the 12-hour hold countdown on all PENDING
-  // prepay transactions for this job. Funds become AVAILABLE after holdUntil.
+  // When job is COMPLETED, wrap all post-completion operations in a transaction
+  // so they're atomic — if any step fails, everything rolls back.
   if (status === "COMPLETED") {
-    const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
-    await db.walletTransaction.updateMany({
-      where: { jobId: job.id, status: "PENDING" },
-      data: { holdUntil },
-    });
-  }
+    await db.$transaction(async (tx) => {
+      // Start 12-hour hold countdown on PENDING prepay transactions
+      const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
+      await tx.walletTransaction.updateMany({
+        where: { jobId: job.id, status: "PENDING" },
+        data: { holdUntil },
+      });
 
+      // Create completion notification
+      await tx.notification.create({
+        data: {
+          userId: cust.id,
+          type: "job_completed",
+          title: "کار تکمیل شد",
+          body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
+          category: "job",
+          link: "customer/invoice",
+        },
+      });
+
+      // Create system message in chat
+      await tx.message.create({
+        data: {
+          jobId: job.id,
+          fromUserId: tech.id,
+          kind: "system",
+          body: `کار تکمیل شد — ${job.code}`,
+        },
+      });
+    });
+  } else {
   // Side-effects: notifications + system messages
   const cust = job.request.customer.user;
   const tech = job.technician.user;
