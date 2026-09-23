@@ -26,23 +26,21 @@ type CareData = {
 export function CareDashboard({ customer }: { customer: DemoUser }) {
   const { go, params } = useApp();
   const { t, isFa, money } = useT();
-  const [data, setData] = useState<CareData | null>(null);
-  const [loading, setLoading] = useState(true);
-
   const vehicleId = params.vehicleId;
+  const [data, setData] = useState<CareData | null>(null);
+  const [loading, setLoading] = useState(!!vehicleId);
 
   useEffect(() => {
-    if (!vehicleId) {
-      setLoading(false);
-      return;
-    }
+    if (!vehicleId) return;
+    let cancelled = false;
     fetch(`/api/care/vehicles/${vehicleId}/maintenance`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("mekanix-token")}` },
     })
       .then((r) => r.json())
-      .then((d) => { if (d && !d.error) setData(d); })
+      .then((d) => { if (!cancelled && d && !d.error) setData(d); })
       .catch(() => toast.error("خطا در بارگذاری داده"))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [vehicleId]);
 
   if (loading) {

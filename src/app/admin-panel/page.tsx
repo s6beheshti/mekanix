@@ -7,8 +7,10 @@ export default function AdminPanelPage() {
 
   useEffect(() => {
     const t = localStorage.getItem("mekanix_admin_token");
-    setToken(t);
-    setLoading(false);
+    Promise.resolve().then(() => {
+      setToken(t);
+      setLoading(false);
+    });
   }, []);
 
   if (loading) {
@@ -82,9 +84,22 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any | null>(null);
 
-  useEffect(() => { loadSlides(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const token = localStorage.getItem("mekanix_admin_token");
+        const res = await fetch("/api/admin-panel/onboarding", { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (!cancelled) setSlides(data || []);
+      } catch {}
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  async function loadSlides() {
+  const loadSlides = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem("mekanix_admin_token");
@@ -93,7 +108,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       setSlides(data || []);
     } catch {}
     setLoading(false);
-  }
+  };
 
   async function handleDelete(id: string) {
     if (!confirm("حذف شود؟")) return;

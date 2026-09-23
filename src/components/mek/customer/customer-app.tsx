@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus, Crown, Headset,
-  Truck, CalendarClock, Gift, Shield,
+  Truck, CalendarClock, Gift, Shield, Heart,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/mek/app-shell";
 import { useApp } from "@/lib/store";

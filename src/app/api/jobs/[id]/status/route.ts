@@ -155,9 +155,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Fetch updated job with relations
+  const job = await db.job.findUnique({ where: { id }, include });
+  if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
   const cust = job.request.customer.user;
   const tech = job.technician.user;
-  const job = await db.job.findUnique({ where: { id }, include });
 
   // When job is COMPLETED, wrap all post-completion operations in a transaction
   // so they're atomic — if any step fails, everything rolls back.
@@ -193,10 +194,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       });
     });
   } else {
-  // Side-effects: notifications + system messages
-  const cust = job.request.customer.user;
-  const tech = job.technician.user;
-  const notifMap: Record<string, { type: string; title: string; body: string; category: string; link: string }> = {
+    // Side-effects: notifications + system messages
+    const notifMap: Record<string, { type: string; title: string; body: string; category: string; link: string }> = {
     ACCEPTED: {
       type: "request_accepted",
       title: "Technician accepted your request",
@@ -301,6 +300,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     });
     const fresh = await db.job.findUnique({ where: { id }, include });
     return NextResponse.json(fresh);
+  }
   }
 
   return NextResponse.json(job);
