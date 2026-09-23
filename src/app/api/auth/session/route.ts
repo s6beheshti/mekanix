@@ -8,56 +8,71 @@ const TECHNICIAN_INCLUDE = {
   serviceAreas: true,
 } as const;
 
-// Resolve a user by JWT token (authenticated) or userId (admin fallback)
+// Safe user select — NEVER expose password
+const SAFE_USER_SELECT = {
+  id: true,
+  email: true,
+  phone: true,
+  phoneVerified: true,
+  name: true,
+  avatar: true,
+  role: true,
+  status: true,
+  country: true,
+  currency: true,
+  language: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+// Resolve user session — JWT ONLY, no userId fallback
 export async function POST(req: Request) {
-  // Try JWT auth first
   const session = await getSessionFromRequest(req);
-  if (session) {
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
-    });
-    if (!user) return NextResponse.json({ error: "No session" }, { status: 404 });
-    
-    // Ensure customer record exists
-    if (!user.customer) {
-      try {
-        await db.customer.create({ data: { userId: user.id } });
-      } catch {}
-    }
-    
-    return NextResponse.json({ user });
+  if (!session) {
+    return NextResponse.json({ error: "احراز هویت نشده" }, { status: 401 });
   }
 
-  // Fallback: accept userId in body (for backwards compatibility with old clients)
-  const body = await req.json().catch(() => ({}));
-  const parsed = body.userId ? { userId: body.userId } : body.phone ? { phone: body.phone } : null;
-  if (!parsed?.userId) {
-    return NextResponse.json({ error: "No session" }, { status: 401 });
+  const user = await db.user.findUnique({
+    where: { id: session.userId },
+    select: {
+      ...SAFE_USER_SELECT,
+      customer: true,
+      technician: { include: TECHNICIAN_INCLUDE },
+    },
+  });
+
+  if (!user) {
+    return NextResponse.json({ error: "کاربر یافت نشد" }, { status: 404 });
   }
 
-  let user = null;
-  if (parsed.userId) {
-    user = await db.user.findUnique({
-      where: { id: parsed.userId },
-      include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
-    });
-  }
-
-  if (!user) return NextResponse.json({ error: "No session" }, { status: 404 });
+  // Ensure customer record exists
   if (!user.customer) {
     try {
       await db.customer.create({ data: { userId: user.id } });
-      user = await db.user.findUnique({
-        where: { id: user.id },
-        include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
-      });
-    } catch {
-      user = await db.user.findUnique({
-        where: { id: user.id },
-        include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
-      });
-    }
+    } catch {}
+  }
+
+  return NextResponse.json({ user });
+}
+
+// GET also requires JWT
+export async function GET(req: Request) {
+  const session = await getSessionFromRequest(req);
+  if (!session) {
+    return NextResponse.json({ error: "احراز هویت نشده" }, { status: 401 });
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: session.userId },
+    select: {
+      ...SAFE_USER_SELECT,
+      customer: true,
+      technician: { include: TECHNICIAN_INCLUDE },
+    },
+  });
+
+  if (!user) {
+    return NextResponse.json({ error: "کاربر یافت نشد" }, { status: 404 });
   }
 
   return NextResponse.json({ user });

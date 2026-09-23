@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
 
-// Get the current active VIP subscription for a user
+// Get the current active VIP subscription — userId derived from JWT session
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const userId = url.searchParams.get("userId");
-  if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  const userId = session.userId; // Server-authoritative — NOT from query param
 
   // Expire any active subscriptions past their expiry
   const now = new Date();

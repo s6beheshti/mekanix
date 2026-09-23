@@ -38,6 +38,13 @@ export function Onboarding() {
       .catch(() => setSlides([]));
   }, []);
 
+  // If no slides configured, skip onboarding — in useEffect, not render
+  useEffect(() => {
+    if (slides && slides.length === 0) {
+      setOnboardingSeen(true);
+    }
+  }, [slides, setOnboardingSeen]);
+
   if (slides === null) {
     return (
       <div className="grid min-h-screen place-items-center bg-black">
@@ -45,9 +52,13 @@ export function Onboarding() {
       </div>
     );
   }
+
   if (slides.length === 0) {
-    setOnboardingSeen(true);
-    return null;
+    return (
+      <div className="grid min-h-screen place-items-center bg-black">
+        <Loader2 className="size-8 animate-spin text-amber" />
+      </div>
+    );
   }
 
   const isLast = step === slides.length - 1;

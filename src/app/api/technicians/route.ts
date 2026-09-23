@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireRole } from "@/lib/auth";
 
 const techInclude = {
   specialties: true,
@@ -7,8 +9,7 @@ const techInclude = {
   serviceAreas: true,
 } as const;
 
-// Public-facing technician fields — never expose sensitive data (password, etc.).
-// The User model includes `password` (demo only) so we MUST select explicitly.
+// Public-facing technician fields — never expose password or sensitive PII
 const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
@@ -67,15 +68,27 @@ export async function GET(req: Request) {
   return NextResponse.json(techs);
 }
 
-// POST: create technician profile — ADMIN ONLY (not used by public).
-// We leave this as a simple pass-through; in production this should be admin-protected.
+// POST: create technician profile — ADMIN ONLY
 export async function POST(req: Request) {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+  const forbidden = requireRole(session, "ADMIN");
+  if (forbidden) return forbidden;
+
   const body = await req.json();
   const { userId, specialties = [], certifications = [], serviceAreas = [], ...rest } = body;
+
+  // Strip forbidden fields
+  const ALLOWED_TECH_FIELDS = ["bio", "experienceYears", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "availableNow", "responseMins", "lat", "lng", "heading"];
+  const safeData: Record<string, any> = {};
+  for (const k of ALLOWED_TECH_FIELDS) {
+    if (k in rest) safeData[k] = rest[k];
+  }
+
   const tech = await db.technician.create({
     data: {
       userId,
-      ...rest,
+      ...safeData,
       specialties: { create: specialties },
       certifications: { create: certifications },
       serviceAreas: { create: serviceAreas },

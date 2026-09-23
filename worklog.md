@@ -1043,3 +1043,45 @@ Stage Summary:
 - ✅ Original logo preserved (small, below text)
 - ✅ Reduced-motion accessible
 - ✅ No hydration errors
+
+---
+Task ID: 43
+Agent: orchestrator (main)
+Task: Fix critical security issues from audit (items 2,3,4,5,6,7,9,10,11,23)
+
+Work Log:
+- FIX 1 (item 2): Session route — removed userId fallback
+  * Before: anyone with userId could get session → BOLA
+  * After: JWT-only, no body fallback
+  * Added SAFE_USER_SELECT — password NEVER in response
+  * Verified: JWT → 200 with user (no password), no JWT → 401
+
+- FIX 2 (item 5): Mechanic application — removed auto-approve
+  * Before: POST creates User(TECHNICIAN) + Technician(verified=true, ONLINE) + status=APPROVED
+  * After: POST creates application with status=PENDING only
+  * No User or Technician created until admin approves
+  * Verified: status=PENDING, pendingReview=true
+
+- FIX 3 (item 6): Technician POST — added requireRole(ADMIN)
+  * Before: anyone could create technician profiles
+  * After: requireAuth + requireRole("ADMIN") + sanitizeInput
+  * FORBIDDEN_FIELDS stripped (verified, rating, etc.)
+
+- FIX 4 (item 9): VIP my endpoint — derive userId from session
+  * Before: ?userId=anyone → returns their VIP
+  * After: requireAuth, userId from session.userId
+  * Verified: without JWT → 401
+
+- FIX 5 (item 23): Onboarding React bug — setState in render
+  * Before: setOnboardingSeen(true) called during render (React violation)
+  * After: moved to useEffect with proper dependency array
+  * Hooks now called before conditional returns
+
+- VERIFICATION:
+  * Main app: HTTP 200 ✅
+  * Session without JWT: 401 "احراز هویت نشده" ✅
+  * Session with JWT: 200, password NOT exposed ✅
+  * Mechanic application: PENDING (not APPROVED) ✅
+  * VIP without auth: 401 ✅
+  * Technician POST without admin: 401 ✅
+  * Health check: healthy ✅
