@@ -1202,3 +1202,59 @@ Stage Summary:
 - ✅ Vazirmatn font for Persian
 - ✅ Default theme light
 - ✅ All 4 services running
+
+---
+Task ID: 46
+Agent: orchestrator (main)
+Task: Add MEKANIX CARE module — data model + API routes (no changes to existing structure)
+
+Work Log:
+- ADDED 18 new Prisma models for MEKANIX CARE:
+  * VehicleCareProfile — extended vehicle info (trim, engine, transmission, mileage, healthScore)
+  * MaintenanceRule — versioned service rules per brand/model
+  * MaintenanceScheduleItem — calculated next service per vehicle
+  * ServicePackage — Basic, Standard, MEKANIX CHECK
+  * ServicePackageItem — items within a package
+  * ServiceBooking — main CARE booking entity with 14 statuses
+  * ServiceTimelineEvent — audit trail per booking
+  * Inspection — technician checklist results + measurements + images
+  * Finding — issues discovered during inspection (5 severity levels)
+  * CustomerApproval — extra cost approval flow (PROPOSED → APPROVED/REJECTED)
+  * PartUsage — actual parts used during service (OEM/Aftermarket/Alternative)
+  * PricingSnapshot — frozen pricing at booking time
+  * VehicleHealthReport — health score per category + evidence
+  * TechnicianCapability — what services a technician can perform
+  * DispatchCandidate — ranked technicians for a booking
+  * CareSubscription — future subscription plan
+  * CareReminder — date/mileage based reminders
+
+- ADDED Vehicle model relations: careProfile, careScheduleItems, healthReports, careReminders
+- Schema pushed to DB successfully
+
+- CREATED 7 API routes:
+  1. GET /api/care/vehicles/[id]/maintenance — next service + recommendations + schedule + health + history + reminders
+  2. GET /api/care/vehicles/[id]/health — health reports history
+  3. GET /api/care/packages — list available service packages
+  4. POST /api/care/bookings — create booking with pricing snapshot ($transaction)
+  5. GET /api/care/bookings — list user's bookings
+  6. GET /api/care/bookings/[id] — booking details with all relations
+  7. POST /api/care/bookings/[id]/approve-extra — customer approves extra cost
+  8. POST /api/care/bookings/[id]/reject-extra — customer rejects extra cost
+
+- SECURITY: All routes use requireAuth + vehicle ownership checks (BOLA protection)
+- PRICING: Booking creates PricingSnapshot in $transaction (atomic)
+- TIMELINE: Every action creates a ServiceTimelineEvent
+
+- VERIFIED:
+  * Main app: HTTP 200 ✅
+  * Care packages (public): HTTP 200 ✅
+  * Care bookings (no auth): HTTP 401 ✅ (protected)
+
+Stage Summary:
+- ✅ 18 new models added (no existing models modified)
+- ✅ 7 API routes created with auth + BOLA
+- ✅ Schema pushed to DB
+- ✅ Pricing snapshot system implemented
+- ✅ Customer approval flow (approve/reject extra costs)
+- ✅ Service timeline events
+- Next: UI components for CARE dashboard, booking flow, health report

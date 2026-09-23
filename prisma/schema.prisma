@@ -174,6 +174,10 @@ model Vehicle {
   serviceRequests      ServiceRequest[]
   maintenanceSchedules MaintenanceSchedule[]
   insurancePolicies    InsurancePolicy[]
+  careProfile           VehicleCareProfile?
+  careScheduleItems     MaintenanceScheduleItem[]
+  healthReports         VehicleHealthReport[]
+  careReminders         CareReminder[]
 }
 
 enum MachineType {
@@ -940,4 +944,341 @@ model WalletLedger {
   createdAt       DateTime @default(now())
 
   @@index([walletId, createdAt])
+}
+
+// ───────────────────────── MEKANIX CARE ─────────────────────────
+// Vehicle maintenance, health, and service booking system
+// Added as a new module — does NOT modify existing structure
+
+// Extend Vehicle with CARE fields
+model VehicleCareProfile {
+  id                String   @id @default(cuid())
+  vehicleId         String   @unique
+  vehicle           Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  trim              String?
+  engine            String?
+  transmission      String?
+  engineVolume      String?
+  currentMileage    Int      @default(0)
+  lastServiceDate   DateTime?
+  lastServiceMileage Int?
+  healthScore       Float    @default(100)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// Maintenance rules — versioned, per brand/model
+model MaintenanceRule {
+  id              String   @id @default(cuid())
+  brand           String
+  model           String?
+  yearFrom        Int?
+  yearTo          Int?
+  engine          String?
+  mileageInterval Int?
+  timeInterval    Int?     // days
+  category        String   // oil | filter | brake | battery | tire | cooling | belt | inspection
+  priority        String   @default("REQUIRED") // REQUIRED | RECOMMENDED | CONDITION_BASED | URGENT | MONITOR
+  version         String   @default("1.0")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  schedules       MaintenanceScheduleItem[]
+
+  @@index([brand, model, active])
+}
+
+// Maintenance schedule per vehicle — calculated from rules
+model MaintenanceScheduleItem {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  ruleId          String?
+  rule            MaintenanceRule? @relation(fields: [ruleId], references: [id])
+  category        String
+  title           String
+  dueMileage      Int?
+  dueDate         DateTime?
+  status          String   @default("UPCOMING") // UPCOMING | DUE | OVERDUE | COMPLETED | CANCELLED
+  priority        String   @default("REQUIRED")
+  calculatedAt    DateTime @default(now())
+  completedAt     DateTime?
+
+  @@index([vehicleId, status])
+}
+
+// Service packages — Basic, Standard, MEKANIX CHECK
+model ServicePackage {
+  id              String   @id @default(cuid())
+  name            String
+  nameFa          String
+  description     String?
+  category        String   @default("periodic") // periodic | repair | emergency
+  basePrice       Float    @default(0)
+  active          Boolean  @default(true)
+  version         String   @default("1.0")
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items           ServicePackageItem[]
+  bookings        ServiceBooking[]
+}
+
+// Items within a service package
+model ServicePackageItem {
+  id              String   @id @default(cuid())
+  packageId       String
+  package         ServicePackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemType        String   // service | part | inspection | check
+  itemName        String
+  itemNameFa      String?
+  required        Boolean  @default(true)
+  quantity        Int      @default(1)
+  estimatedDuration Int?   // minutes
+
+  @@index([packageId])
+}
+
+// Service booking — the main entity for CARE service orders
+model ServiceBooking {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  userId          String
+  vehicleId       String
+  packageId       String?
+  package         ServicePackage? @relation(fields: [packageId], references: [id])
+  serviceType     String   @default("periodic") // periodic | repair | emergency
+  location        String
+  lat             Float?
+  lng             Float?
+  date            DateTime?
+  timeWindow      String?  // "09:00-11:00"
+  status          String   @default("REQUESTED") // REQUESTED | SCHEDULED | MATCHING | ASSIGNED | EN_ROUTE | ARRIVED | INSPECTING | WAITING_CUSTOMER_APPROVAL | APPROVED | IN_SERVICE | FINAL_CHECK | COMPLETED | CANCELLED | FAILED
+  technicianId    String?
+  pricingSnapshotId String?
+  warrantyId      String?
+  currentMileage  Int?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  timeline        ServiceTimelineEvent[]
+  findings        Finding[]
+  approvals       CustomerApproval[]
+  partUsages      PartUsage[]
+  healthReport    VehicleHealthReport?
+  inspection      Inspection?
+
+  @@index([userId, status])
+  @@index([vehicleId])
+  @@index([technicianId, status])
+}
+
+// Service timeline events
+model ServiceTimelineEvent {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  eventType       String   // booking_created | payment_confirmed | matching_started | technician_assigned | en_route | arrived | inspection_started | extra_proposal | customer_approved | service_completed | final_check | invoice_generated | warranty_activated
+  timestamp       DateTime @default(now())
+  actor           String?  // userId or "system"
+  metadata        String?  // JSON
+
+  @@index([bookingId, timestamp])
+}
+
+// Inspection — technician checklist results
+model Inspection {
+  id              String   @id @default(cuid())
+  bookingId       String  @unique
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  checklistVersion String  @default("1.0")
+  results         String   // JSON: { category: { item: status, ... }, ... }
+  measurements    String?  // JSON: { batteryVoltage: "12.3V", brakePad: "3mm", ... }
+  images          String?  // JSON array of URLs
+  technicianNotes String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Findings — issues discovered during inspection
+model Finding {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  category        String   // engine | oil | brakes | battery | tires | filters | fluids | cooling | belts | leaks | diagnostics
+  title           String
+  description     String?
+  severity        String   @default("INFO") // INFO | LOW | MEDIUM | HIGH | CRITICAL
+  evidence        String?  // JSON: { images: [], measurements: {}, tests: [] }
+  recommendedAction String?
+  status          String   @default("OPEN") // OPEN | APPROVED | REJECTED | RESOLVED
+  createdAt       DateTime @default(now())
+
+  approvals       CustomerApproval[]
+
+  @@index([bookingId, severity])
+}
+
+// Customer approval — for extra costs, part changes, etc.
+model CustomerApproval {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  findingId       String?
+  finding         Finding? @relation(fields: [findingId], references: [id])
+  proposedItem    String
+  description     String?
+  partName        String?
+  partBrand        String?
+  partNumber      String?
+  partType        String?  // OEM | AFTERMARKET | ALTERNATIVE
+  quantity        Int      @default(1)
+  partPrice       Float    @default(0)
+  laborPrice      Float    @default(0)
+  totalPrice      Float    @default(0)
+  imageUrl        String?
+  technicianNote  String?
+  status          String   @default("PROPOSED") // PROPOSED | CUSTOMER_APPROVED | CUSTOMER_REJECTED
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([bookingId, status])
+}
+
+// Part usage — actual parts used during service
+model PartUsage {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  name            String
+  brand           String?
+  partNumber      String?
+  partType        String   @default("OEM") // OEM | AFTERMARKET | ALTERNATIVE
+  category        String?
+  quantity        Int      @default(1)
+  unitPrice       Float
+  totalPrice      Float
+  supplier        String?
+  technicianId    String?
+  installedAt     DateTime @default(now())
+  evidence        String?  // JSON: { images: [], notes: "" }
+
+  @@index([bookingId])
+}
+
+// Pricing snapshot — frozen at booking time
+model PricingSnapshot {
+  id              String   @id @default(cuid())
+  bookingId       String?  @unique
+  servicePrice    Float    @default(0)
+  visitPrice      Float    @default(0)
+  laborPrice      Float    @default(0)
+  partsPrice      Float    @default(0)
+  discount        Float    @default(0)
+  taxRate         Float    @default(0.09)
+  taxTotal        Float    @default(0)
+  total           Float    @default(0)
+  currency        String   @default("USD")
+  pricingVersion  String   @default("1.0")
+  createdAt       DateTime @default(now())
+}
+
+// Vehicle health report — generated after service
+model VehicleHealthReport {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  bookingId       String?  @unique
+  booking         ServiceBooking? @relation(fields: [bookingId], references: [id])
+  overallScore    Float    @default(0)
+  engineScore     Float?
+  oilScore        Float?
+  brakeScore      Float?
+  batteryScore    Float?
+  tireScore       Float?
+  filterScore     Float?
+  fluidScore      Float?
+  coolingScore    Float?
+  beltScore       Float?
+  leakScore       Float?
+  diagnosticScore Float?
+  categories      String?  // JSON: detailed breakdown
+  evidence        String?  // JSON: photos, measurements
+  technicianId    String?
+  createdAt       DateTime @default(now())
+
+  @@index([vehicleId, createdAt])
+}
+
+// Technician capability — what services they can perform
+model TechnicianCapability {
+  id              String   @id @default(cuid())
+  technicianId    String
+  serviceType     String   // periodic | repair | emergency
+  vehicleType     String?  // passenger | heavy | all
+  brand           String?
+  skillLevel      String   @default("BASIC") // BASIC | INTERMEDIATE | ADVANCED | EXPERT
+  certification   String?
+  tools           String?  // JSON array
+  region          String?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  @@index([technicianId, active])
+}
+
+// Dispatch candidate — ranked technicians for a booking
+model DispatchCandidate {
+  id              String   @id @default(cuid())
+  bookingId       String
+  technicianId    String
+  distance        Float?
+  eta             Int?     // minutes
+  score           Float    @default(0)
+  capabilityScore Float?
+  availabilityScore Float?
+  qualityScore    Float?
+  acceptanceScore Float?
+  finalRank       Int?
+  createdAt       DateTime @default(now())
+
+  @@index([bookingId, finalRank])
+}
+
+// Care subscription — future VIP-like tier for CARE
+model CareSubscription {
+  id              String   @id @default(cuid())
+  userId          String
+  vehicleId       String?
+  plan            String   @default("BASIC") // BASIC | PLUS | PREMIUM
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  benefits        String?  // JSON
+  status          String   @default("ACTIVE")
+  paymentStatus   String   @default("PENDING")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+// Reminder — date/mileage based
+model CareReminder {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type            String   // service | insurance | inspection | custom
+  title           String
+  dueDate         DateTime?
+  dueMileage      Int?
+  notificationSchedule String? // JSON: ["30d", "15d", "7d", "1d", "due", "overdue"]
+  status          String   @default("ACTIVE") // ACTIVE | SENT | COMPLETED | CANCELLED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([vehicleId, status])
 }
