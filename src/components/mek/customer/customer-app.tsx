@@ -22,6 +22,8 @@ import { CustomerSupport } from "./support";
 import { CustomerFleetDashboard } from "./fleet-dashboard";
 import { CustomerMaintenance } from "./maintenance";
 import { CustomerReferral } from "./referral";
+import { CareDashboard } from "./care-dashboard";
+import { CareBooking } from "./care-booking";
 import { CustomerInsurance } from "./insurance";
 import { EmptyState } from "@/components/mek/shared/primitives";
 import { Bell as BellIcon } from "lucide-react";
@@ -50,6 +52,7 @@ export function CustomerApp() {
   const nav: NavItem[] = [
     { view: "home", label: t("nav.home"), icon: Home },
     { view: "vehicles", label: t("nav.vehicles"), icon: Car },
+    { view: "care", label: "MEKANIX CARE", icon: Heart },
     { view: "fleet-dashboard", label: t("fleet.title"), icon: Truck },
     { view: "maintenance", label: t("nav.maintenance"), icon: CalendarClock },
     { view: "service-history", label: t("nav.serviceHistory"), icon: History },
@@ -65,6 +68,8 @@ export function CustomerApp() {
     switch (view) {
       case "home": return <CustomerHome customer={user} />;
       case "vehicles": return <CustomerVehicles customer={user} />;
+      case "care": return <CareDashboard customer={user} />;
+      case "care-packages": return <CareBooking customer={user} />;
       case "fleet-dashboard": return <CustomerFleetDashboard customer={user} />;
       case "maintenance": return <CustomerMaintenance customer={user} />;
       case "request-type": return <RequestType customer={user} />;

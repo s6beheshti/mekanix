@@ -1258,3 +1258,56 @@ Stage Summary:
 - ✅ Customer approval flow (approve/reject extra costs)
 - ✅ Service timeline events
 - Next: UI components for CARE dashboard, booking flow, health report
+
+---
+Task ID: 47
+Agent: orchestrator (main)
+Task: Build MEKANIX CARE UI — dashboard + booking flow
+
+Work Log:
+- CREATED CareDashboard component (care-dashboard.tsx):
+  * Vehicle health score display (color-coded: green/amber/red)
+  * Next service alert with km remaining/overdue
+  * Quick actions: Book Service, Health Report, History, Warranty
+  * Service recommendations list (REQUIRED/RECOMMENDED/URGENT/CONDITION_BASED)
+  * Recent services list
+  * Reminders list
+  * All text bilingual (fa/en)
+  * Category labels (oil, filter, brake, battery, tire, cooling, belt, inspection)
+
+- CREATED CareBooking component (care-booking.tsx):
+  * 4-step booking flow: Package → Location → Schedule → Review
+  * Step indicator with progress tracking
+  * Package selection cards (Basic, Standard, MEKANIX CHECK)
+    - Shows name, description, price, items
+  * Location input + current mileage
+  * Date picker + time window selector (4 windows)
+  * Price review with breakdown:
+    - Service price
+    - Visit fee
+    - Labor (estimated)
+    - Parts (estimated)
+    - Tax (9%)
+    - Total
+  * Warranty notice (6-month MEKANIX guarantee)
+  * POST /api/care/bookings on confirm
+  * Creates PricingSnapshot via API
+
+- ADDED to customer-app.tsx:
+  * Nav item: "MEKANIX CARE" with Heart icon
+  * Views: "care" (dashboard) + "care-packages" (booking)
+  * Routes wired with go() navigation
+
+- VERIFIED:
+  * Main app: HTTP 200 ✅
+  * Care packages API: HTTP 200 ✅
+  * Care bookings API (auth): HTTP 401 ✅
+  * No compilation errors ✅
+
+Stage Summary:
+- ✅ CARE dashboard with health score, next service, recommendations
+- ✅ 4-step booking flow (package → location → schedule → review)
+- ✅ Price breakdown with snapshot
+- ✅ Nav item "MEKANIX CARE" in customer app
+- ✅ All bilingual (fa/en)
+- Next: Health report page, service history, technician mission UI
