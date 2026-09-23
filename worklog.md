@@ -1462,3 +1462,62 @@ Stage Summary:
 - ✅ UI shows assembler info + pill badges when selecting vehicle
 - ✅ All 12 customer-app sections verified working
 - ✅ Customer can pick any Iranian car company and see all related data
+
+---
+Task ID: 52
+Agent: orchestrator (main)
+Task: Fix Iranian car company names — Persian as primary, add missing companies (Farda Motor, etc.)
+
+Work Log:
+- USER FEEDBACK: Names weren't written correctly, especially Persian translations. List wasn't complete — missing Farda Motor, Kerman Khodro, Modiran Khodro.
+- ROOT CAUSE: In the previous version, `make` field used English (e.g. "Iran Khodro (IKCO)") as the primary display name, with Persian only in the secondary `assembler` field. The user saw English first, not Persian.
+
+- RESTRUCTURED src/lib/vehicle-db.ts:
+  * Added new `makeEn` field to VehicleMake interface (English name for Iranian companies; for search/sort)
+  * For ALL 28 Iranian passenger-car companies + 5 heavy-equipment companies:
+    - `make` is now the Persian name (primary display)
+    - `makeEn` is the English transliteration (secondary display + search)
+  * Updated all model names to Persian where appropriate (e.g. "پژو ۲۰۶", "سمند", "تارا", "شاهین", "کویک")
+  * Fixed Persian translation errors:
+    - "موراتب K2" → "مراتب K2" (typo)
+    - "سریع" → "کویک" (Saipa's Quik model)
+    - Descriptions clarified/expanded
+
+- ADDED 8 NEW IRANIAN COMPANIES (28 total, up from 20):
+  1. فردا موتور (Farda Motor) — Citroën & Peugeot importer (C3, C4, C5, C-Elysée, Berlingo, 2008, 208)
+  2. دنیای خودرو (Donya Khodro) — BMW/Audi/Hyundai importer
+  3. پالاز موتور (Palaz Motor) — Porsche/Lexus luxury importer
+  4. گسترش خودرو (Gostaresh Khodro) — Kia/Hyundai/BMW importer
+  5. نوین خودرو (Novin Khodro) — Toyota/Honda Japanese importer
+  6. آرمان خودرو (Arman Khodro) — Mercedes-Benz/Audi luxury importer
+  7. سپهر خودرو (Sepehr Khodro) — Haval/Great Wall Chinese importer
+  8. آسیا موتور (Asia Motor) — Kia/Hyundai Korean importer
+
+- UPDATED vehicles.tsx UI:
+  * Make dropdown: Persian name primary (bold), English name secondary (gray)
+  * Search now matches `make` (Persish) + `makeEn` (English) + `assembler` + `country`
+  * Info box shows Persian name bold + English in parentheses + founding year + Persian description
+  * Both `selectedMakeObj` and `selectedMakeInfo` now match by `make` OR `makeEn`
+
+- VERIFIED END-TO-END with agent-browser:
+  * Make dropdown now shows 28 Iranian companies with Persian names first:
+    ایران خودرو، سایپا، پارس خودرو، بهمن موتور، کرمان موتور، آریان خودرو، مدیران خودرو، دیبا موتور، کوروش موتور، آپکس موتور، فردا موتور، مراتب موتور، رخش خودرو دیزل، هپکو، ستاره ایران، دیاپارس، رای خودرو، ساحل موتور، بناگ نچین ساحل، زاگرس خودرو، مونتاژ خودرو تبریز، دنیای خودرو، پالاز موتور، گسترش خودرو، نوین خودرو، آرمان خودرو، سپهر خودرو، آسیا موتور
+  * Search "modiran" → finds "مدیران خودرو Modiran Khodro" ✓
+  * Search "مدیران" → finds "مدیران خودرو" ✓
+  * Search "farda" → finds "فردا موتور Farda Motor" ✓
+  * Search "فردا" → finds "فردا موتور" ✓
+  * Selected مدیران خودرو → info box shows: "مدیران خودرو (Modiran Khodro) · تأسیس ۲۰۰۳ · مونتاژ و واردکننده محصولات مازدا." ✓
+  * Selected فردا موتور → 7 Citroën/Peugeot models listed with metadata ✓
+  * Selected سیتروئن C5 → info box: "فردا موتور (Farda Motor) · تأسیس ۲۰۰۳ · واردکننده و مونتاژکننده سیتروئن و پژو در ایران." + pills 📅 2014-2018 · 🚗 سدان · 🔧 1.6L/2.0L turbo · ⛽ بنزینی ✓
+  * All customer sections (home, fleet, CARE) still render correctly ✓
+  * No console errors, no runtime errors
+  * Lint: 0 errors, 0 warnings ✓
+
+Stage Summary:
+- ✅ Persian names now PRIMARY for all 28 Iranian car companies (was English before)
+- ✅ English name added as secondary `makeEn` field (for search + display)
+- ✅ 8 NEW Iranian companies added: فردا موتور، دنیای خودرو، پالاز موتور، گسترش خودرو، نوین خودرو، آرمان خودرو، سپهر خودرو، آسیا موتور
+- ✅ Search works in both Persian and English
+- ✅ Info box shows Persian name (English) · founding year · Persian description
+- ✅ Model names translated to Persian where appropriate
+- ✅ Total: 28 Iranian passenger-car companies + 5 heavy-equipment = 33 Iranian companies

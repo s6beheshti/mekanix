@@ -86,13 +86,20 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
   const [modelQuery, setModelQuery] = useState("");
 
   const dbMakes = getMakesForMode(machineMode);
-  const filteredMakes = dbMakes.filter((m) => m.make.toLowerCase().includes(makeQuery.toLowerCase()) || m.country.includes(makeQuery));
-  const selectedMakeObj = dbMakes.find((m) => m.make === make);
+  const q = makeQuery.toLowerCase().trim();
+  const filteredMakes = dbMakes.filter((m) =>
+    !q
+    || m.make.toLowerCase().includes(q)
+    || (m.makeEn ?? "").toLowerCase().includes(q)
+    || (m.assembler ?? "").toLowerCase().includes(q)
+    || m.country.includes(makeQuery)
+  );
+  const selectedMakeObj = dbMakes.find((m) => m.make === make || (m.makeEn ?? "") === make);
   const availableModels = selectedMakeObj?.models ?? [];
   const filteredModels = availableModels.filter((m) => m.toLowerCase().includes(modelQuery.toLowerCase()));
   // Rich catalog metadata for selected model (years, segment, engine, fuel, notes)
   const selectedModelMeta = make && model ? getModelMeta(make, model) : undefined;
-  const selectedMakeInfo = dbMakes.find((m) => m.make === make);
+  const selectedMakeInfo = dbMakes.find((m) => m.make === make || (m.makeEn ?? "") === make);
 
   const reset = () => {
     setType(machineMode === "heavy" ? "TRUCK" : "CAR"); setMake(""); setModel(""); setYear(String(new Date().getFullYear())); setPlate(""); setLocation(""); setEngineHours(""); setNotes("");
@@ -184,9 +191,11 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
                         <button key={m.make} onClick={() => { setMake(m.make); setModel(""); setMakeOpen(false); setMakeQuery(""); }} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-accent">
                           <div className="min-w-0">
                             <div className="truncate font-medium">{m.make}</div>
-                            {m.assembler && (
+                            {m.makeEn ? (
+                              <div className="truncate text-[10px] text-muted-foreground">{m.makeEn}{m.founded ? ` · ${m.founded}` : ""}</div>
+                            ) : m.assembler ? (
                               <div className="truncate text-[10px] text-muted-foreground">{m.assembler}{m.founded ? ` · ${m.founded}` : ""}</div>
-                            )}
+                            ) : null}
                           </div>
                           <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{m.country}</span>
                         </button>
@@ -267,7 +276,10 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
           {selectedMakeInfo?.description && (
             <div className="rounded-lg border border-amber/20 bg-amber/5 p-3 text-xs text-muted-foreground" dir={isFa ? "rtl" : "ltr"}>
               <div className="mb-0.5 flex items-center gap-1.5 font-medium text-amber">
-                <span>{selectedMakeInfo.assembler || selectedMakeInfo.make}</span>
+                <span>{selectedMakeInfo.make}</span>
+                {selectedMakeInfo.makeEn && (
+                  <span className="text-[10px] font-normal text-muted-foreground">({selectedMakeInfo.makeEn})</span>
+                )}
                 {selectedMakeInfo.founded && (
                   <span className="text-[10px] font-normal text-muted-foreground">· تأسیس {selectedMakeInfo.founded}</span>
                 )}
