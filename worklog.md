@@ -1403,3 +1403,62 @@ Stage Summary:
 - ✅ All 4 lint errors fixed (parsing error + 3 setState-in-effect + 1 use-before-declare)
 - ✅ Customer app fully functional end-to-end (login → dashboard → MEKANIX CARE)
 - ✅ Clean lint: 0 errors, 0 warnings
+
+---
+Task ID: 51
+Agent: orchestrator (main)
+Task: Add ALL Iranian car companies (assemblers + importers) with all related data in passenger vehicles section
+
+Work Log:
+- AUDITED the existing src/lib/vehicle-db.ts and found only 3 Iranian brands listed (Arian Khodro, Pars Khodro, Kourosh Motor) — far from comprehensive.
+- REWROTE src/lib/vehicle-db.ts with a fully comprehensive Iranian vehicle catalog:
+  * Added 20 Iranian assembler/importer brands (vs 3 before):
+    1. Iran Khodro (IKCO) — 26 models with full catalog (years, segment, engine, fuel, notes)
+    2. Saipa — 20 models (Pride/Quik/Tiba/Shahin/Cerato/Cielo + concepts)
+    3. Pars Khodro — 13 models (Renault L90/Tondar, Sandero, Nissan Patrol/Maxima/Teana)
+    4. Bahman Motor — 11 models (Mazda 3/6/323, Mitsubishi Pajero/L200, Isuzu D-Max, Foton)
+    5. Kerman Motor (KMC) — 19 models (Hyundai Elantra/Accent/Tucson/i10/i20/i30, Chery Arrizo/Tiggo, JAC, FAW)
+    6. Arian Khodro — 4 models (Aria, Shahab Khodro pickup)
+    7. Modiran Khodro — 4 models (Mazda montage)
+    8. Diba Motor — 3 models (Diba M1/M2/T8)
+    9. Kourosh Motor (K1) — 2 EV models
+    10. Apex Motor — 2 EV models (Nara EV, Soren EV)
+    11. Morattab Motor — 1 (Morattab K2)
+    12. Rakhsh Khodro Diesel (RKD) — 2 pickups
+    13. Hepco — 2 commercial vehicles
+    14. Setareh Iran — 5 Dongfeng/JAC montage
+    15. Sazeh Gostar Sahand (Diapars) — 3 Dongfeng pickups
+    16. Ray Khodro — 5 MG imports
+    17. Sahand Motor — 5 Changan imports
+    18. Bonag Nechin Sahand — 3 pickups
+    19. Zagross Khodro — 2 Mercedes montage
+    20. Montaj Khodro-e-Tabriz (MTA) — 3 montage models
+  * Also expanded HEAVY_MAKES with Iran Khodro Diesel, Iran Khodro Bus, TECNOBUS, Hepco Industrial, Tabriz Tractor.
+  * Added `VehicleModel` interface with years, segment, engine, fuel, notes fields.
+  * Added `assembler`, `founded`, `description`, `catalog` fields to VehicleMake.
+  * Added SEGMENT_LABELS (fa/en) and FUEL_LABELS (fa/en) dictionaries.
+  * Added helpers: getIranianMakes(), getModelMeta().
+
+- UPDATED AddVehicleDialog UI (src/components/mek/customer/vehicles.tsx):
+  * Make dropdown now shows assembler name (fa) + founding year + country chip.
+  * Model dropdown shows years, segment label (fa), fuel label (fa) inline.
+  * After selecting make: amber-bordered info box shows assembler name + founding year + Persian description.
+  * After selecting model: pill badges show 📅 years · 🚗 segment · 🔧 engine · ⛽ fuel.
+  * Updated for both make and model dropdowns (with proper truncation/overflow).
+
+- VERIFIED END-TO-END with agent-browser:
+  * Logged in via OTP as customer.
+  * Opened add-vehicle dialog → make dropdown shows 20 Iranian brands at top (Iran Khodro, Saipa, Pars Khodro, Bahman Motor, Kerman Motor, Arian Khodro, Modiran Khodro, Diba Motor, Kourosh Motor, Apex Motor, Morattab Motor, RKD, Hepco, Setareh Iran, Diapars, Ray Khodro, Sahand Motor, Bonag, Zagross Khodro, MTA).
+  * Selected Iran Khodro (IKCO) → 26 models appear with rich metadata (Peugeot 206/405/Samand/Dena/Tara/KJ Cayenne/Haima/Dami etc).
+  * Selected Tara model → amber info box shows "ایران خودرو · تأسیس 1962 · بزرگ‌ترین خودروساز ایران..." + pill badges (📅 2021-present · 🚗 سدان · 🔧 1.6L turbo · ⛽ بنزینی).
+  * Saved vehicle → appears in fleet list. Toast confirmation.
+  * Tested Saipa brand → 20 models including CNG variants (Saipa Pride 131 CNG shows ⛽ دوگانه‌سوز CNG).
+  * Tested all customer nav sections: home, my fleet, MEKANIX CARE, fleet dashboard, maintenance, service history, VIP, insurance, referral, support, notifications, settings — ALL render correctly with no console/runtime errors.
+  * Lint passes: 0 errors, 0 warnings.
+
+Stage Summary:
+- ✅ 20 Iranian car companies added (assemblers + importers) with comprehensive model catalogs
+- ✅ Rich per-model metadata: years, segment, engine, fuel type, production notes
+- ✅ UI shows assembler info + pill badges when selecting vehicle
+- ✅ All 12 customer-app sections verified working
+- ✅ Customer can pick any Iranian car company and see all related data

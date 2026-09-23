@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { getMakesForMode } from "@/lib/vehicle-db";
+import { getMakesForMode, getModelMeta, SEGMENT_LABELS, FUEL_LABELS } from "@/lib/vehicle-db";
 
 export function CustomerVehicles({ customer }: { customer: DemoUser }) {
   const { go, machineMode } = useApp();
@@ -90,6 +90,9 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
   const selectedMakeObj = dbMakes.find((m) => m.make === make);
   const availableModels = selectedMakeObj?.models ?? [];
   const filteredModels = availableModels.filter((m) => m.toLowerCase().includes(modelQuery.toLowerCase()));
+  // Rich catalog metadata for selected model (years, segment, engine, fuel, notes)
+  const selectedModelMeta = make && model ? getModelMeta(make, model) : undefined;
+  const selectedMakeInfo = dbMakes.find((m) => m.make === make);
 
   const reset = () => {
     setType(machineMode === "heavy" ? "TRUCK" : "CAR"); setMake(""); setModel(""); setYear(String(new Date().getFullYear())); setPlate(""); setLocation(""); setEngineHours(""); setNotes("");
@@ -178,9 +181,14 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
                       </button>
                     ) : (
                       filteredMakes.map((m) => (
-                        <button key={m.make} onClick={() => { setMake(m.make); setModel(""); setMakeOpen(false); setMakeQuery(""); }} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-accent">
-                          <span className="font-medium">{m.make}</span>
-                          <span className="text-[10px] text-muted-foreground">{m.country}</span>
+                        <button key={m.make} onClick={() => { setMake(m.make); setModel(""); setMakeOpen(false); setMakeQuery(""); }} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-accent">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{m.make}</div>
+                            {m.assembler && (
+                              <div className="truncate text-[10px] text-muted-foreground">{m.assembler}{m.founded ? ` · ${m.founded}` : ""}</div>
+                            )}
+                          </div>
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{m.country}</span>
                         </button>
                       ))
                     )}
@@ -215,12 +223,24 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
                         «{modelQuery}» ({t("common.manual")})
                       </button>
                     ) : (
-                      filteredModels.map((m) => (
-                        <button key={m} onClick={() => { setModel(m); setModelOpen(false); setModelQuery(""); }} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-accent">
-                          {m}
-                          {model === m && <Check className="size-3 text-amber" />}
-                        </button>
-                      ))
+                      filteredModels.map((m) => {
+                        const meta = getModelMeta(make, m);
+                        return (
+                          <button key={m} onClick={() => { setModel(m); setModelOpen(false); setModelQuery(""); }} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-accent">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{m}</div>
+                              {meta && (
+                                <div className="truncate text-[10px] text-muted-foreground">
+                                  {meta.years}{meta.years && meta.segment ? " · " : ""}
+                                  {meta.segment ? SEGMENT_LABELS[meta.segment].fa : ""}
+                                  {meta.fuel ? ` · ${FUEL_LABELS[meta.fuel].fa}` : ""}
+                                </div>
+                              )}
+                            </div>
+                            {model === m && <Check className="size-3 shrink-0 text-amber" />}
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -244,6 +264,33 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
               <Input value={engineHours} onChange={(e) => setEngineHours(e.target.value)} type="number" placeholder={t("common.optional")} className="mt-1" />
             </div>
           </div>
+          {selectedMakeInfo?.description && (
+            <div className="rounded-lg border border-amber/20 bg-amber/5 p-3 text-xs text-muted-foreground" dir={isFa ? "rtl" : "ltr"}>
+              <div className="mb-0.5 flex items-center gap-1.5 font-medium text-amber">
+                <span>{selectedMakeInfo.assembler || selectedMakeInfo.make}</span>
+                {selectedMakeInfo.founded && (
+                  <span className="text-[10px] font-normal text-muted-foreground">· تأسیس {selectedMakeInfo.founded}</span>
+                )}
+              </div>
+              <p>{selectedMakeInfo.description}</p>
+            </div>
+          )}
+          {selectedModelMeta && (
+            <div className="flex flex-wrap gap-1.5">
+              {selectedModelMeta.years && (
+                <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">📅 {selectedModelMeta.years}</span>
+              )}
+              {selectedModelMeta.segment && (
+                <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">🚗 {SEGMENT_LABELS[selectedModelMeta.segment].fa}</span>
+              )}
+              {selectedModelMeta.engine && (
+                <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">🔧 {selectedModelMeta.engine}</span>
+              )}
+              {selectedModelMeta.fuel && (
+                <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">⛽ {FUEL_LABELS[selectedModelMeta.fuel].fa}</span>
+              )}
+            </div>
+          )}
           <div>
             <Label className="text-xs">{t("vehicles.add.notes")}</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("vehicles.add.notesPlaceholder")} rows={2} className="mt-1" />
