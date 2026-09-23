@@ -135,7 +135,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (extra.technicianNotes != null) data.technicianNotes = extra.technicianNotes;
   if (customerApproved !== undefined) data.customerApproved = customerApproved;
 
-  const job = await db.job.update({ where: { id }, data, include });
+  // Use optimistic concurrency — updateMany with status check prevents race conditions
+  // Two concurrent requests can't both change status from the same starting point
+  const updateData: any = { ...data };
+  if (status === "COMPLETED") {
+    updateData.completedAt = new Date();
+  }
+
+  const result = await db.job.updateMany({
+    where: { id, status: existing.status }, // Only update if status hasn't changed
+    data: updateData,
+  });
+
+  if (result.count === 0) {
+    return NextResponse.json(
+      { error: "وضعیت کار تغییر کرده — لطفاً دوباره تلاش کنید" },
+      { status: 409 }
+    );
+  }
+
+  // Fetch updated job with relations
+  const job = await db.job.findUnique({ where: { id }, include });
 
   // When job is COMPLETED, start the 12-hour hold countdown on all PENDING
   // prepay transactions for this job. Funds become AVAILABLE after holdUntil.

@@ -58,14 +58,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         reviewCount: 0,
         completedJobs: 0,
         responseMins: 15,
-        lat: 37.7749,
-        lng: -122.4194,
+        lat: 35.6892,
+        lng: 51.3890,
         specialties: { create: specialties.map((cat: string) => ({ category: cat, label: cat.replace("-", " ") })) },
         certifications: {
           create: certs.map((c: any) => ({ name: c.name || c, issuer: c.issuer || "Self-reported", year: c.year || new Date().getFullYear(), verified: false })),
         },
         serviceAreas: {
-          create: app.city ? [{ name: app.city, lat: 37.7749, lng: -122.4194, radiusKm: 25 }] : [{ name: "San Francisco", lat: 37.7749, lng: -122.4194, radiusKm: 25 }],
+          create: app.city ? [{ name: app.city, lat: 35.6892, lng: 51.3890, radiusKm: 25 }] : [{ name: "Tehran", lat: 35.6892, lng: 51.3890, radiusKm: 25 }],
         },
       },
       include: { user: true, specialties: true },

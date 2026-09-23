@@ -11,12 +11,6 @@ export interface VehicleMake {
 // ─── Passenger Vehicles (خودروی سواری) ───
 export const PASSENGER_MAKES: VehicleMake[] = [
   // Iranian manufacturers / assemblers
-  { make: "Iran Khodro", country: "ایران", models: ["Peugeot 206", "Peugeot 207i", "Peugeot Pars", "Peugeot 405", "Peugeot 2008", "Dena", "Dena Plus", "Rana", "Saba", "Samand", "Samand LX", "Samand Soren", "Arisin", "Haima 7", "Haima 8", "Haima S7"] },
-  { make: "Saipa", country: "ایران", models: ["Pride 131", "Pride 132", "Pride 141", "Saina", "Shahin", "Quick", "Quick R", "Tiba", "Tiba 2", "Cerato", "Carnival", "Sorento", "Sportage", "Cadenza", "Picanto"] },
-  { make: "Kerman Motor", country: "ایران", models: ["J3", "J5", "J7", "MVM 110", "MVM 315", "MVM 315h", "MVM 530", "MVM 550", "Tiggo 5", "Tiggo 7", "Tiggo 8", "Arrizo 6", "Arrizo 8"] },
-  { make: "Farda Motor", country: "ایران", models: ["T5", "T5x", "X3 Plus", "X5", "X5 Plus", "X7", "D21 Pro", "Jolion", "Jolion Pro", "Haval H6", "Haval Jolion"] },
-  { make: "Bahman Group", country: "ایران", models: ["Mazda 3", "Mazda 323", "Mazda 626", "Mazda B2000", "Isuzu NQR", "Isuzu NPR"] },
-  { make: "Mammut Khodro", country: "ایران", models: ["Proton Gen-2", "Proton Persona", "Proton Wira", "Proton Exora", "Chery Tiggo 5", "Chery Arrizo 5"] },
   { make: "Arian Khodro", country: "ایران", models: ["Aria", "Shahab Khodro"] },
   { make: "Pars Khodro", country: "ایران", models: ["Nissan Patrol", "Nissan Maxima", "Nissan Teana", "Renault L90 (Tondar 90)", "Tondar 90 Plus", "Tondar 90 Sedan"] },
 

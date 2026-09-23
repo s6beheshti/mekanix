@@ -103,8 +103,8 @@ function AddVehicleDialog({ open, onOpenChange, customerId, onCreated, machineMo
     }
     setSaving(true);
     try {
-      const lat = 37.7749 + (Math.random() - 0.5) * 0.05;
-      const lng = -122.4194 + (Math.random() - 0.5) * 0.05;
+      const lat = 35.6892 + (Math.random() - 0.5) * 0.05;
+      const lng = 51.3890 + (Math.random() - 0.5) * 0.05;
       await api.createVehicle({
         customerId,
         type: type as any,

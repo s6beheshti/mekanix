@@ -87,7 +87,8 @@ export async function POST(req: Request) {
   const travelFee = job.technician.travelFeeBase;
   const discount = 0; // server-controlled
   const subtotal = laborTotal + partsTotal + travelFee - discount;
-  const taxRate = 0.09;
+  const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
+    const taxRate = taxSetting?.value ? parseFloat(taxSetting.value) : 0.09;
   const taxTotal = subtotal * taxRate;
   const total = subtotal + taxTotal;
 

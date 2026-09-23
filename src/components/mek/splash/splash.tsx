@@ -69,9 +69,11 @@ export function Splash() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      // Store JWT token returned by the verify endpoint
-      if (data.token) {
-        localStorage.setItem("mekanix-token", data.token);
+      // Read token from X-Token header (for WebSocket auth)
+      // Cookie is set automatically by server as HttpOnly
+      const token = res.headers.get("X-Token");
+      if (token) {
+        localStorage.setItem("mekanix-token", token);
       }
       toast.success(`${t("splash.welcome")}${data.user?.name ? "، " + data.user.name.split(" ")[0] + "!" : "!"}`);
 

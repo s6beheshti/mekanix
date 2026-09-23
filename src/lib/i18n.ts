@@ -236,7 +236,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "mech.emailLabel": "Email (optional)",
     "mech.emailPlaceholder": "you@email.com",
     "mech.cityLabel": "City / Service Area",
-    "mech.cityPlaceholder": "Tehran, San Francisco…",
+    "mech.cityPlaceholder": "Tehran, Iran",
     "mech.experience": "Experience (years)",
     "mech.specialties": "Specialties",
     "mech.about": "About yourself",
@@ -257,7 +257,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "mech.yourName": "Your name",
     "mech.phonePlaceholder": "+98 912 345 6789",
     "mech.emailPlaceholder": "you@email.com",
-    "mech.cityPlaceholder": "Tehran, San Francisco…",
+    "mech.cityPlaceholder": "Tehran, Iran",
 
     // ── Payment methods ──
     "pay.card": "Credit / Debit Card",
@@ -415,7 +415,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "home.metric.completed": "Completed",
     "home.metric.response": "Response",
     "home.coverageZone": "Coverage Zone",
-    "home.coverageArea": "San Francisco Bay Area · 24/7",
+    "home.coverageArea": "Tehran Metropolitan Area · 24/7",
     "home.quick.requestMechanic": "Request a Mechanic",
     "home.quick.requestDesc": "Book a service call",
     "home.quick.emergency": "Emergency Assistance",
