@@ -52,7 +52,7 @@ async function main() {
     { name: "Mateo Herrera", email: "mateo@urbantransit.mx", phone: "+52-55-2290-1180", company: "Urban Transit Authority", avatar: "https://i.pravatar.cc/150?img=51", country: "AE" },
   ];
 
-  const customerRecs = [];
+  const customerRecs: any[] = [];
   for (const c of customers) {
     const u = await db.user.create({
       data: {
@@ -82,7 +82,7 @@ async function main() {
     { name: "Omar Saleh", email: "omar.saleh@mekanix.io", specialties: [["roadside", "Emergency Roadside"], ["battery", "Jumpstarts"], ["tire", "Tire Changes"]], certs: [["Towing & Recovery Operator", "TOW", 2021, true]], lat: 37.7886, lng: -122.4018, rate: 60, exp: 8, completed: 254, rating: 4.75, level: "SILVER", available: true, bio: "Rapid response roadside expert. 8 yrs, 254 rescues." },
   ];
 
-  const techRecs = [];
+  const techRecs: any[] = [];
   for (let i = 0; i < techs.length; i++) {
     const t = techs[i];
     const u = await db.user.create({
@@ -124,8 +124,9 @@ async function main() {
     for (const [cat, label] of t.specialties) {
       await db.technicianSpecialty.create({ data: { technicianId: tech.id, category: cat, label } });
     }
-    for (const [name, issuer, year, verified] of t.certs) {
-      await db.certification.create({ data: { technicianId: tech.id, name, issuer, year, verified: verified as boolean } });
+    for (const cert of t.certs) {
+      const [name, issuer, year, verified] = cert as [string, string, number, boolean];
+      await db.certification.create({ data: { technicianId: tech.id, name, issuer, year, verified } });
     }
     await db.serviceArea.create({
       data: { technicianId: tech.id, name: ["San Francisco – Downtown", "SoMa District", "Mission Bay", "Bayview", "Financial District", "Sunset", "Richmond", "Marina"][i % 8], lat: t.lat, lng: t.lng, radiusKm: 18 + (i % 4) * 6 },
@@ -176,7 +177,7 @@ async function main() {
     { customerIdx: 4, type: "GRADER", make: "Volvo", model: "G946B", year: 2019, plate: "CIV-880", engineHours: 4120, lat: 37.7620, lng: -122.4350, location: "Highway 101 Section 7" },
   ];
 
-  const vehicleRecs = [];
+  const vehicleRecs: any[] = [];
   for (const v of vehiclesData) {
     const cust = customerRecs[v.customerIdx].customer;
     const rec = await db.vehicle.create({
