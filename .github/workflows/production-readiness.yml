@@ -16,6 +16,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - run: bun run check:repo
       - run: bun run lint
       - run: bun run db:generate
       - run: bun run build
