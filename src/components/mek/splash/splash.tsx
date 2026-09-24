@@ -69,12 +69,9 @@ export function Splash() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      // Read token from X-Token header (for WebSocket auth)
-      // Cookie is set automatically by server as HttpOnly
-      const token = res.headers.get("X-Token");
-      if (token) {
-        localStorage.setItem("mekanix-token", token);
-      }
+      // Cookie is set automatically by server as HttpOnly.
+      // No need to read token from response — the browser sends the cookie automatically.
+      // (WebSocket auth will use a separate short-lived token from /api/auth/ws-token)
       toast.success(`${t("splash.welcome")}${data.user?.name ? "، " + data.user.name.split(" ")[0] + "!" : "!"}`);
 
       // If logging in as mechanic, check that the user has a technician profile

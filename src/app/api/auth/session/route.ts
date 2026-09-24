@@ -45,10 +45,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "کاربر یافت نشد" }, { status: 404 });
   }
 
-  // Ensure customer record exists
-  if (!user.customer) {
+  // Ensure customer record exists (for users created before customer profile was required)
+  if (!user.customer && (user.role === "CUSTOMER" || user.role === "TECHNICIAN")) {
     try {
       await db.customer.create({ data: { userId: user.id } });
+      // Re-fetch to include the new customer record
+      const fresh = await db.user.findUnique({
+        where: { id: session.userId },
+        select: {
+          ...SAFE_USER_SELECT,
+          customer: true,
+          technician: { include: TECHNICIAN_INCLUDE },
+        },
+      });
+      if (fresh) return NextResponse.json({ user: fresh });
     } catch {}
   }
 

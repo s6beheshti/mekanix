@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   const { phone: rawPhone, code, name } = await req.json();
-  // Normalize phone the same way /otp/send does — strip spaces, dashes, parentheses.
+  // Normalize phone: strip spaces, dashes, parentheses.
   const phone = String(rawPhone || "").replace(/[\s\-()]/g, "");
   if (!phone || !code) {
     return NextResponse.json({ error: "Phone and code are required" }, { status: 400 });
@@ -33,10 +33,35 @@ export async function POST(req: Request) {
 
   await db.otpCode.update({ where: { id: otp.id }, data: { consumed: true } });
 
+  // Try to find user by normalized phone first, then by phone digits only.
+  // This handles legacy users whose phones were stored with dashes/spaces
+  // (e.g. "+1-415-224-1180" should match "+14152241180").
+  const phoneDigits = phone.replace(/\D/g, "");
   let user = await db.user.findUnique({
     where: { phone },
     include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
   });
+  if (!user && phoneDigits) {
+    // Fallback: find by matching digits-only phone
+    const allUsers = await db.user.findMany({
+      select: { id: true, phone: true },
+    });
+    const match = allUsers.find((u) => u.phone.replace(/\D/g, "") === phoneDigits);
+    if (match) {
+      user = await db.user.findUnique({
+        where: { id: match.id },
+        include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+      });
+      // Normalize the stored phone so future lookups match directly
+      if (user && user.phone !== phone) {
+        user = await db.user.update({
+          where: { id: user.id },
+          data: { phone },
+          include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+        });
+      }
+    }
+  }
   let created = false;
   if (!user) {
     const derivedName = name?.trim() || `MEKANIX User ${phone.slice(-4)}`;
