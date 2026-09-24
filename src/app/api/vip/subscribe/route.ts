@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
-// Subscribe user to a VIP plan.
-// In production: this would go through the payment gateway first.
-// Here: we simulate success (the gateway is separate). Once payment verified,
-// we activate the subscription with startedAt=now and expiresAt=now+durationDays.
 export async function POST(req: Request) {
-  const { userId, planId, paymentId } = await req.json();
-  if (!userId || !planId) {
-    return NextResponse.json({ error: "userId and planId are required" }, { status: 400 });
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  const { planId, paymentId } = await req.json();
+  if (!planId || !paymentId) {
+    return NextResponse.json({ error: "planId and paymentId are required" }, { status: 400 });
   }
 
   const plan = await db.vipPlan.findUnique({ where: { id: planId } });
@@ -16,9 +16,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
 
-  // Cancel any existing ACTIVE subscription for this user
+  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  if (!payment || payment.userId !== session.userId) {
+    return NextResponse.json({ error: "پرداخت یافت نشد یا متعلق به این کاربر نیست" }, { status: 403 });
+  }
+  if (payment.status !== "SUCCEEDED") {
+    return NextResponse.json({ error: "پرداخت تایید نشده است" }, { status: 409 });
+  }
+
+  const existingPaymentSub = await db.userVipSubscription.findFirst({
+    where: { userId: session.userId, paymentId },
+  });
+  if (existingPaymentSub) {
+    return NextResponse.json({ ok: true, subscription: existingPaymentSub });
+  }
+
   await db.userVipSubscription.updateMany({
-    where: { userId, status: "ACTIVE" },
+    where: { userId: session.userId, status: "ACTIVE" },
     data: { status: "CANCELLED" },
   });
 
@@ -27,20 +41,19 @@ export async function POST(req: Request) {
 
   const sub = await db.userVipSubscription.create({
     data: {
-      userId,
+      userId: session.userId,
       planId,
       status: "ACTIVE",
       startedAt,
       expiresAt,
-      paymentId: paymentId ?? null,
+      paymentId,
     },
     include: { plan: true },
   });
 
-  // Notify user
   await db.notification.create({
     data: {
-      userId,
+      userId: session.userId,
       type: "vip_activated",
       title: "VIP activated",
       body: `Your ${plan.name} plan is active until ${expiresAt.toLocaleDateString()}`,
