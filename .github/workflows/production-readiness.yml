@@ -1,0 +1,21 @@
+name: Production readiness
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "hardening/**"]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run db:generate
+      - run: bun run build
