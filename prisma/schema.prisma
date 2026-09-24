@@ -1,0 +1,1284 @@
+// MEKANIX — On-Demand Mobile Repair & Maintenance Platform
+// Prisma schema (SQLite). Designed to scale to multi-region / multi-currency later.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Users & Roles ─────────────────────────
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  phone         String?    @unique
+  phoneVerified Boolean    @default(false)
+  password      String     @default("demo") // demo only — never store plaintext in prod
+  name          String
+  avatar        String?
+  role          Role       @default(CUSTOMER)
+  status        UserStatus @default(ACTIVE)
+  country       String     @default("IR")
+  currency      String     @default("USD")
+  language      String     @default("en")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  customer            Customer?
+  technician          Technician?
+  notifications       Notification[]
+  messagesSent        Message[]             @relation("msgFrom")
+  reviewsGiven        Review[]              @relation("revFrom")
+  payments            Payment[]
+  otps                OtpCode[]
+  mechanicApplication MechanicApplication?
+  vipSubscriptions    UserVipSubscription[]
+  gatewayLogs         PaymentGatewayLog[]
+  supportTickets      SupportTicket[]
+  referralsMade       Referral[]            @relation("referralsMade")
+  referralsReceived   Referral[]            @relation("referralsReceived")
+  insurancePolicies   InsurancePolicy[]
+
+  @@index([role])
+  @@index([phone])
+}
+
+enum Role {
+  CUSTOMER
+  TECHNICIAN
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+// ───────────────────────── Customer ─────────────────────────
+
+model Customer {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   String?
+  taxId     String?
+  createdAt DateTime @default(now())
+
+  vehicles        Vehicle[]
+  serviceRequests ServiceRequest[]
+}
+
+// ───────────────────────── Technician ─────────────────────────
+
+model Technician {
+  id                 String     @id @default(cuid())
+  userId             String     @unique
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio                String?
+  experienceYears    Int        @default(0)
+  completedJobs      Int        @default(0)
+  rating             Float      @default(0)
+  reviewCount        Int        @default(0)
+  hourlyRate         Float      @default(15) // USD; ~900k IRR — realistic Iranian mobile mechanic rate
+  travelFeeBase      Float      @default(3) // USD; ~180k IRR base travel fee (within-city)
+  inspectionFee      Float      @default(7) // USD passenger; ~420k IRR — Sanjaq-like Iranian market
+  inspectionFeeHeavy Float      @default(20) // USD heavy machinery; ~1.2M IRR
+  status             TechStatus @default(OFFLINE)
+  verified           Boolean    @default(false)
+  level              TechLevel  @default(BRONZE)
+  lat                Float?
+  lng                Float?
+  heading            Float?
+  availableNow       Boolean    @default(true)
+  responseMins       Int        @default(12)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  specialties     TechnicianSpecialty[]
+  certifications  Certification[]
+  serviceAreas    ServiceArea[]
+  jobsAssigned    Job[]                 @relation("jobTech")
+  requestsMatched ServiceRequest[]      @relation("reqMatchTech")
+  reviews         Review[]              @relation("revTech")
+  wallet          Wallet?
+
+  @@index([status, availableNow])
+}
+
+enum TechStatus {
+  ONLINE
+  OFFLINE
+  ON_JOB
+}
+
+enum TechLevel {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+model TechnicianSpecialty {
+  id           String     @id @default(cuid())
+  technicianId String
+  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  category     String // e.g. "engine", "electrical", "hydraulic"
+  label        String
+}
+
+model Certification {
+  id           String     @id @default(cuid())
+  technicianId String
+  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  name         String
+  issuer       String
+  year         Int
+  verified     Boolean    @default(false)
+}
+
+model ServiceArea {
+  id           String     @id @default(cuid())
+  technicianId String
+  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  name         String
+  lat          Float
+  lng          Float
+  radiusKm     Float      @default(25)
+}
+
+// ───────────────────────── Vehicles & Machinery ─────────────────────────
+
+model Vehicle {
+  id          String      @id @default(cuid())
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type        MachineType
+  make        String
+  model       String
+  year        Int
+  vin         String?
+  plate       String?
+  engineHours Int?
+  location    String?
+  lat         Float?
+  lng         Float?
+  image       String?
+  notes       String?
+  createdAt   DateTime    @default(now())
+
+  serviceRequests      ServiceRequest[]
+  maintenanceSchedules MaintenanceSchedule[]
+  insurancePolicies    InsurancePolicy[]
+  careProfile           VehicleCareProfile?
+  careScheduleItems     MaintenanceScheduleItem[]
+  healthReports         VehicleHealthReport[]
+  careReminders         CareReminder[]
+}
+
+enum MachineType {
+  CAR
+  TRUCK
+  BUS
+  EXCAVATOR
+  LOADER
+  BULLDOZER
+  GRADER
+  AGRI
+  INDUSTRIAL
+  OTHER
+}
+
+// ───────────────────────── Service Requests & Jobs ─────────────────────────
+
+model ServiceRequest {
+  id            String        @id @default(cuid())
+  code          String        @unique // human friendly e.g. SR-2041
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vehicleId     String
+  vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
+  category      String // service category slug
+  urgency       Urgency       @default(NORMAL)
+  title         String
+  description   String
+  mediaUrls     String // JSON array of uploaded media (sqlite has no native array)
+  voiceNote     String?
+  address       String
+  lat           Float
+  lng           Float
+  status        RequestStatus @default(OPEN)
+  matchedTechId String?
+  matchedTech   Technician?   @relation("reqMatchTech", fields: [matchedTechId], references: [id])
+  job           Job?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status])
+  @@index([customerId])
+}
+
+enum Urgency {
+  NORMAL
+  URGENT
+  EMERGENCY
+}
+
+enum RequestStatus {
+  OPEN
+  MATCHED
+  ASSIGNED
+  CANCELLED
+  EXPIRED
+}
+
+model Job {
+  id                 String         @id @default(cuid())
+  code               String         @unique // JOB-...
+  requestId          String         @unique
+  request            ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  technicianId       String
+  technician         Technician     @relation("jobTech", fields: [technicianId], references: [id])
+  status             JobStatus      @default(REQUESTED)
+  etaMins            Int            @default(25)
+  customerApproved   Boolean        @default(false)
+  diagnosis          String?
+  technicianNotes    String?
+  replacedParts      String? // JSON
+  startedAt          DateTime?
+  arrivedAt          DateTime?
+  completedAt        DateTime?
+  // Pre-service payment
+  inspectionFee      Float          @default(0)
+  travelFee          Float          @default(0)
+  prepayPaid         Boolean        @default(false)
+  prepayPaidAt       DateTime?
+  // Commission + hold period
+  platformCommission Float          @default(0)
+  netEarnings        Float          @default(0)
+  holdUntil          DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  diagnosisRecords   Diagnosis[]
+  parts              Part[]
+  invoice            Invoice?
+  messages           Message[]
+  reviews            Review[]            @relation("revJob")
+  tracking           TrackingEvent[]
+  warranty           Warranty?
+  walletTransactions WalletTransaction[]
+  insuranceClaims    InsuranceClaim[]
+
+  @@index([status])
+  @@index([technicianId])
+}
+
+enum JobStatus {
+  REQUESTED
+  ACCEPTED
+  EN_ROUTE
+  ARRIVED
+  DIAGNOSING
+  REPAIRING
+  WAITING_APPROVAL
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+model Diagnosis {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  summary   String
+  faultCode String?
+  severity  String   @default("medium")
+  mediaUrls String?
+  createdAt DateTime @default(now())
+}
+
+model Part {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  name      String
+  sku       String?
+  quantity  Int      @default(1)
+  unitPrice Float
+  createdAt DateTime @default(now())
+}
+
+model TrackingEvent {
+  id      String   @id @default(cuid())
+  jobId   String
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lat     Float
+  lng     Float
+  heading Float?
+  ts      DateTime @default(now())
+}
+
+// ───────────────────────── Invoices & Payments ─────────────────────────
+
+model Invoice {
+  id         String        @id @default(cuid())
+  code       String        @unique // INV-...
+  jobId      String        @unique
+  job        Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  laborHours Float         @default(1)
+  laborRate  Float         @default(45)
+  laborTotal Float         @default(0)
+  partsTotal Float         @default(0)
+  travelFee  Float         @default(0)
+  subtotal   Float         @default(0)
+  taxRate    Float         @default(0.09)
+  taxTotal   Float         @default(0)
+  discount   Float         @default(0)
+  total      Float         @default(0)
+  currency   String        @default("USD")
+  notes      String?
+  status     InvoiceStatus @default(DRAFT)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  payment Payment?
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  APPROVED
+  PAID
+  OVERDUE
+  REFUNDED
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  code      String        @unique
+  invoiceId String?       @unique
+  invoice   Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  amount    Float
+  currency  String        @default("USD")
+  method    String        @default("card")
+  status    PaymentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+// ───────────────────────── Reviews ─────────────────────────
+
+model Review {
+  id           String     @id @default(cuid())
+  jobId        String
+  job          Job        @relation("revJob", fields: [jobId], references: [id], onDelete: Cascade)
+  technicianId String
+  technician   Technician @relation("revTech", fields: [technicianId], references: [id])
+  fromUserId   String
+  fromUser     User       @relation("revFrom", fields: [fromUserId], references: [id])
+  rating       Int
+  comment      String?
+  tags         String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([jobId, fromUserId])
+}
+
+// ───────────────────────── Messaging ─────────────────────────
+
+model Message {
+  id         String    @id @default(cuid())
+  jobId      String?
+  job        Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fromUserId String
+  fromUser   User      @relation("msgFrom", fields: [fromUserId], references: [id])
+  kind       String    @default("text") // text | image | system | voice
+  body       String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([jobId])
+}
+
+// ───────────────────────── Notifications ─────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // request_accepted | estimate_ready | payment_required | ...
+  title     String
+  body      String
+  category  String   @default("general") // job | payment | message | system | maintenance
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// ───────────────────────── Warranty ─────────────────────────
+
+model Warranty {
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  months    Int      @default(6)
+  kmLimit   Int?
+  terms     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ───────────────────────── Service Categories (platform) ─────────────────────────
+
+model ServiceCategory {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  icon        String
+  description String?
+  basePrice   Float   @default(0)
+  active      Boolean @default(true)
+  order       Int     @default(0)
+}
+
+// ───────────────────────── OTP / Phone Verification ─────────────────────────
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  consumed  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([phone, createdAt])
+}
+
+// ───────────────────────── Mechanic Applications ─────────────────────────
+// Public applications submitted from the splash "Apply as Mechanic" flow.
+// Admin reviews & approves → a User (role TECHNICIAN) + Technician profile is created.
+
+model MechanicApplication {
+  id              String            @id @default(cuid())
+  code            String            @unique
+  fullName        String
+  phone           String
+  email           String?
+  city            String?
+  experienceYears Int               @default(0)
+  specialties     String // JSON array of category slugs
+  certifications  String? // JSON array
+  bio             String?
+  vehicleOwned    Boolean           @default(false) // has own service vehicle
+  status          ApplicationStatus @default(PENDING)
+  adminNotes      String?
+  userId          String?           @unique
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reviewerId      String?
+  createdAt       DateTime          @default(now())
+  reviewedAt      DateTime?
+
+  @@index([status])
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ON_HOLD
+}
+
+// ───────────────────────── Maintenance Scheduling ─────────────────────────
+// Preventive maintenance reminders per vehicle. Each schedule has a category
+// (oil change, tire rotation, etc.), interval (km or hours or days), and
+// triggers a notification when due.
+
+model MaintenanceSchedule {
+  id            String    @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  category      String // oil | tires | battery | brake | filter | inspection | custom
+  title         String
+  intervalKm    Int?
+  intervalHours Int?
+  intervalDays  Int?
+  lastDoneKm    Int?
+  lastDoneHours Int?
+  lastDoneDate  DateTime?
+  nextDueKm     Int?
+  nextDueDate   DateTime?
+  notes         String?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([vehicleId, active])
+}
+
+// ───────────────────────── Referral / Rewards ─────────────────────────
+// Customers earn rewards by inviting friends. When a referred friend completes
+// their first job, the referrer gets a commission credit.
+
+model Referral {
+  id             String    @id @default(cuid())
+  code           String    @unique // user's unique referral code
+  referrerId     String
+  referrer       User      @relation("referralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredEmail  String? // email of invited friend (before they sign up)
+  referredUserId String? // userId of referred friend (after they sign up)
+  referredUser   User?     @relation("referralsReceived", fields: [referredUserId], references: [id], onDelete: SetNull)
+  status         String    @default("pending") // pending | signed_up | first_job | rewarded | expired
+  rewardAmount   Float     @default(5) // USD credit to referrer
+  rewardClaimed  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@index([referrerId, status])
+  @@index([referredUserId])
+}
+
+// ───────────────────────── Insurance ─────────────────────────
+// Vehicle insurance policies. Customers can add their existing policy or
+// purchase through MEKANIX partners. Claims are tracked.
+
+model InsurancePolicy {
+  id             String   @id @default(cuid())
+  code           String   @unique // POL-...
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleId      String?
+  vehicle        Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  provider       String // Iran-Mehr | Pasargad | Asia | Melli | etc
+  policyNumber   String
+  type           String   @default("third-party") // third-party | comprehensive | zero
+  startDate      DateTime
+  endDate        DateTime
+  premiumAmount  Float // USD
+  coverageAmount Float    @default(0)
+  status         String   @default("active") // active | expired | cancelled | claimed
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  claims InsuranceClaim[]
+
+  @@index([userId, status])
+  @@index([vehicleId])
+}
+
+model InsuranceClaim {
+  id            String          @id @default(cuid())
+  code          String          @unique // CLM-...
+  policyId      String
+  policy        InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  jobId         String?
+  job           Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  description   String
+  amount        Float // USD claimed
+  status        String          @default("submitted") // submitted | under_review | approved | rejected | paid
+  reviewerNotes String?
+  createdAt     DateTime        @default(now())
+  resolvedAt    DateTime?
+
+  @@index([policyId, status])
+}
+
+// ───────────────────────── Support Tickets ─────────────────────────
+// Customer support center — users open tickets, admin replies, status tracked.
+
+model SupportTicket {
+  id         String    @id @default(cuid())
+  code       String    @unique // TKT-...
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject    String
+  category   String // billing | jobs | account | technical | other
+  priority   String    @default("normal") // low | normal | high | urgent
+  status     String    @default("open") // open | pending | resolved | closed
+  message    String
+  reply      String?
+  replyById  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+
+  @@index([userId, status])
+  @@index([status])
+}
+
+// ───────────────────────── Wallets & Withdrawals ─────────────────────────
+// Every Technician has a Wallet. Pre-service payments (inspection + travel fee)
+// land here, with 10% platform commission deducted immediately. Net earnings
+// are held for 12 hours from job completion before becoming withdrawable.
+
+model Wallet {
+  id              String     @id @default(cuid())
+  technicianId    String     @unique
+  technician      Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  balance         Float      @default(0) // current withdrawable balance (USD)
+  pendingBalance  Float      @default(0) // held balance (in 12h escrow, USD)
+  totalEarned     Float      @default(0) // lifetime gross earnings (USD)
+  totalCommission Float      @default(0) // lifetime platform commission (USD)
+  totalWithdrawn  Float      @default(0) // lifetime withdrawn amount (USD)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  transactions WalletTransaction[]
+  ledger       WalletLedger[]
+  withdrawals  WithdrawalRequest[]
+}
+
+enum TxnKind {
+  PREPAY // customer paid inspection + travel fee
+  COMMISSION // 10% platform cut (debit from technician balance)
+  PAYOUT // withdrawal to bank card
+  REFUND // refund to customer
+  ADJUSTMENT // manual admin adjustment
+}
+
+enum TxnStatus {
+  PENDING // held in escrow (12h countdown)
+  AVAILABLE // released, withdrawable
+  PROCESSING // payout in progress
+  COMPLETED
+  FAILED
+}
+
+model WalletTransaction {
+  id               String    @id @default(cuid())
+  walletId         String
+  wallet           Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  jobId            String?
+  job              Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  kind             TxnKind
+  status           TxnStatus @default(PENDING)
+  grossAmount      Float     @default(0) // amount paid by customer (USD)
+  commissionAmount Float     @default(0) // 10% platform cut (USD)
+  netAmount        Float     @default(0) // amount credited to technician (USD)
+  holdUntil        DateTime? // when funds become AVAILABLE (12h after job completion)
+  releasedAt       DateTime? // when actually released
+  description      String?
+  createdAt        DateTime  @default(now())
+
+  @@index([walletId, status])
+  @@index([jobId])
+}
+
+enum WithdrawalStatus {
+  REQUESTED // mechanic requested
+  APPROVED // admin approved, queued for payout
+  PAID // sent to bank, completed
+  REJECTED // admin rejected
+}
+
+model WithdrawalRequest {
+  id          String           @id @default(cuid())
+  code        String           @unique // WD-...
+  walletId    String
+  wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount      Float // USD
+  method      String           @default("card") // card | bank | wallet-to-wallet
+  cardNumber  String? // masked Iranian card number (shetab)
+  bankName    String?
+  shebaNumber String? // Iranian IBAN (IR...)
+  status      WithdrawalStatus @default(REQUESTED)
+  requestedAt DateTime         @default(now())
+  processedAt DateTime?
+  adminNotes  String?
+  reviewerId  String?
+  txnId       String? // linked WalletTransaction (PAYOUT) once paid
+
+  @@index([walletId, status])
+  @@index([status])
+}
+
+// ───────────────────────── VIP Membership ─────────────────────────
+// Tiered VIP subscription. Customers pay for premium perks (priority matching,
+// discounted inspection fees, extended warranty, dedicated support).
+
+model VipPlan {
+  id                      String   @id @default(cuid())
+  slug                    String   @unique // silver | gold | platinum
+  name                    String // display name (en) — UI uses i18n key vip.plan.<slug>
+  priceUSD                Float // one-time price per duration
+  durationDays            Int // validity period
+  discountPct             Float    @default(0) // % off inspection fees
+  priorityBoost           Int      @default(0) // matching priority boost
+  warrantyMonths          Int      @default(6)
+  dedicatedSupport        Boolean  @default(false)
+  freeInspectionsPerMonth Int      @default(0)
+  active                  Boolean  @default(true)
+  order                   Int      @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  subscriptions UserVipSubscription[]
+}
+
+enum VipStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING_PAYMENT
+}
+
+model UserVipSubscription {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      VipPlan   @relation(fields: [planId], references: [id])
+  status    VipStatus @default(PENDING_PAYMENT)
+  startedAt DateTime?
+  expiresAt DateTime? // null = lifetime
+  paymentId String? // linked Payment
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, status])
+}
+
+// ───────────────────────── Payment Gateway (Shaparak simulator) ─────────────────────────
+// Stores raw payment attempts for audit. In production this maps to Zarinpal/IDPay.
+
+enum GatewayType {
+  SHAPARAK_SIM // built-in simulator
+  ZARINPAL
+  IDPAY
+  WALLET // wallet-to-wallet (no external gateway)
+}
+
+enum GatewayStatus {
+  INITIATED
+  REDIRECTED
+  VERIFIED
+  FAILED
+  CANCELLED
+}
+
+model PaymentGatewayLog {
+  id              String        @id @default(cuid())
+  code            String        @unique // PG-...
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id])
+  amount          Float // USD
+  currency        String        @default("USD")
+  gateway         GatewayType   @default(SHAPARAK_SIM)
+  status          GatewayStatus @default(INITIATED)
+  purpose         String // vip | prepay | invoice | wallet_topup
+  referenceId     String? // external gateway reference
+  cardNumber      String? // masked card used
+  mobile          String?
+  description     String?
+  callbackPayload String? // JSON callback
+  initiatedAt     DateTime      @default(now())
+  verifiedAt      DateTime?
+  paymentId       String? // linked Payment on success
+
+  @@index([userId, status])
+  @@index([status])
+}
+
+// ───────────────────────── Platform Settings ─────────────────────────
+model PlatformSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+// ───────────────────────── Admin Panel ─────────────────────────
+model AdminUser {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String
+  name          String
+  role          String   @default("ADMIN")
+  avatar        String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ───────────────────────── Onboarding Slides ─────────────────────────
+model OnboardingSlide {
+  id          String   @id @default(cuid())
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  image       String
+  titleFa     String
+  subtitleFa  String
+  tagFa       String
+  bulletsFa   String
+  titleEn     String
+  subtitleEn  String
+  tagEn       String
+  bulletsEn   String
+  accent      String   @default("amber")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, order])
+}
+
+// ───────────────────────── Audit Log ─────────────────────────
+model AuditLog {
+  id          String   @id @default(cuid())
+  adminId     String?
+  action      String
+  entity      String
+  entityId    String?
+  before      String?
+  after       String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([action])
+}
+
+// ───────────────────────── Exchange Rate History ─────────────────────────
+model ExchangeRateHistory {
+  id          String   @id @default(cuid())
+  baseRate    Float
+  multiplier  Float
+  finalRate   Float
+  source      String
+  channelName String?
+  recordedAt  DateTime @default(now())
+  updatedBy   String?
+
+  @@index([recordedAt])
+}
+
+// ───────────────────────── Discount Codes ─────────────────────────
+model DiscountCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  description String?
+  type        String   @default("PERCENT")
+  value       Float
+  maxUses     Int      @default(0)
+  usedCount   Int      @default(0)
+  validFrom   DateTime @default(now())
+  validUntil  DateTime?
+  active      Boolean  @default(true)
+  appliesTo   String   @default("ALL")
+  minAmount   Float?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([code, active])
+}
+
+// ───────────────────────── Banners ─────────────────────────
+model Banner {
+  id          String   @id @default(cuid())
+  title       String
+  subtitle    String?
+  image       String?
+  link        String?
+  position    String   @default("HOME_TOP")
+  bgColor     String?
+  textColor   String?
+  startAt     DateTime @default(now())
+  endAt       DateTime?
+  active      Boolean  @default(true)
+  priority    Int      @default(0)
+  targetRole  String   @default("ALL")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, position, priority])
+}
+
+// ───────────────────────── Push Notifications ─────────────────────────
+model PushNotification {
+  id          String   @id @default(cuid())
+  adminId     String?
+  title       String
+  body        String
+  targetRole  String   @default("ALL")
+  targetUserId String?
+  sentAt      DateTime @default(now())
+  deliveredAt DateTime?
+  readAt      DateTime?
+  status      String   @default("SENT")
+
+  @@index([targetRole, sentAt])
+}
+
+// ───────────────────────── Wallet Ledger ─────────────────────────
+model WalletLedger {
+  id              String   @id @default(cuid())
+  walletId        String
+  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type            String   // CREDIT | DEBIT | HOLD | RELEASE | REFUND | COMMISSION | WITHDRAWAL
+  amount          Float
+  balanceBefore   Float
+  balanceAfter    Float
+  referenceType   String?  // Job | Payment | Withdrawal | Manual
+  referenceId     String?
+  description     String?
+  createdBy       String?  // admin/user id
+  createdAt       DateTime @default(now())
+
+  @@index([walletId, createdAt])
+}
+
+// ───────────────────────── MEKANIX CARE ─────────────────────────
+// Vehicle maintenance, health, and service booking system
+// Added as a new module — does NOT modify existing structure
+
+// Extend Vehicle with CARE fields
+model VehicleCareProfile {
+  id                String   @id @default(cuid())
+  vehicleId         String   @unique
+  vehicle           Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  trim              String?
+  engine            String?
+  transmission      String?
+  engineVolume      String?
+  currentMileage    Int      @default(0)
+  lastServiceDate   DateTime?
+  lastServiceMileage Int?
+  healthScore       Float    @default(100)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// Maintenance rules — versioned, per brand/model
+model MaintenanceRule {
+  id              String   @id @default(cuid())
+  brand           String
+  model           String?
+  yearFrom        Int?
+  yearTo          Int?
+  engine          String?
+  mileageInterval Int?
+  timeInterval    Int?     // days
+  category        String   // oil | filter | brake | battery | tire | cooling | belt | inspection
+  priority        String   @default("REQUIRED") // REQUIRED | RECOMMENDED | CONDITION_BASED | URGENT | MONITOR
+  version         String   @default("1.0")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  schedules       MaintenanceScheduleItem[]
+
+  @@index([brand, model, active])
+}
+
+// Maintenance schedule per vehicle — calculated from rules
+model MaintenanceScheduleItem {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  ruleId          String?
+  rule            MaintenanceRule? @relation(fields: [ruleId], references: [id])
+  category        String
+  title           String
+  dueMileage      Int?
+  dueDate         DateTime?
+  status          String   @default("UPCOMING") // UPCOMING | DUE | OVERDUE | COMPLETED | CANCELLED
+  priority        String   @default("REQUIRED")
+  calculatedAt    DateTime @default(now())
+  completedAt     DateTime?
+
+  @@index([vehicleId, status])
+}
+
+// Service packages — Basic, Standard, MEKANIX CHECK
+model ServicePackage {
+  id              String   @id @default(cuid())
+  name            String
+  nameFa          String
+  description     String?
+  category        String   @default("periodic") // periodic | repair | emergency
+  basePrice       Float    @default(0)
+  active          Boolean  @default(true)
+  version         String   @default("1.0")
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items           ServicePackageItem[]
+  bookings        ServiceBooking[]
+}
+
+// Items within a service package
+model ServicePackageItem {
+  id              String   @id @default(cuid())
+  packageId       String
+  package         ServicePackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemType        String   // service | part | inspection | check
+  itemName        String
+  itemNameFa      String?
+  required        Boolean  @default(true)
+  quantity        Int      @default(1)
+  estimatedDuration Int?   // minutes
+
+  @@index([packageId])
+}
+
+// Service booking — the main entity for CARE service orders
+model ServiceBooking {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  userId          String
+  vehicleId       String
+  packageId       String?
+  package         ServicePackage? @relation(fields: [packageId], references: [id])
+  serviceType     String   @default("periodic") // periodic | repair | emergency
+  location        String
+  lat             Float?
+  lng             Float?
+  date            DateTime?
+  timeWindow      String?  // "09:00-11:00"
+  status          String   @default("REQUESTED") // REQUESTED | SCHEDULED | MATCHING | ASSIGNED | EN_ROUTE | ARRIVED | INSPECTING | WAITING_CUSTOMER_APPROVAL | APPROVED | IN_SERVICE | FINAL_CHECK | COMPLETED | CANCELLED | FAILED
+  technicianId    String?
+  pricingSnapshotId String?
+  warrantyId      String?
+  currentMileage  Int?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  timeline        ServiceTimelineEvent[]
+  findings        Finding[]
+  approvals       CustomerApproval[]
+  partUsages      PartUsage[]
+  healthReport    VehicleHealthReport?
+  inspection      Inspection?
+
+  @@index([userId, status])
+  @@index([vehicleId])
+  @@index([technicianId, status])
+}
+
+// Service timeline events
+model ServiceTimelineEvent {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  eventType       String   // booking_created | payment_confirmed | matching_started | technician_assigned | en_route | arrived | inspection_started | extra_proposal | customer_approved | service_completed | final_check | invoice_generated | warranty_activated
+  timestamp       DateTime @default(now())
+  actor           String?  // userId or "system"
+  metadata        String?  // JSON
+
+  @@index([bookingId, timestamp])
+}
+
+// Inspection — technician checklist results
+model Inspection {
+  id              String   @id @default(cuid())
+  bookingId       String  @unique
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  checklistVersion String  @default("1.0")
+  results         String   // JSON: { category: { item: status, ... }, ... }
+  measurements    String?  // JSON: { batteryVoltage: "12.3V", brakePad: "3mm", ... }
+  images          String?  // JSON array of URLs
+  technicianNotes String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Findings — issues discovered during inspection
+model Finding {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  category        String   // engine | oil | brakes | battery | tires | filters | fluids | cooling | belts | leaks | diagnostics
+  title           String
+  description     String?
+  severity        String   @default("INFO") // INFO | LOW | MEDIUM | HIGH | CRITICAL
+  evidence        String?  // JSON: { images: [], measurements: {}, tests: [] }
+  recommendedAction String?
+  status          String   @default("OPEN") // OPEN | APPROVED | REJECTED | RESOLVED
+  createdAt       DateTime @default(now())
+
+  approvals       CustomerApproval[]
+
+  @@index([bookingId, severity])
+}
+
+// Customer approval — for extra costs, part changes, etc.
+model CustomerApproval {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  findingId       String?
+  finding         Finding? @relation(fields: [findingId], references: [id])
+  proposedItem    String
+  description     String?
+  partName        String?
+  partBrand        String?
+  partNumber      String?
+  partType        String?  // OEM | AFTERMARKET | ALTERNATIVE
+  quantity        Int      @default(1)
+  partPrice       Float    @default(0)
+  laborPrice      Float    @default(0)
+  totalPrice      Float    @default(0)
+  imageUrl        String?
+  technicianNote  String?
+  status          String   @default("PROPOSED") // PROPOSED | CUSTOMER_APPROVED | CUSTOMER_REJECTED
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([bookingId, status])
+}
+
+// Part usage — actual parts used during service
+model PartUsage {
+  id              String   @id @default(cuid())
+  bookingId       String
+  booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  name            String
+  brand           String?
+  partNumber      String?
+  partType        String   @default("OEM") // OEM | AFTERMARKET | ALTERNATIVE
+  category        String?
+  quantity        Int      @default(1)
+  unitPrice       Float
+  totalPrice      Float
+  supplier        String?
+  technicianId    String?
+  installedAt     DateTime @default(now())
+  evidence        String?  // JSON: { images: [], notes: "" }
+
+  @@index([bookingId])
+}
+
+// Pricing snapshot — frozen at booking time
+model PricingSnapshot {
+  id              String   @id @default(cuid())
+  bookingId       String?  @unique
+  servicePrice    Float    @default(0)
+  visitPrice      Float    @default(0)
+  laborPrice      Float    @default(0)
+  partsPrice      Float    @default(0)
+  discount        Float    @default(0)
+  taxRate         Float    @default(0.09)
+  taxTotal        Float    @default(0)
+  total           Float    @default(0)
+  currency        String   @default("USD")
+  pricingVersion  String   @default("1.0")
+  createdAt       DateTime @default(now())
+}
+
+// Vehicle health report — generated after service
+model VehicleHealthReport {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  bookingId       String?  @unique
+  booking         ServiceBooking? @relation(fields: [bookingId], references: [id])
+  overallScore    Float    @default(0)
+  engineScore     Float?
+  oilScore        Float?
+  brakeScore      Float?
+  batteryScore    Float?
+  tireScore       Float?
+  filterScore     Float?
+  fluidScore      Float?
+  coolingScore    Float?
+  beltScore       Float?
+  leakScore       Float?
+  diagnosticScore Float?
+  categories      String?  // JSON: detailed breakdown
+  evidence        String?  // JSON: photos, measurements
+  technicianId    String?
+  createdAt       DateTime @default(now())
+
+  @@index([vehicleId, createdAt])
+}
+
+// Technician capability — what services they can perform
+model TechnicianCapability {
+  id              String   @id @default(cuid())
+  technicianId    String
+  serviceType     String   // periodic | repair | emergency
+  vehicleType     String?  // passenger | heavy | all
+  brand           String?
+  skillLevel      String   @default("BASIC") // BASIC | INTERMEDIATE | ADVANCED | EXPERT
+  certification   String?
+  tools           String?  // JSON array
+  region          String?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  @@index([technicianId, active])
+}
+
+// Dispatch candidate — ranked technicians for a booking
+model DispatchCandidate {
+  id              String   @id @default(cuid())
+  bookingId       String
+  technicianId    String
+  distance        Float?
+  eta             Int?     // minutes
+  score           Float    @default(0)
+  capabilityScore Float?
+  availabilityScore Float?
+  qualityScore    Float?
+  acceptanceScore Float?
+  finalRank       Int?
+  createdAt       DateTime @default(now())
+
+  @@index([bookingId, finalRank])
+}
+
+// Care subscription — future VIP-like tier for CARE
+model CareSubscription {
+  id              String   @id @default(cuid())
+  userId          String
+  vehicleId       String?
+  plan            String   @default("BASIC") // BASIC | PLUS | PREMIUM
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  benefits        String?  // JSON
+  status          String   @default("ACTIVE")
+  paymentStatus   String   @default("PENDING")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+// Reminder — date/mileage based
+model CareReminder {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type            String   // service | insurance | inspection | custom
+  title           String
+  dueDate         DateTime?
+  dueMileage      Int?
+  notificationSchedule String? // JSON: ["30d", "15d", "7d", "1d", "due", "overdue"]
+  status          String   @default("ACTIVE") // ACTIVE | SENT | COMPLETED | CANCELLED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([vehicleId, status])
+}

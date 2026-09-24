@@ -1,0 +1,276 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* MEKANIX brand tokens */
+  --color-amber: var(--amber);
+  --color-amber-foreground: var(--amber-foreground);
+  --color-emerald-glow: var(--emerald-glow);
+  --color-steel: var(--steel);
+  --color-hazard: var(--hazard);
+}
+
+:root {
+  --radius: 0.75rem;
+  /* MEKANIX light: clean technical white with graphite ink + amber accent */
+  --background: oklch(0.99 0.002 95);
+  --foreground: oklch(0.18 0.008 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.008 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.008 260);
+  /* Primary = graphite (industrial ink) */
+  --primary: oklch(0.22 0.01 260);
+  --primary-foreground: oklch(0.99 0.002 95);
+  --secondary: oklch(0.965 0.004 260);
+  --secondary-foreground: oklch(0.22 0.01 260);
+  --muted: oklch(0.965 0.004 260);
+  --muted-foreground: oklch(0.5 0.012 260);
+  --accent: oklch(0.965 0.004 260);
+  --accent-foreground: oklch(0.22 0.01 260);
+  --destructive: oklch(0.58 0.22 25);
+  --border: oklch(0.91 0.005 260);
+  --input: oklch(0.91 0.005 260);
+  --ring: oklch(0.72 0.16 70);
+  /* MEKANIX signature amber (industrial / mechanical energy) */
+  --amber: oklch(0.74 0.17 63);
+  --amber-foreground: oklch(0.18 0.05 63);
+  --emerald-glow: oklch(0.7 0.17 158);
+  --steel: oklch(0.62 0.02 255);
+  --hazard: oklch(0.66 0.21 38);
+  --chart-1: oklch(0.74 0.17 63);
+  --chart-2: oklch(0.7 0.17 158);
+  --chart-3: oklch(0.62 0.02 255);
+  --chart-4: oklch(0.66 0.21 38);
+  --chart-5: oklch(0.55 0.13 290);
+  --sidebar: oklch(0.18 0.008 260);
+  --sidebar-foreground: oklch(0.96 0.004 260);
+  --sidebar-primary: oklch(0.74 0.17 63);
+  --sidebar-primary-foreground: oklch(0.18 0.05 63);
+  --sidebar-accent: oklch(0.26 0.01 260);
+  --sidebar-accent-foreground: oklch(0.96 0.004 260);
+  --sidebar-border: oklch(0.3 0.01 260);
+  --sidebar-ring: oklch(0.74 0.17 63);
+}
+
+.dark {
+  /* MEKANIX dark: deep graphite ink with amber glow */
+  --background: oklch(0.145 0.006 260);
+  --foreground: oklch(0.97 0.004 95);
+  --card: oklch(0.19 0.008 260);
+  --card-foreground: oklch(0.97 0.004 95);
+  --popover: oklch(0.19 0.008 260);
+  --popover-foreground: oklch(0.97 0.004 95);
+  --primary: oklch(0.96 0.004 95);
+  --primary-foreground: oklch(0.16 0.008 260);
+  --secondary: oklch(0.26 0.01 260);
+  --secondary-foreground: oklch(0.97 0.004 95);
+  --muted: oklch(0.24 0.008 260);
+  --muted-foreground: oklch(0.68 0.012 260);
+  --accent: oklch(0.26 0.01 260);
+  --accent-foreground: oklch(0.97 0.004 95);
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.74 0.17 63);
+  --amber: oklch(0.78 0.16 68);
+  --amber-foreground: oklch(0.18 0.05 63);
+  --emerald-glow: oklch(0.74 0.16 160);
+  --steel: oklch(0.7 0.018 255);
+  --hazard: oklch(0.7 0.2 38);
+  --chart-1: oklch(0.78 0.16 68);
+  --chart-2: oklch(0.74 0.16 160);
+  --chart-3: oklch(0.7 0.018 255);
+  --chart-4: oklch(0.7 0.2 38);
+  --chart-5: oklch(0.62 0.15 290);
+  --sidebar: oklch(0.16 0.008 260);
+  --sidebar-foreground: oklch(0.96 0.004 95);
+  --sidebar-primary: oklch(0.78 0.16 68);
+  --sidebar-primary-foreground: oklch(0.18 0.05 63);
+  --sidebar-accent: oklch(0.24 0.008 260);
+  --sidebar-accent-foreground: oklch(0.96 0.004 95);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.78 0.16 68);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv01", "cv03", "cv04";
+  }
+  /* MEKANIX technical scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  /* MEKANIX brand utility classes */
+  .mk-grid-bg {
+    background-image:
+      linear-gradient(to right, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .mk-dots-bg {
+    background-image: radial-gradient(color-mix(in oklch, var(--foreground) 12%, transparent) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .mk-amber-glow {
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--amber) 40%, transparent),
+      0 8px 30px -8px color-mix(in oklch, var(--amber) 50%, transparent);
+  }
+  .mk-text-glow {
+    text-shadow: 0 0 24px color-mix(in oklch, var(--amber) 45%, transparent);
+  }
+  .mk-card-hover {
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s, border-color 0.25s;
+  }
+  .mk-card-hover:hover {
+    transform: translateY(-2px);
+  }
+  .mk-clip-tag {
+    clip-path: polygon(0 0, 100% 0, 100% 70%, calc(100% - 8px) 100%, 0 100%);
+  }
+  .mk-scan-line {
+    background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--amber) 60%, transparent), transparent);
+  }
+  .mk-noise {
+    position: relative;
+  }
+  .mk-noise::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .mk-status-pulse {
+    animation: mk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes mk-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .mk-shimmer {
+    background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--foreground) 8%, transparent), transparent);
+    background-size: 200% 100%;
+    animation: mk-shimmer 1.6s infinite;
+  }
+  @keyframes mk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .mk-radial-fade {
+    -webkit-mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
+    mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
+  }
+}
+
+/* Leaflet map marker pulse animation */
+@keyframes mek-map-pulse {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  50% { transform: scale(1.4); opacity: 0.4; }
+  100% { transform: scale(0.8); opacity: 0.8; }
+}
+
+/* Make Leaflet popups match the dark theme */
+.leaflet-container {
+  background: #0a0b0d;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+/* Dark-mode tile filter — inverts light OSM tiles to dark without watermarks.
+   Applied to .leaflet-tile-pane inside a .mek-map-dark container. */
+.mek-map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+/* Keep popups + markers un-inverted */
+.mek-map-dark .leaflet-popup-pane,
+.mek-map-dark .leaflet-marker-pane,
+.mek-map-dark .leaflet-overlay-pane {
+  filter: invert(1) hue-rotate(180deg);
+}
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--card, #17181c);
+  color: var(--card-foreground, #fff);
+  border: 1px solid var(--border, #2a2b30);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.leaflet-popup-content {
+  margin: 8px 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.leaflet-control-zoom a {
+  background: var(--card, #17181c) !important;
+  color: var(--card-foreground, #fff) !important;
+  border-color: var(--border, #2a2b30) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(0,0,0,0.5) !important;
+  color: rgba(255,255,255,0.6) !important;
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a {
+  color: rgba(255,180,80,0.8) !important;
+}

@@ -1,0 +1,12 @@
+{
+  "name": "mekanix-chat-service",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.2",
+    "jose": "^6.2.12",
+    "socket.io": "^4.8.3"
+  }
+}
