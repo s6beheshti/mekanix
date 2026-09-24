@@ -15,8 +15,8 @@ export function AdminTechnicians() {
   const { t, isFa, money, lang } = useT();
   const [rows, setRows] = useState<Technician[] | null>(null);
 
-  const load = () => api.adminList("technicians").then(setRows).catch(() => setRows([]));
-  useEffect(load, []);
+  const load = () => { api.adminList("technicians").then(setRows).catch(() => setRows([])); };
+  useEffect(() => { load(); }, []);
 
   const toggleVerify = async (tech: Technician) => {
     setRows((prev) => prev?.map((x) => x.id === tech.id ? { ...x, verified: !x.verified } : x) ?? null);

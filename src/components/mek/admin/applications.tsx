@@ -27,8 +27,8 @@ export function AdminApplications() {
   const [notes, setNotes] = useState("");
   const [acting, setActing] = useState<string | null>(null);
 
-  const load = () => api.adminList("applications").then(setRows).catch(() => setRows([]));
-  useEffect(load, []);
+  const load = () => { api.adminList("applications").then(setRows).catch(() => setRows([])); };
+  useEffect(() => { load(); }, []);
 
   const approve = async (app: Application) => {
     setActing(app.id);

@@ -13,8 +13,8 @@ export function AdminVerification() {
   const { t, isFa } = useT();
   const [rows, setRows] = useState<Technician[] | null>(null);
 
-  const load = () => api.adminList("technicians").then(setRows).catch(() => setRows([]));
-  useEffect(load, []);
+  const load = () => { api.adminList("technicians").then(setRows).catch(() => setRows([])); };
+  useEffect(() => { load(); }, []);
 
   const verifyTech = async (tk: Technician) => {
     await api.adminUpdate("technicians", tk.id, { verified: !tk.verified });

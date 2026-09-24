@@ -92,7 +92,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   }, [user]);
 
   const completed = (jobs ?? []).filter((j) => j.status === "COMPLETED");
-  const payments = completed.filter((j) => j.invoice?.payment);
+  const payments = completed.filter((j) => !!(j as any).invoice?.payment);
   const today = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 86400000).length;
   const week = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 7 * 86400000).length;
 

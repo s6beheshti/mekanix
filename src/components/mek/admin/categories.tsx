@@ -15,8 +15,8 @@ export function AdminCategories() {
   const [rows, setRows] = useState<ServiceCategory[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { name: string; basePrice: number; active: boolean }>>({});
 
-  const load = () => api.adminList("categories").then(setRows).catch(() => setRows([]));
-  useEffect(load, []);
+  const load = () => { api.adminList("categories").then(setRows).catch(() => setRows([])); };
+  useEffect(() => { load(); }, []);
 
   const update = (c: ServiceCategory, patch: Partial<{ name: string; basePrice: number; active: boolean }>) => {
     setRows((prev) => prev?.map((x) => x.id === c.id ? { ...x, ...patch } : x) ?? null);

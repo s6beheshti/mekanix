@@ -273,7 +273,6 @@ function toneBorder(t: string) {
 
 // ─── Mode filtering helpers (shared across customer views) ───
 import { typesForMode, type MachineMode } from "@/lib/constants";
-import type { Job } from "@/lib/api";
 
 export function filterByMode<T extends { type: string }>(items: T[], mode: MachineMode): T[] {
   const types = typesForMode(mode);

@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     where: { id: jobId },
     include: {
       request: { include: { vehicle: true, customer: { include: { user: true } } } },
-      technician: { include: { wallet: true } },
+      technician: { include: { wallet: true, user: true } },
     },
   });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });

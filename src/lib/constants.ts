@@ -39,7 +39,7 @@ export const MACHINE_MODES = [
 ] as const;
 
 export function typesForMode(mode: MachineMode): string[] {
-  return MACHINE_MODES.find((m) => m.slug === mode)?.types ?? [];
+  return [...(MACHINE_MODES.find((m) => m.slug === mode)?.types ?? [])];
 }
 
 export const JOB_STATUS_FLOW: {

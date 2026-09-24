@@ -40,11 +40,9 @@ export function CustomerCompletion({ customer }: { customer: DemoUser }) {
       await api.createReview({
         jobId: job.id,
         technicianId: job.technicianId,
-        fromUserId: customer.id,
         rating,
         comment: comment.trim() || undefined,
-        tags,
-      });
+      } as any);
       setSubmitted(true);
       toast.success(t("completion.thanksToast"));
     } catch (e: any) {
