@@ -14,7 +14,9 @@ export async function POST(req: Request) {
   const limited = checkRateLimit(req, "otp-verify", RATE_LIMITS.OTP_VERIFY.max, RATE_LIMITS.OTP_VERIFY.windowMs);
   if (limited) return limited;
 
-  const { phone, code, name } = await req.json();
+  const { phone: rawPhone, code, name } = await req.json();
+  // Normalize phone the same way /otp/send does — strip spaces, dashes, parentheses.
+  const phone = String(rawPhone || "").replace(/[\s\-()]/g, "");
   if (!phone || !code) {
     return NextResponse.json({ error: "Phone and code are required" }, { status: 400 });
   }
@@ -73,7 +75,10 @@ export async function POST(req: Request) {
     userId: user!.id, role: user!.role, phone: user!.phone, isGuest: false,
   });
 
-  // Set HttpOnly cookie — JavaScript cannot access it (XSS protection)
+  // Set HttpOnly cookie — JavaScript cannot access it (XSS protection).
+  // The session JWT is NEVER exposed to client-side JS: it lives only in the
+  // HttpOnly cookie, which `fetch(..., { credentials: "include" })` sends
+  // automatically on every same-origin API call.
   const response = NextResponse.json({ user, created });
   response.cookies.set("mekanix-token", token, {
     httpOnly: true,
@@ -82,7 +87,14 @@ export async function POST(req: Request) {
     maxAge: 30 * 24 * 60 * 60, // 30 days
     path: "/",
   });
-  // Also return token in body for backward compat (frontend reads it for WebSocket auth)
-  response.headers.set("X-Token", token);
+  // NOTE: We intentionally do NOT return the JWT in the body or any header.
+  // For WebSocket auth, frontend should call /api/auth/ws-token to get a
+  // short-lived (5min) token. The main session JWT stays in HttpOnly cookie
+  // and is never exposed to JS.
+  // TODO(security): Implement /api/auth/ws-token endpoint that:
+  //   1. Reads the HttpOnly session cookie via requireAuth(req).
+  //   2. Mints a separate short-lived WS token (5min TTL, scoped to userId+role).
+  //   3. Returns it in the JSON body (safe — it expires fast and is WS-only).
+  // The WS gateway then verifies the WS token on connection.
   return response;
 }

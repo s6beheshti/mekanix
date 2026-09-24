@@ -1,12 +1,20 @@
+// MEKANIX CARE — Booking detail (read-only)
+// BOLA-protected via requireBookingParticipant: ADMIN / booking owner / assigned technician.
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
+import { requireBookingParticipant } from "@/lib/care-auth";
 
 // GET /api/care/bookings/[id] — booking details
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
+
+  // BOLA check FIRST (before fetching sensitive related data) — uses a minimal
+  // select internally, so we don't leak package/timeline/findings to unauthorized callers.
+  const authError = await requireBookingParticipant(session, id);
+  if (authError) return authError;
 
   const booking = await db.serviceBooking.findUnique({
     where: { id },
@@ -21,16 +29,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     },
   });
 
-  if (!booking) return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
-  if (booking.userId !== session.userId && session.role !== "ADMIN") {
-    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  if (!booking) {
+    return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
   }
 
   // Get pricing snapshot if exists
-  let pricing = null;
-  if (booking.pricingSnapshotId) {
-    pricing = await db.pricingSnapshot.findUnique({ where: { id: booking.pricingSnapshotId } });
-  }
+  const pricing = booking.pricingSnapshotId
+    ? await db.pricingSnapshot.findUnique({
+        where: { id: booking.pricingSnapshotId },
+      })
+    : null;
 
   return NextResponse.json({ ...booking, pricing });
 }

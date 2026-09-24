@@ -1,6 +1,28 @@
+// MEKANIX CARE — Reject extra cost proposal (customer)
+//
+// Security:
+//   - requireAuth (any authenticated user)
+//   - requireBookingOwner — only the customer who owns the booking (or ADMIN) may reject.
+//   - Approval record must belong to this booking (BOLA).
+//   - Approval.status must be PROPOSED — cannot reject an already-approved/rejected record.
+//   - Booking must currently be WAITING_CUSTOMER_APPROVAL (state-machine enforced).
+//
+// Atomicity:
+//   - CustomerApproval update, Finding update, ServiceBooking status update, and
+//     ServiceTimelineEvent create are all wrapped in a single db.$transaction.
+//
+// Post-rejection behavior:
+//   - Booking transitions back to INSPECTING so the technician can re-inspect or
+//     proceed without the extra (no longer blocked on customer approval).
+
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
+import {
+  requireBookingOwner,
+  isValidTransition,
+  isValidApprovalTransition,
+} from "@/lib/care-auth";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -9,24 +31,109 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const body = await req.json();
   const { approvalId } = body;
-  if (!approvalId) return NextResponse.json({ error: "approvalId الزامی است" }, { status: 400 });
 
-  const booking = await db.serviceBooking.findUnique({ where: { id } });
-  if (!booking) return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
-  if (booking.userId !== session.userId) return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
-
-  const approval = await db.customerApproval.update({
-    where: { id: approvalId },
-    data: { status: "CUSTOMER_REJECTED", rejectedAt: new Date() },
-  });
-
-  if (approval.findingId) {
-    await db.finding.update({ where: { id: approval.findingId }, data: { status: "REJECTED" } });
+  if (!approvalId) {
+    return NextResponse.json(
+      { error: "approvalId الزامی است" },
+      { status: 400 }
+    );
   }
 
-  await db.serviceTimelineEvent.create({
-    data: { bookingId: id, eventType: "customer_rejected", actor: session.userId, metadata: JSON.stringify({ approvalId }) },
+  // Authorization: booking owner (customer) or ADMIN.
+  const authz = await requireBookingOwner(session, id);
+  if (authz) return authz;
+
+  // Fetch the booking (we need its current status for state-machine validation).
+  const booking = await db.serviceBooking.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
+  if (!booking) {
+    return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
+  }
+
+  // Fetch the approval record.
+  const approval = await db.customerApproval.findUnique({
+    where: { id: approvalId },
+  });
+  if (!approval) {
+    return NextResponse.json(
+      { error: "تأییدیه یافت نشد" },
+      { status: 404 }
+    );
+  }
+
+  // BOLA: approval must belong to this booking.
+  if (approval.bookingId !== id) {
+    return NextResponse.json(
+      { error: "این تأییدیه متعلق به این سفارش نیست" },
+      { status: 403 }
+    );
+  }
+
+  // Approval state machine: only PROPOSED → CUSTOMER_REJECTED is allowed.
+  if (!isValidApprovalTransition(approval.status, "CUSTOMER_REJECTED")) {
+    return NextResponse.json(
+      {
+        error: `امکان رد پیشنهاد در وضعیت ${approval.status} وجود ندارد`,
+        currentStatus: approval.status,
+      },
+      { status: 409 }
+    );
+  }
+
+  // Booking state machine: WAITING_CUSTOMER_APPROVAL → INSPECTING (CUSTOMER role).
+  // Customer is allowed to make this transition ONLY when current status is
+  // WAITING_CUSTOMER_APPROVAL (enforced by the special case in care-auth).
+  if (!isValidTransition(session.role, booking.status, "INSPECTING")) {
+    return NextResponse.json(
+      {
+        error: `انتقال وضعیت مجاز نیست: ${booking.status} → INSPECTING برای نقش ${session.role}`,
+        currentStatus: booking.status,
+        nextStatus: "INSPECTING",
+      },
+      { status: 409 }
+    );
+  }
+
+  // Atomic: approval + finding + booking status + timeline.
+  const updatedApproval = await db.$transaction(async (tx) => {
+    // 1. Mark approval as rejected.
+    const a = await tx.customerApproval.update({
+      where: { id: approvalId },
+      data: {
+        status: "CUSTOMER_REJECTED",
+        rejectedAt: new Date(),
+      },
+    });
+
+    // 2. Mark the linked finding (if any) as REJECTED.
+    if (a.findingId) {
+      await tx.finding.update({
+        where: { id: a.findingId },
+        data: { status: "REJECTED" },
+      });
+    }
+
+    // 3. Transition the booking back to INSPECTING so the technician can re-inspect
+    //    or proceed without the extra cost.
+    await tx.serviceBooking.update({
+      where: { id },
+      data: { status: "INSPECTING" },
+    });
+
+    // 4. Timeline event.
+    await tx.serviceTimelineEvent.create({
+      data: {
+        bookingId: id,
+        eventType: "customer_rejected",
+        actor: session.userId,
+        metadata: JSON.stringify({ approvalId }),
+      },
+    });
+
+    return a;
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, approval: updatedApproval });
 }
