@@ -6,6 +6,7 @@
 // - API5: Broken Function Level Authorization
 
 import { SignJWT, jwtVerify } from "jose";
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "./db";
 
@@ -235,7 +236,7 @@ export function sanitizeInput<T extends Record<string, any>>(input: T, allowed: 
 
 export function generateRequestId(): string {
   const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const rand = randomBytes(4).toString("hex").toUpperCase();
   return `MEK-${ts}-${rand}`;
 }
 
