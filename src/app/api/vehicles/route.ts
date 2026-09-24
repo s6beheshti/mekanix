@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/api-helpers";
+import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession, sanitizeInput, ALLOWED_FIELDS } from "@/lib/auth";
+import { vehicleCreateSchema } from "@/lib/schemas";
 
 export async function GET(req: Request) {
   const session = await requireAuth(req);
@@ -42,15 +43,15 @@ export async function POST(req: Request) {
   const customer = await getCustomerFromSession(session);
   if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
 
-  let body: Record<string, any>;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  // Validate request body with Zod. The schema enforces type/make/model/year
+  // presence and bounds, and validates optional lat/lng ranges. We keep the
+  // existing sanitizeInput() mass-assignment whitelist as defence-in-depth —
+  // it strips any extra fields the schema happened to allow through (none,
+  // today, but cheap insurance against future schema additions).
+  const body = await validateBody(req, vehicleCreateSchema);
+  if (!body.ok) return body.response;
 
-  // Mass-assignment protection: only allow whitelisted vehicle fields
-  const safe = sanitizeInput(body, ALLOWED_FIELDS.vehicle);
+  const safe = sanitizeInput(body.data as unknown as Record<string, any>, ALLOWED_FIELDS.vehicle);
   if (!safe.type || !safe.make || !safe.model || !safe.year) {
     return NextResponse.json({ error: "نوع، برند، مدل و سال الزامی است" }, { status: 400 });
   }

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { checkRateLimit } from "@/lib/api-helpers";
+import { checkRateLimit, validateBody } from "@/lib/api-helpers";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { otpSendSchema } from "@/lib/schemas";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
@@ -10,12 +11,21 @@ import { rateLimit, getClientId } from "@/lib/rate-limit";
 //   delivered out-of-band (SMS / push) so a malicious response interceptor or
 //   XSS cannot read it.
 export async function POST(req: Request) {
-  const { phone: rawPhone } = await req.json();
+  // Validate request body with Zod before touching any rate-limit / DB state.
+  // The schema enforces phone length + character-class, so a junk payload
+  // fails fast with a 400 (and Persian error) instead of consuming rate-limit
+  // budget or hitting Prisma with malformed input.
+  const body = await validateBody(req, otpSendSchema);
+  if (!body.ok) return body.response;
 
   // Normalize phone: strip spaces, dashes, parentheses before storing/lookup.
-  const phone = String(rawPhone || "").replace(/[\s\-()]/g, "");
+  // The schema already proved the input is well-formed, so this only sanitizes
+  // formatting — it can no longer reject a previously-accepted payload.
+  const phone = body.data.phone.replace(/[\s\-()]/g, "");
 
   if (!phone || phone.length < 8) {
+    // Defensive: schema should already prevent this, but keep the guard in case
+    // the normalization above unexpectedly strips too much (e.g. an all-dashes input).
     return NextResponse.json({ error: "شماره موبایل معتبر وارد کنید" }, { status: 400 });
   }
 

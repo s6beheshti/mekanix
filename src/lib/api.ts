@@ -33,7 +33,7 @@ export type Review = Prisma.ReviewGetPayload<{ include: { fromUser: true } }>;
 export type Message = Prisma.MessageGetPayload<{ include: { fromUser: true } }>;
 export type Notification = NotificationModel;
 export type ServiceCategory = ServiceCategoryModel;
-export type Role = "CUSTOMER" | "TECHNICIAN" | "ADMIN";
+export type Role = "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER";
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   // Attach JWT from localStorage (for WebSocket) + cookies are sent automatically

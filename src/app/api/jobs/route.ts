@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
+import { wantsLite, liteResponse } from "@/lib/lite-response";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -41,5 +42,6 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     include,
   });
-  return NextResponse.json(list);
+  const lite = wantsLite(req);
+  return NextResponse.json(liteResponse(list, lite));
 }

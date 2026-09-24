@@ -42,15 +42,46 @@ model User {
   referralsMade       Referral[]            @relation("referralsMade")
   referralsReceived   Referral[]            @relation("referralsReceived")
   insurancePolicies   InsurancePolicy[]
+  // JWT revocation tracking — see Session model below.
+  sessions            Session[]
 
   @@index([role])
   @@index([phone])
+}
+
+// Session — JWT revocation tracking.
+//
+// Each successful login creates a Session row keyed by a hash of the issued
+// JWT. The middleware/auth layer can look up a token by its hash and:
+//   - reject requests once `revokedAt` is set (logout / admin force-logout)
+//   - reject requests once `expiresAt` has passed (JWT TTL)
+//
+// This is the missing piece for proper logout on a JWT-only auth stack:
+// without it, a leaked JWT remains valid until its natural expiry (30 days).
+// With this table, logout = set revokedAt; token rotation = create a new row.
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 (or similar) hash of the JWT. Stored, NOT the raw JWT — a DB
+  // read alone is never enough to authenticate as the user.
+  tokenHash String    @unique
+  device    String?   // user-agent or device identifier
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([tokenHash])
 }
 
 enum Role {
   CUSTOMER
   TECHNICIAN
   ADMIN
+  FLEET_MANAGER
+  PARTNER
 }
 
 enum UserStatus {

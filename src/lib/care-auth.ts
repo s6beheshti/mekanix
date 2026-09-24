@@ -171,6 +171,10 @@ const TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
 // - ADMIN can do any transition
 // - CUSTOMER can only: CANCEL (pre-service), APPROVE (approve extra cost),
 //   and INSPECTING (reject extra cost — back to technician for re-inspection)
+// - FLEET_MANAGER mirrors CUSTOMER (they manage a fleet of vehicles on the
+//   customer side and can approve extras / cancel pre-service bookings for
+//   their fleet) — see ARCHITECTURE.md §5 Roles.
+// - PARTNER is a read-only analytics viewer — no booking transitions.
 const ROLE_TRANSITIONS: Record<Session["role"], Set<BookingStatus>> = {
   ADMIN: new Set<BookingStatus>([
     "SCHEDULED", "MATCHING", "ASSIGNED", "EN_ROUTE", "ARRIVED",
@@ -178,10 +182,12 @@ const ROLE_TRANSITIONS: Record<Session["role"], Set<BookingStatus>> = {
     "FINAL_CHECK", "COMPLETED", "CANCELLED", "FAILED",
   ]),
   CUSTOMER: new Set<BookingStatus>(["CANCELLED", "APPROVED", "INSPECTING"]),
+  FLEET_MANAGER: new Set<BookingStatus>(["CANCELLED", "APPROVED", "INSPECTING"]),
   TECHNICIAN: new Set<BookingStatus>([
     "EN_ROUTE", "ARRIVED", "INSPECTING", "WAITING_CUSTOMER_APPROVAL",
     "IN_SERVICE", "FINAL_CHECK", "COMPLETED", "FAILED",
   ]),
+  PARTNER: new Set<BookingStatus>([]),
 };
 
 export function isValidTransition(
@@ -204,19 +210,23 @@ export function isValidTransition(
     return false;
   }
 
-  // Special case: CUSTOMER can only APPROVE when status is WAITING_CUSTOMER_APPROVAL
-  if (role === "CUSTOMER" && next === "APPROVED" && current !== "WAITING_CUSTOMER_APPROVAL") {
+  // FLEET_MANAGER mirrors CUSTOMER for the booking flow (approve extras /
+  // reject extras / cancel pre-service) — see ARCHITECTURE.md §5 Roles.
+  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
+
+  // Special case: customer-side role can only APPROVE when status is WAITING_CUSTOMER_APPROVAL
+  if (actsAsCustomer && next === "APPROVED" && current !== "WAITING_CUSTOMER_APPROVAL") {
     return false;
   }
 
-  // Special case: CUSTOMER can only transition to INSPECTING when rejecting an extra
-  // (i.e. the booking must currently be WAITING_CUSTOMER_APPROVAL).
-  if (role === "CUSTOMER" && next === "INSPECTING" && current !== "WAITING_CUSTOMER_APPROVAL") {
+  // Special case: customer-side role can only transition to INSPECTING when
+  // rejecting an extra (i.e. the booking must currently be WAITING_CUSTOMER_APPROVAL).
+  if (actsAsCustomer && next === "INSPECTING" && current !== "WAITING_CUSTOMER_APPROVAL") {
     return false;
   }
 
-  // Special case: CUSTOMER can only CANCEL before IN_SERVICE
-  if (role === "CUSTOMER" && next === "CANCELLED" &&
+  // Special case: customer-side role can only CANCEL before IN_SERVICE
+  if (actsAsCustomer && next === "CANCELLED" &&
       ["IN_SERVICE", "FINAL_CHECK", "COMPLETED", "CANCELLED", "FAILED"].includes(current)) {
     return false;
   }

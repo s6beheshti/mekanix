@@ -42,15 +42,21 @@ const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
 const CUSTOMER_CANCEL_FROM: Status[] = ["REQUESTED", "ACCEPTED", "EN_ROUTE"];
 
 function isAllowedTransition(
-  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN",
+  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER",
   currentStatus: string,
   nextStatus: string,
   customerApproved: boolean | undefined
 ): boolean {
   if (role === "ADMIN") return true;
 
+  // FLEET_MANAGER behaves like a customer for the job-status state machine
+  // (can cancel pre-service and approve repair estimates for fleet vehicles).
+  // PARTNER is read-only and cannot transition anything.
+  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
+  if (role === "PARTNER") return false;
+
   // Special: customer setting customerApproved=true (approve repair)
-  if (role === "CUSTOMER") {
+  if (actsAsCustomer) {
     if (customerApproved === true) {
       return currentStatus === "WAITING_APPROVAL";
     }

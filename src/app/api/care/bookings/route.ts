@@ -1,19 +1,36 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/api-helpers";
+import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
+import { careBookingSchema } from "@/lib/schemas";
+import { calculatePrice } from "@/lib/pricing";
+import { checkVipStatus } from "@/lib/vip";
+import { wantsLite, liteResponse } from "@/lib/lite-response";
 
-// POST /api/care/bookings — create a service booking
+// POST /api/care/bookings — create a service booking.
+//
+// Pricing flow (per ARCHITECTURE.md §12):
+//   1. Compute VIP discount percent (0 if no active VIP).
+//   2. Compute the price via the pricing engine (`calculatePrice`):
+//        FinalPrice = Labor + Parts + Travel + Emergency - Discount
+//      At booking time, parts are unknown (0), and travel distance is
+//      unknown (no technician dispatched yet → 0). The travel fee then
+//      collapses to the base visit fee. After dispatch + inspection, the
+//      snapshot can be refreshed with real parts + travel distance.
+//   3. Persist the price as a frozen `PricingSnapshot` linked to the
+//      booking — historical prices are immutable.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  const body = await req.json();
-  const { vehicleId, packageId, serviceType, location, lat, lng, date, timeWindow, currentMileage } = body;
+  // Validate request body with Zod. vehicleId + location are required;
+  // the rest (packageId, lat/lng, date, timeWindow, currentMileage) are
+  // optional but type-checked if present. The schema also rejects negative
+  // mileage and out-of-range lat/lng before we touch the DB.
+  const body = await validateBody(req, careBookingSchema);
+  if (!body.ok) return body.response;
 
-  if (!vehicleId || !location) {
-    return NextResponse.json({ error: "خودرو و محل الزامی است" }, { status: 400 });
-  }
+  const { vehicleId, packageId, serviceType, location, lat, lng, date, timeWindow, currentMileage } = body.data;
 
   const customer = await getCustomerFromSession(session);
   if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
@@ -24,20 +41,34 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "خودرو متعلق به شما نیست" }, { status: 403 });
   }
 
-  // Get package for pricing
-  const pkg = packageId ? await db.servicePackage.findUnique({ where: { id: packageId }, include: { items: true } }) : null;
+  // ── Pricing ─────────────────────────────────────────────────────────
+  // Use the new pricing engine (ARCHITECTURE.md §12). The booking-time
+  // snapshot uses:
+  //   - vehicle.type → drives the vehicle-type labor multiplier
+  //   - laborHours = 1 (default estimate; re-priced after inspection)
+  //   - partsCost = 0 (unknown at booking time)
+  //   - travelDistanceKm = 0 (no technician dispatched yet)
+  //   - isEmergency = serviceType === "emergency"
+  //   - vipDiscountPercent = active VIP discount (0 if none)
+  const vipStatus = await checkVipStatus(session.userId);
 
-  // Create pricing snapshot
-  const basePrice = pkg?.basePrice ?? 0;
-  const visitPrice = 15000; // base visit fee
-  const laborPrice = basePrice * 0.4;
-  const partsPrice = basePrice * 0.5;
-  const subtotal = basePrice + visitPrice + laborPrice + partsPrice;
-  const taxRate = 0.09;
-  const taxTotal = subtotal * taxRate;
-  const total = subtotal + taxTotal;
+  const pricing = await calculatePrice({
+    packageId: packageId || undefined,
+    vehicleType: vehicle.type,
+    laborHours: 1, // conservative booking-time estimate
+    partsCost: 0, // unknown at booking time
+    travelDistanceKm: 0, // no technician dispatched yet
+    isEmergency: serviceType === "emergency",
+    vipDiscountPercent: vipStatus.active ? vipStatus.discountPercent : 0,
+  });
 
-  // Create booking + pricing snapshot in a transaction
+  // Create booking + pricing snapshot in a transaction.
+  //
+  // The snapshot write is inlined into the transaction (rather than
+  // delegated to `createPricingSnapshot()`) so it commits atomically with
+  // the booking creation. `createPricingSnapshot()` uses its own db handle
+  // (not the tx), which would break atomicity if the booking insert
+  // rolled back.
   const result = await db.$transaction(async (tx) => {
     const code = `CARE-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -58,19 +89,20 @@ export async function POST(req: Request) {
       },
     });
 
-    // Create pricing snapshot
+    // Persist the frozen pricing snapshot (immutable, linked 1:1 to booking).
     const snapshot = await tx.pricingSnapshot.create({
       data: {
         bookingId: booking.id,
-        servicePrice: basePrice,
-        visitPrice,
-        laborPrice,
-        partsPrice,
-        discount: 0,
-        taxRate,
-        taxTotal,
-        total,
-        currency: "USD",
+        servicePrice: pricing.labor, // labor as service price
+        visitPrice: pricing.travel,
+        laborPrice: pricing.labor,
+        partsPrice: pricing.parts,
+        discount: pricing.discount,
+        taxRate: pricing.taxRate,
+        taxTotal: pricing.taxTotal,
+        total: pricing.total,
+        currency: pricing.currency,
+        pricingVersion: pricing.pricingVersion,
       },
     });
 
@@ -89,7 +121,7 @@ export async function POST(req: Request) {
       },
     });
 
-    return { booking, snapshot };
+    return { booking, snapshotId: snapshot.id };
   });
 
   return NextResponse.json(result.booking);
@@ -109,5 +141,6 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json(bookings);
+  const lite = wantsLite(req);
+  return NextResponse.json(liteResponse(bookings, lite));
 }

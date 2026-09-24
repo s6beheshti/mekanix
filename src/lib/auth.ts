@@ -27,7 +27,7 @@ function getSecret(): Uint8Array {
 
 export type Session = {
   userId: string;
-  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN";
+  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER";
   phone: string | null;
   isGuest: boolean;
 };

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth";
-import { checkRateLimit } from "@/lib/api-helpers";
+import { checkRateLimit, validateBody } from "@/lib/api-helpers";
 import { RATE_LIMITS } from "@/lib/rate-limit";
+import { otpVerifySchema } from "@/lib/schemas";
 
 const TECHNICIAN_INCLUDE = {
   specialties: true,
@@ -14,12 +15,17 @@ export async function POST(req: Request) {
   const limited = checkRateLimit(req, "otp-verify", RATE_LIMITS.OTP_VERIFY.max, RATE_LIMITS.OTP_VERIFY.windowMs);
   if (limited) return limited;
 
-  const { phone: rawPhone, code, name } = await req.json();
+  // Validate request body with Zod — phone + 6-digit code are required.
+  // `name` is optional and only used on first-time signup. The schema enforces
+  // length and character-class so a malformed payload fails fast with a 400
+  // (Persian error) instead of falling through to the DB lookup below.
+  const body = await validateBody(req, otpVerifySchema);
+  if (!body.ok) return body.response;
+
   // Normalize phone: strip spaces, dashes, parentheses.
-  const phone = String(rawPhone || "").replace(/[\s\-()]/g, "");
-  if (!phone || !code) {
-    return NextResponse.json({ error: "Phone and code are required" }, { status: 400 });
-  }
+  const phone = body.data.phone.replace(/[\s\-()]/g, "");
+  const code = body.data.code;
+  const name = body.data.name;
 
   const otp = await db.otpCode.findFirst({
     where: { phone, code, consumed: false },
@@ -46,7 +52,7 @@ export async function POST(req: Request) {
     const allUsers = await db.user.findMany({
       select: { id: true, phone: true },
     });
-    const match = allUsers.find((u) => u.phone.replace(/\D/g, "") === phoneDigits);
+    const match = allUsers.find((u) => (u.phone ?? "").replace(/\D/g, "") === phoneDigits);
     if (match) {
       user = await db.user.findUnique({
         where: { id: match.id },

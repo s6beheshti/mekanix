@@ -1917,3 +1917,1156 @@ Stage Summary:
 - ✅ Admin auth hardened (no default creds + no secret fallback in prod)
 - ✅ Next.js config hardened (no ignoreBuildErrors)
 - Next: P1 items (money model, pricing engine, maintenance engine, rule matching, TS error cleanup)
+
+---
+Task ID: PHASE-2-SECURITY
+Agent: sub-agent (general-purpose)
+Task: Phase 2 — Security hardening (permission guard, Zod schemas, Session model, route validation)
+
+Work Log:
+
+### Task 1 — `src/lib/permissions.ts` (NEW)
+Implemented the permission matrix described in ARCHITECTURE.md §17 (Security
+Architecture → Permission Guard).
+- Exported `PERMISSIONS` const with 14 dot-notation permission strings across
+  5 roles (CUSTOMER / TECHNICIAN / FLEET_MANAGER / PARTNER / ADMIN), plus the
+  `ADMIN_ALL` sentinel.
+- `ROLE_PERMISSIONS` map: role name → `Set<Permission>`. FLEET_MANAGER is
+  modelled as a specialized customer (inherits all customer permissions plus
+  fleet-only ones), matching the architecture's intent.
+- `can(role, permission)` — pure boolean check. ADMIN short-circuits to
+  `true`; unknown roles deny-by-default.
+- `canSession(session, permission)` — convenience overload that takes a
+  Session object so callers don't have to unwrap `session.role` everywhere.
+- `requirePermission(role, permission)` — middleware-style guard returning a
+  403 NextResponse with a Persian error (`"دسترسی غیرمجاز..."`) or `null`.
+- `requireSessionPermission(session, permission)` — Session-typed variant.
+- Introspection helpers (`permissionsForRole`, `isKnownRole`, `listRoles`)
+  for admin UIs and tests.
+- The file is pure (no I/O, no side effects) so it can be called from API
+  routes, server components, and middleware alike.
+- Existing routes that already use `requireRole` (role-level guard) do NOT
+  need to change; `requirePermission` is an additive finer-grained option.
+
+### Task 2 — `src/lib/schemas/` (NEW directory, 6 files)
+Created a clean, domain-segmented Zod schema module:
+- `auth.ts`         → `otpSendSchema`, `otpVerifySchema`, `sessionSchema`,
+                       `adminLoginSchema`
+- `vehicle.ts`      → `vehicleCreateSchema`, `vehicleUpdateSchema`,
+                       `VEHICLE_TYPES`, `vehicleTypeEnum`
+- `service.ts`      → `serviceRequestCreateSchema`, `jobStatusUpdateSchema`,
+                       `jobDiagnosisSchema`, `URGENCY_LEVELS`
+- `care.ts`         → `careBookingSchema`, `inspectionSchema`,
+                       `findingCreateSchema`, `extraProposalSchema`,
+                       `approveExtraSchema` / `rejectExtraSchema`,
+                       `healthReportSchema`
+- `wallet.ts`       → `withdrawRequestSchema`, `paymentCreateSchema`,
+                       `walletLedgerQuerySchema`, `PAYMENT_METHODS`
+- `index.ts`        → barrel re-export of all five domain files
+
+Notes on the schemas:
+- All error messages are in Persian (Farsi). For Zod v4's built-in checks
+  (required-type, enum, min/max), I used the v4 `{ error: "..." }` parameter
+  syntax so even the "missing required field" and "invalid enum" messages
+  surface in Persian instead of the default English `"Invalid input: expected
+  string, received undefined"`.
+- The pre-existing `src/lib/validation.ts` file is dead code (verified by
+  grep — zero imports anywhere in `src/`). I left it in place to avoid
+  breaking anything I didn't audit; the new `src/lib/schemas/` module is the
+  canonical source going forward.
+- The `vehicleCreateSchema` mirrors the VEHICLE_TYPES enum from
+  `prisma/schema.prisma` so an unknown type fails fast at 400 instead of
+  producing a Prisma constraint error at insert time.
+
+### Task 3 — Prisma `Session` model (NEW)
+Added a `Session` model to `prisma/schema.prisma` for JWT revocation tracking
+(and the `sessions Session[]` relation on `User`):
+
+```prisma
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  device    String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([tokenHash])
+}
+```
+
+Rationale (documented in the schema comments):
+- `tokenHash` is a SHA-256 (or similar) hash of the JWT — never the raw JWT
+  itself, so a DB read alone is never enough to authenticate as the user.
+- Two indexes: `[userId, expiresAt]` for "list my active sessions" and
+  `[tokenHash]` for the O(1) lookup on every authed request.
+- `revokedAt` is the logout primitive — without this table, a leaked JWT
+  remains valid for its natural 30-day expiry.
+- Ran `bun run db:push` — schema applied cleanly (no data loss warnings),
+  Prisma client regenerated, `db.session` delegate is now available.
+
+### Task 4 — Zod applied to 4 key API routes
+All 4 routes now use the shared `validateBody` helper from `@/lib/api-helpers`
+with the new schemas. Defensive manual guards were kept where they pre-existed.
+
+1. **`src/app/api/auth/otp/send/route.ts`**
+   - Old: `const { phone: rawPhone } = await req.json();` (no validation,
+     could throw on non-JSON input).
+   - New: `validateBody(req, otpSendSchema)` — phone regex + length enforced
+     before touching any rate-limit budget or the DB.
+   - Defensive `phone.length < 8` guard kept in case normalization strips
+     too much (e.g. an all-dashes input that happened to pass the regex).
+   - Persian error messages: `"شماره موبایل الزامی است"`,
+     `"شماره موبایل نامعتبر است"`.
+
+2. **`src/app/api/auth/otp/verify/route.ts`**
+   - Old: `const { phone, code, name } = await req.json();` + manual
+     `if (!phone || !code) return 400`.
+   - New: `validateBody(req, otpVerifySchema)` — phone regex + 6-digit code
+     enforced; the manual 400 is gone (schema rejects first).
+   - Persian error messages: `"کد تأیید باید ۶ رقم باشد"`, etc.
+   - Rate limit still runs BEFORE the schema check (intentional — we want
+     brute-force attempts to be throttled regardless of payload validity).
+
+3. **`src/app/api/care/bookings/route.ts` (POST)**
+   - Old: `const body = await req.json();` + manual
+     `if (!vehicleId || !location) return 400`.
+   - New: `validateBody(req, careBookingSchema)` — vehicleId, location
+     required; lat/lng range-checked; currentMileage must be a positive
+     integer; date/timeWindow/serviceType type-checked if present.
+   - Persian error messages: `"خودرو الزامی است"`, `"محل الزامی است"`,
+     `"عرض جغرفیایی نامعتبر است"`, `"کیلومتر باید مثبت باشد"`, etc.
+
+4. **`src/app/api/vehicles/route.ts` (POST)**
+   - Old: `try { body = await req.json() } catch { return 400 }` + manual
+     `if (!safe.type || !safe.make || !safe.model || !safe.year) return 400`.
+   - New: `validateBody(req, vehicleCreateSchema)` — type enum, make, model,
+     year all enforced at the schema layer.
+   - The existing `sanitizeInput(body, ALLOWED_FIELDS.vehicle)` whitelist
+     is kept as defence-in-depth (it strips anything Zod happened to allow
+     through; cheap insurance against future schema additions).
+   - `customerId` remains server-authoritative (BOLA protection unchanged).
+
+### Verification
+
+- **`bun run lint`** → exit 0, 0 errors, 0 warnings ✅
+- **`bunx tsc --noEmit`** → exit 0, 0 errors ✅
+- **`bun run db:push`** → schema applied cleanly, Prisma client regenerated,
+  `db.session` delegate confirmed present in
+  `node_modules/.prisma/client/index.d.ts` ✅
+- **`dev.log` tail** → only normal traffic (`GET /` 200, `POST /api/vehicles
+  200`, `POST /api/care/bookings 200`). No `⨯` runtime errors caused by these
+  changes (the one pre-existing `EADDRINUSE` entry is from a prior startup
+  collision and unrelated).
+
+### End-to-end smoke tests (curl, against running dev server)
+All four routes return the expected HTTP status + Persian error message on
+invalid input, and still succeed on valid input:
+
+| Route                    | Input                                | Expected | Actual |
+|--------------------------|--------------------------------------|----------|--------|
+| POST /api/auth/otp/send  | `{phone:"abc"}`                      | 400 Persian | ✅ `"شماره موبایل نامعتبر است"` |
+| POST /api/auth/otp/send  | `{}`                                 | 400 Persian | ✅ `"شماره موبایل الزامی است"` |
+| POST /api/auth/otp/send  | `{phone:"+98 912 123 4567"}`         | 200 + dev code | ✅ returns `{ok:true,code:"..."}` |
+| POST /api/auth/otp/verify| `{phone,code:"12345"}` (5 digits)    | 400 Persian | ✅ `"کد تأیید باید ۶ رقم باشد"` |
+| POST /api/auth/otp/verify| `{phone}` (no code)                  | 400 Persian | ✅ `"کد تأیید الزامی است"` |
+| POST /api/auth/otp/verify| `{phone,code:"470133"}` (valid)      | 200 + session cookie | ✅ returns user + sets `mekanix-token` |
+| POST /api/care/bookings  | `{}` (no auth)                       | 401 Persian | ✅ `"احراز هویت نشده..."` |
+| POST /api/care/bookings  | `{vehicleId}` (no location)          | 400 Persian | ✅ `"محل الزامی است"` |
+| POST /api/care/bookings  | `{vehicleId,location,lat:999}`       | 400 Persian | ✅ `"عرض جغرافیایی نامعتبر است"` |
+| POST /api/care/bookings  | `{vehicleId,location,currentMileage:-100}` | 400 Persian | ✅ `"کیلومتر باید مثبت باشد"` |
+| POST /api/care/bookings  | valid payload                        | 200 + booking JSON | ✅ creates CARE-XXXXXX booking |
+| POST /api/vehicles       | `{}` (missing type)                  | 400 Persian | ✅ `"نوع خودرو نامعتبر است"` |
+| POST /api/vehicles       | `{type:"SPACESHIP",...}`             | 400 Persian | ✅ `"نوع خودرو نامعتبر است"` |
+| POST /api/vehicles       | `{type:"CAR",make:"Honda",model:"Civic",year:1800}` | 400 Persian | ✅ `"سال نامعتبر است"` |
+| POST /api/vehicles       | valid payload                        | 200 + vehicle JSON | ✅ creates vehicle |
+
+### Files changed
+- **NEW** `src/lib/permissions.ts`               (permission guard)
+- **NEW** `src/lib/schemas/auth.ts`              (Zod)
+- **NEW** `src/lib/schemas/vehicle.ts`            (Zod)
+- **NEW** `src/lib/schemas/service.ts`            (Zod)
+- **NEW** `src/lib/schemas/care.ts`              (Zod)
+- **NEW** `src/lib/schemas/wallet.ts`             (Zod)
+- **NEW** `src/lib/schemas/index.ts`             (barrel)
+- **EDIT** `prisma/schema.prisma`                (+ Session model + User.sessions)
+- **EDIT** `src/app/api/auth/otp/send/route.ts`  (validateBody)
+- **EDIT** `src/app/api/auth/otp/verify/route.ts`(validateBody)
+- **EDIT** `src/app/api/care/bookings/route.ts`  (validateBody on POST)
+- **EDIT** `src/app/api/vehicles/route.ts`       (validateBody on POST)
+
+### Security posture after Phase 2
+- **Function-level authorization (BFLA)**: now expressible as
+  `requirePermission(session.role, PERMISSIONS.X)` — finer-grained than the
+  existing role-level guard. Drop-in for any future route that needs
+  per-action checks.
+- **Input validation**: 4 high-traffic routes (auth send, auth verify, CARE
+  booking, vehicle create) now reject malformed payloads at 400 before any
+  rate-limit budget is consumed or any DB query runs.
+- **JWT revocation**: `Session` table is in place; wiring it into
+  `verifySession` is the next P0 task (the table alone doesn't yet enforce
+  revocation — that's a separate, surgical change to `src/lib/auth.ts`).
+- **Mass assignment**: unchanged (already protected via `sanitizeInput` +
+  `ALLOWED_FIELDS` whitelist).
+- **Persian UX**: all validation errors now surface in Persian, matching the
+  rest of the API.
+
+### Next actions recommended
+1. Wire the `Session` table into `verifySession()` in `src/lib/auth.ts`:
+   after JWT verification succeeds, hash the token and look it up in the
+   `Session` table; reject if `revokedAt` is set or `expiresAt` has passed.
+2. Wire the `Session` table into `createSession()`: insert a row with the
+   token hash, device (user-agent), IP, and `expiresAt` = JWT `exp`.
+3. Wire the `Session` table into a future `/api/auth/logout` endpoint:
+   `UPDATE Session SET revokedAt = NOW() WHERE tokenHash = ?`.
+4. Migrate more routes to use the new `@/lib/schemas` module — the schemas
+   for service-requests, jobs, wallets, etc. are ready, just need wiring
+   into the corresponding route handlers.
+5. Migrate `src/lib/validation.ts` (dead code) into `src/lib/schemas/` and
+   delete the old file once all callers (currently zero) are moved.
+
+Stage Summary:
+- ✅ Permission guard implemented with role matrix + `can()` / `requirePermission()`.
+- ✅ 6 Zod schema files created covering auth, vehicle, service, care, wallet.
+- ✅ `Session` model added to Prisma schema, DB pushed, client regenerated.
+- ✅ 4 high-traffic API routes hardened with Zod validation.
+- ✅ Lint: 0 errors. TSC: 0 errors. Smoke tests: all pass.
+- ✅ Persian error messages throughout the new validation layer.
+
+---
+Task ID: PHASE-3-CORE-REFACTOR
+Agent: sub-agent (general-purpose)
+Task: Phase 3 — Core Refactor (new roles, unified Asset, module barrels, notifications)
+
+Work Log:
+
+### Task 1 — FLEET_MANAGER and PARTNER roles
+
+**1a. Prisma `Role` enum extended** (`prisma/schema.prisma`):
+```prisma
+enum Role {
+  CUSTOMER
+  TECHNICIAN
+  ADMIN
+  FLEET_MANAGER
+  PARTNER
+}
+```
+- Ran `bun run db:push` — schema applied cleanly. SQLite stores enums as
+  free-form TEXT so no migration was needed; the Prisma Client regenerated
+  with both new roles in `Role` (verified via grep in
+  `node_modules/.prisma/client/index.d.ts`).
+
+**1b. `src/lib/auth.ts` Session type widened**:
+```typescript
+role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER";
+```
+- This is the auth-side type used everywhere; downstream code that
+  pattern-matches on `session.role === "CUSTOMER"` etc. keeps working.
+
+**1c. `src/lib/permissions.ts` verified**:
+- The permission matrix from Phase 2 already had `FLEET_MANAGER` and
+  `PARTNER` entries in `ROLE_PERMISSIONS`. FLEET_MANAGER inherits all
+  customer-side permissions + the two fleet-only ones; PARTNER only has
+  `partner.view.analytics`. No change needed — just verified.
+
+**1d. `src/lib/care-auth.ts` `ROLE_TRANSITIONS` widened**:
+- `Record<Session["role"], Set<BookingStatus>>` is now exhaustive across all
+  5 roles (was only 3 — would have failed tsc with the new Session type).
+- `FLEET_MANAGER` mirrors `CUSTOMER` (can CANCEL pre-service, APPROVE extras,
+  INSPECT to reject extras) — they manage a fleet of vehicles on the
+  customer side per ARCHITECTURE.md §5 Roles.
+- `PARTNER` is read-only analytics — empty Set (no booking transitions).
+- Refactored the 3 customer-side special-case rules into a single
+  `actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER"`
+  predicate so the same gating logic applies to both roles.
+
+**1e. `src/lib/api.ts` Role type widened**:
+```typescript
+export type Role = "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER";
+```
+- This is the client-side type used by Zustand store + role switcher UI.
+- Did NOT touch `ROLE_META` in `src/components/mek/app-shell.tsx` — the role
+  switcher UI still shows only CUSTOMER / TECHNICIAN / ADMIN portals
+  intentionally. FLEET_MANAGER and PARTNER are server-side role grants, not
+  separate UI portals (a FLEET_MANAGER logs in through the customer portal).
+
+**1f. `src/app/api/jobs/[id]/status/route.ts` `isAllowedTransition` widened**:
+- The function parameter was `"CUSTOMER" | "TECHNICIAN" | "ADMIN"` — would
+  have failed tsc because `session.role` is now the 5-role union.
+- Widened to the full 5-role union. FLEET_MANAGER behaves like CUSTOMER
+  (cancel pre-service + approve repair estimate). PARTNER returns false
+  (cannot transition anything).
+
+### Task 2 — Unified Asset abstraction (ARCHITECTURE.md §7)
+
+Created `src/lib/asset-types.ts` (NEW, ~95 lines):
+- `AssetType = "vehicle" | "machinery"` — the discriminator.
+- `AssetBase` interface — common fields shared by both kinds (id, ownerId,
+  type, brand, model, year?, location?, createdAt).
+- `VehicleAsset extends AssetBase` — passenger-vehicle-specific fields
+  (vin?, plate?, mileage?, fuel?).
+- `MachineryAsset extends AssetBase` — heavy-equipment-specific fields
+  (serialNumber?, workingHours?, engineHours?, maintenanceCycle?).
+- `Asset = VehicleAsset | MachineryAsset` — discriminated union.
+- `vehicleToAsset(v: any): VehicleAsset` — converts a Vehicle DB record
+  (or any Vehicle-shaped object) into a VehicleAsset. Accepts `any` so it
+  works against Prisma payloads, mocks, or partials. Maps:
+  - `customerId → ownerId`
+  - `make       → brand`
+  - `engineHours→ mileage` (existing schema reuses engineHours for both
+    passenger-car mileage and machinery hours).
+- `getAssetType(machineType: string): AssetType` — converts a Vehicle.type
+  string (the MachineType enum value: CAR / TRUCK / BUS / EXCAVATOR / etc.)
+  to the unified AssetType. CAR → "vehicle"; everything else → "machinery".
+- Bonus type-guards `isVehicle(asset)` / `isMachinery(asset)` for ergonomic
+  narrowing in switch/if branches.
+- IMPORTANT: did NOT migrate the existing Vehicle Prisma model. This file is
+  a read-side abstraction; the underlying Vehicle table is untouched. This
+  matches the Phase 3 brief ("DO NOT migrate the existing Vehicle model —
+  too risky").
+
+### Task 3 — `src/modules/` barrel structure (ARCHITECTURE.md §4)
+
+Created 9 module directories each with a barrel `index.ts` that re-exports
+from existing `src/lib/` files. All barrels are pure additive — no existing
+import path was touched, so zero break risk.
+
+| Module          | Re-exports from                                                |
+|-----------------|----------------------------------------------------------------|
+| `auth/`         | `@/lib/auth`, `@/lib/permissions`, `@/lib/schemas/auth`         |
+| `users/`        | `@/lib/api` (User/Customer/Technician/Role types), `@/lib/use-active-user`, `@/lib/auth` (session helpers), `@/lib/schemas/auth` |
+| `assets/`       | `@/lib/asset-types`, `@/lib/schemas/vehicle`, `@/lib/vehicle-db`, `@/lib/api` (Vehicle type), `@/lib/auth` (requireVehicleOwner) |
+| `services/`     | `@/lib/schemas/service`, `@/lib/api` (ServiceRequest/Job/Invoice/ServiceCategory), `@/lib/auth` (requireJobParticipant) |
+| `dispatch/`     | Stub — Phase 4 will populate with DispatchStrategy / MatchingRule / runMatchingCycle. Currently re-exports the bare minimum (ServiceRequest / Technician types, requireRole, PERMISSIONS). |
+| `care/`         | `@/lib/schemas/care`, `@/lib/care-auth` (BOLA + state machine), `@/lib/auth`, `@/lib/permissions` |
+| `pricing/`      | Stub — Phase 4 will add calculateInvoice / PriceQuote / CommissionSplit. Currently re-exports Invoice/Payment types + wallet schemas. |
+| `wallet/`       | `@/lib/schemas/wallet`, `@/lib/api` (Payment), `@/lib/auth` (requireWalletOwner), `@/lib/permissions` |
+| `notifications/`| `@/lib/notifications` (NEW), `@/lib/api` (Notification), `@/lib/auth` (requireNotificationOwner) |
+
+- The `dispatch/` and `pricing/` barrels are intentionally thin — they
+  re-export only the bare types needed today and carry an inline comment
+  flagging where Phase 4 will plug in the matching engine and pricing engine.
+
+### Task 4 — Centralized notifications module
+
+Created `src/lib/notifications.ts` (NEW, ~70 lines):
+- `NOTIFICATION_TYPES` const with 12 typed notification strings, grouped by
+  domain: Auth (OTP_SENT), Service (REQUEST_ACCEPTED, TECHNICIAN_ARRIVING,
+  JOB_COMPLETED, REQUEST_REJECTED), Payment (PAYMENT_REQUIRED,
+  PAYMENT_RECEIVED, WITHDRAWAL_PROCESSED), CARE (EXTRA_PROPOSAL,
+  BOOKING_CONFIRMED, SERVICE_REMINDER), Warranty (WARRANTY_ACTIVATED).
+- `NotificationType` derived as `typeof NOTIFICATION_TYPES[keyof ...]` — a
+  literal union of the exact strings (no widening to `string`).
+- `sendNotification(params)` helper — thin wrapper around
+  `db.notification.create` that defaults `category` to `"general"` and
+  `link` to `null`. Centralizing this means future cross-cutting concerns
+  (push delivery, fan-out, locale translation) can be added in one place
+  without touching every call site.
+- This file replaces the ad-hoc string literals that were scattered across
+  route handlers (`"job_completed"`, `"request_accepted"`, etc.) with a
+  single typed catalogue that's easy to grep and impossible to typo.
+
+### Verification
+
+- **`bun run db:push`** → schema applied cleanly, Prisma Client regenerated
+  with `Role.FLEET_MANAGER` and `Role.PARTNER` confirmed in
+  `node_modules/.prisma/client/index.d.ts` ✅
+- **`bun run lint`** → exit 0, 0 errors, 0 warnings ✅
+- **`bunx tsc --noEmit`** → exit 0, 0 errors ✅
+  - Confirms the widened `Session["role"]` union propagated correctly
+    through `src/lib/care-auth.ts` (`Record<Session["role"], ...>`) and
+    `src/app/api/jobs/[id]/status/route.ts` (function param type) without
+    breaking exhaustiveness.
+- **Smoke test (Bun)**: created a temp file that imports from every new
+  module + every new lib file, instantiates a VehicleAsset via
+  `vehicleToAsset`, and exercises `getAssetType("CAR")` /
+  `getAssetType("EXCAVATOR")` / `isVehicle` / `isMachinery`. All imports
+  resolve and all runtime values are as expected ✅
+- **Type-only smoke test**: created a temp `.ts` file under `src/` that
+  declares variables typed as `Role = "FLEET_MANAGER"`, `Role = "PARTNER"`,
+  `Session` with `role: "FLEET_MANAGER"`, `Asset` (machinery variant), and
+  `NotificationType = "job_completed"`. `tsc --noEmit` passes ✅
+- **`dev.log` tail** → only normal traffic (`GET /` 200, `POST /api/...`
+  200/400). No `⨯` runtime errors caused by these changes ✅
+
+### Files changed
+
+- **NEW** `src/lib/asset-types.ts`              (unified Asset abstraction)
+- **NEW** `src/lib/notifications.ts`            (centralized notification types + helper)
+- **NEW** `src/modules/auth/index.ts`           (barrel)
+- **NEW** `src/modules/users/index.ts`          (barrel)
+- **NEW** `src/modules/assets/index.ts`         (barrel)
+- **NEW** `src/modules/services/index.ts`       (barrel)
+- **NEW** `src/modules/dispatch/index.ts`       (barrel, Phase 4 stub)
+- **NEW** `src/modules/care/index.ts`           (barrel)
+- **NEW** `src/modules/pricing/index.ts`        (barrel, Phase 4 stub)
+- **NEW** `src/modules/wallet/index.ts`         (barrel)
+- **NEW** `src/modules/notifications/index.ts`  (barrel)
+- **EDIT** `prisma/schema.prisma`               (+ FLEET_MANAGER, + PARTNER in Role enum)
+- **EDIT** `src/lib/auth.ts`                   (Session.role widened to 5-role union)
+- **EDIT** `src/lib/api.ts`                    (Role type widened to 5-role union)
+- **EDIT** `src/lib/care-auth.ts`              (ROLE_TRANSITIONS + 2 new role entries; refactored 3 customer-side special-case rules into `actsAsCustomer` predicate)
+- **EDIT** `src/app/api/jobs/[id]/status/route.ts` (isAllowedTransition role param widened; FLEET_MANAGER acts as customer; PARTNER denies)
+
+### Architecture posture after Phase 3
+
+- **Roles**: 5-role model now end-to-end consistent across DB schema →
+  Prisma Client → Session type → permission matrix → state machines. New
+  B2B roles (FLEET_MANAGER, PARTNER) can be assigned to a User row and the
+  entire auth/permission layer will honor them.
+- **Asset abstraction**: the read-side `Asset` union is in place — UI and
+  API code can start treating vehicles and machinery uniformly via
+  `vehicleToAsset()` + the type-guards. The underlying Vehicle Prisma model
+  is untouched (zero migration risk).
+- **Module barrels**: 9 module entry points created under `src/modules/`.
+  Existing imports continue to work unchanged; new code SHOULD import from
+  `@/modules/*` so the underlying `src/lib/*` files are free to be split or
+  reorganized in Phase 4 without breaking callers.
+- **Notifications**: 12 typed notification strings + a single
+  `sendNotification()` entry point. Phase 4 can layer push delivery / locale
+  translation / fan-out on top of this helper without touching every call
+  site.
+
+### Next actions recommended (Phase 4)
+
+1. **Dispatch engine** (`src/lib/dispatch.ts` + populate `src/modules/dispatch/`):
+   implement `runMatchingCycle()`, `DispatchStrategy`, `MatchingRule`,
+   `TechnicianRanking` types — the matching engine that pairs a
+   ServiceRequest with a Technician.
+2. **Pricing engine** (`src/lib/pricing.ts` + populate `src/modules/pricing/`):
+   implement `calculateInvoice()`, `PriceQuote`, `CommissionSplit`,
+   `CurrencyConversionResult`. Today invoices are computed ad-hoc inside
+   `src/app/api/jobs/[id]/status/route.ts` (lines 273-300) — that logic
+   should be extracted into a pure, testable function.
+3. **Wire `Session` table into `verifySession()`**: the JWT revocation table
+   from Phase 2 is still not consulted on each authed request. This is the
+   single highest-impact P0 item still open.
+4. **Migrate routes to `@/modules/*`**: existing API routes can start
+   importing from the new module barrels (e.g. `import { requireAuth } from
+   "@/modules/auth"` instead of `"@/lib/auth"`) for forward compatibility.
+   Not urgent, but should be done opportunistically as routes are touched.
+5. **`getCustomerFromSession` for FLEET_MANAGER**: today FLEET_MANAGER is
+   rejected by `getCustomerFromSession()` (which only accepts role ===
+   "CUSTOMER"). If FLEET_MANAGER users need to be linked to a Customer row
+   for vehicle ownership, this helper (and the BOLA guards that depend on
+   it) will need widening. Defer until FLEET_MANAGER onboarding is built.
+6. **Phase 1 cleanup**: 85 pre-existing TS errors from when
+   `ignoreBuildErrors` was removed (Phase 2 P0-SUMMARY) — still open, not
+   blocking dev but blocking production build.
+
+Stage Summary:
+- ✅ 5-role model (CUSTOMER / TECHNICIAN / ADMIN / FLEET_MANAGER / PARTNER)
+  end-to-end across Prisma → Client → Session type → permission matrix →
+  state machines.
+- ✅ Unified `Asset` abstraction in place (`src/lib/asset-types.ts`) —
+  Vehicle model untouched, zero migration risk.
+- ✅ 9 module barrels under `src/modules/` (auth / users / assets / services
+  / dispatch / care / pricing / wallet / notifications) — purely additive,
+  existing imports unchanged.
+- ✅ Centralized notification type catalogue + `sendNotification()` helper
+  in `src/lib/notifications.ts`.
+- ✅ Lint: 0 errors. TSC: 0 errors. Smoke tests pass. dev.log clean.
+
+---
+Task ID: PHASE-4-BUSINESS-ENGINES
+Agent: sub-agent (general-purpose)
+Task: Phase 4 — Business Engines (dispatch, pricing, VIP, wire into CARE bookings)
+
+Work Log:
+
+### Schema reconnaissance (pre-implementation)
+
+Before writing any engine code, I read the existing Prisma schema to
+reconcile the task spec's field names with what actually exists. Several
+spec field names did NOT match the schema — had I copied the spec verbatim,
+tsc would have failed. Findings:
+
+- `DispatchCandidate` model (prisma/schema.prisma §1266):
+    Spec said:  `etaMins`, `rank`
+    Schema has: `eta`       (Int?, minutes)
+                `finalRank` (Int?)
+  → Adapted `autoAssignTechnician` to map `c.etaMins → eta` and
+    `idx + 1 → finalRank`. The public `DispatchCandidate` interface keeps
+    the spec's `etaMins` / `rank` names for caller ergonomics.
+
+- `UserVipSubscription` model (prisma/schema.prisma §772):
+    Spec said:  `db.vipSubscription`, `startDate`, `endDate`,
+                `plan.discountPercent`
+    Schema has: `db.userVipSubscription` (camelCase accessor)
+                `startedAt`  (DateTime?)
+                `expiresAt`  (DateTime?, null = lifetime)
+                `plan.discountPct` (Float)
+                `status`     is `$Enums.VipStatus` enum with one extra
+                              value (`PENDING_PAYMENT`) not in the spec's
+                              public union.
+  → Adapted `subscribeToVip` / `checkVipStatus` to use the schema's actual
+    fields. The public `VipSubscriptionResult` interface keeps the spec's
+    human-readable names (`startDate`, `endDate`, `discountPercent`).
+  → Also: there was already a `src/lib/vip.ts` file from a prior phase
+    exporting `checkVipStatus`, `getVipDiscount`, `calculateServicePrice`.
+    I rewrote it — only `calculateServicePrice` was removed (grepped
+    codebase: zero callers; only mentioned historically in worklog.md).
+
+- `PricingSnapshot` model (prisma/schema.prisma §1205):
+    Spec fields all matched: `bookingId`, `servicePrice`, `visitPrice`,
+    `laborPrice`, `partsPrice`, `discount`, `taxRate`, `taxTotal`,
+    `total`, `currency`, `pricingVersion`. ✅
+  → No mapping needed; the spec's `createPricingSnapshot` works as-is.
+
+- `Technician` model: `availableNow` (Boolean), `status` (TechStatus
+  enum, `ONLINE` | `OFFLINE` | `ON_JOB`), `level` (TechLevel enum),
+  `rating`, `responseMins`, `lat`, `lng`, `specialties` (relation to
+  `TechnicianSpecialty` which has a `category` field). All match the
+  spec's queries. ✅
+
+- `ServicePackage.basePrice` (Float): matches spec. ✅
+
+### Task 1 — Dispatch Engine (`src/lib/dispatch.ts`) [NEW, ~135 lines]
+
+Per ARCHITECTURE.md §10:
+  score = (distance * 0.4) + (skill * 0.3) + (rating * 0.2) + (speed * 0.1)
+
+Implemented:
+- `DispatchInput` / `DispatchCandidate` interfaces (faithful to spec).
+- `haversineKm()` — great-circle distance between two lat/lng points.
+- `normalize()` — linear normalize to 0..1 with min/max bounds.
+- `estimateEta()` — assumes 40 km/h urban speed; returns minutes.
+- `findBestTechnicians(input, limit=5)`:
+    • Queries `db.technician.findMany({ where: { availableNow: true,
+      status: "ONLINE" }, include: { user, specialties }, take: 50 })`.
+    • For each tech, computes haversine distance to the request origin.
+    • Skips if > 50 km (hard radius cap).
+    • Computes skill match ratio (matched/total required skills).
+    • Normalizes distance (closer = higher), rating (0..5 → 0..1),
+      responseMins (5..60 → 0..1, faster = higher).
+    • Weighted score: dist*0.4 + skill*0.3 + rating*0.2 + speed*0.1.
+    • Returns sorted top-N candidates with rounded score/distance/eta.
+- `autoAssignTechnician(jobId, input)`:
+    • Calls `findBestTechnicians(input, 5)`.
+    • Persists all 5 ranked candidates as `DispatchCandidate` rows for
+      audit (via `db.dispatchCandidate.createMany`).
+    • Schema-mapped: `c.etaMins → eta`, `idx+1 → finalRank`.
+    • Returns the top candidate (or null if none).
+
+### Task 2 — Pricing Engine (`src/lib/pricing.ts`) [NEW, ~170 lines]
+
+Per ARCHITECTURE.md §12:
+  FinalPrice = Labor + Parts + Travel + Emergency - Discount
+
+Implemented:
+- `PricingInput` / `PricingBreakdown` interfaces (faithful to spec).
+- Constants:
+    `DEFAULT_TAX_RATE` = 0.09 (9% VAT)
+    `REGION_MULTIPLIERS` (tehran=1.0, karaj=0.95, isfahan=0.9, ...)
+    `VEHICLE_TYPE_MULTIPLIERS` (CAR=1.0, TRUCK=1.5, BUS=1.4,
+    EXCAVATOR=2.0, LOADER=2.0, BULLDOZER=2.2, GRADER=1.8, AGRI=1.6,
+    INDUSTRIAL=1.8, OTHER=1.3) — matches the `MachineType` enum 1:1.
+    `EMERGENCY_MULTIPLIER` = 1.5
+- `calculatePrice(input)`:
+    • Fetches `servicePackage.basePrice` if `packageId` provided
+      (currently informational — Phase 5 will fold into the calc once
+      package redemption flow lands; kept the fetch to preserve the
+      async contract callers will depend on).
+    • Labor = baseLaborRate (50,000 IRR/hr) × vehicleMultiplier × laborHours.
+    • Parts = input.partsCost.
+    • Travel = baseTravelFee (15,000 IRR) + perKmRate (2,000 IRR/km) × distance.
+    • Emergency = (labor + parts + travel) × (1.5 − 1) if isEmergency.
+    • Discount = preDiscount × (vipPercent / 100).
+    • Subtotal = preDiscount − discount.
+    • TaxTotal = subtotal × 0.09.
+    • Total = subtotal + taxTotal.
+    • Returns `PricingBreakdown` with rounded values + nested
+      `breakdown` object exposing the input params + laborRate +
+      travelRate + emergencyMultiplier for audit/transparency.
+- `createPricingSnapshot(bookingId, pricing)`:
+    • Persists a `PricingSnapshot` row (immutable, linked 1:1 to booking
+      via `bookingId @unique`).
+    • Maps `servicePrice ← pricing.labor`, `visitPrice ← pricing.travel`.
+
+### Task 3 — VIP Subscription Flow (`src/lib/vip.ts`) [REWRITTEN]
+
+Per ARCHITECTURE.md §13. The existing `vip.ts` was rewritten to:
+- Add `VipSubscriptionResult` interface with the spec's benefits struct.
+- Add `subscribeToVip(userId, planId)`:
+    • Looks up the plan (throws if missing).
+    • Sets `startDate = now`, `endDate = startDate + 1 year` (annual).
+    • Expires any currently-ACTIVE subscription for the user via
+      `updateMany` (a user can only have one ACTIVE VIP at a time).
+    • Creates a new `userVipSubscription` row with `status: "ACTIVE"`,
+      `startedAt: startDate`, `expiresAt: endDate`.
+    • Returns the public `VipSubscriptionResult` with benefits
+      (`freePeriodicVisit: true`, `priorityService: true`,
+      `discountPercent: plan.discountPct ?? 10`).
+- Rewrote `checkVipStatus(userId)` to return the spec's shape:
+    `{ active, discountPercent, plan?, expiresAt? }`.
+    "Active" = status is ACTIVE AND (expiresAt is null (lifetime) OR
+    expiresAt > now). Date check is authoritative — expired-but-still-
+    ACTIVE rows (cron hasn't flipped them yet) are treated as inactive.
+- Kept `getVipDiscount(userId)` as a convenience wrapper that returns
+  just the discount % (0 if no active VIP) for backward compat.
+- Removed the old `calculateServicePrice()` function — verified zero
+  callers in the codebase (only mentioned historically in worklog.md).
+  Pricing is now centralized in the new `src/lib/pricing.ts` engine.
+
+### Task 4 — Module barrels populated
+
+- `src/modules/dispatch/index.ts`:
+    Re-exports `findBestTechnicians`, `autoAssignTechnician`,
+    `DispatchInput`, `DispatchCandidate` from `@/lib/dispatch`. Keeps the
+    legacy Phase-3 stub re-exports (`ServiceRequest`, `Technician`,
+    `requireRole`, `Session`, `PERMISSIONS`, `can`) so existing callers
+    continue to resolve.
+- `src/modules/pricing/index.ts`:
+    Re-exports `calculatePrice`, `createPricingSnapshot`,
+    `PricingInput`, `PricingBreakdown` from `@/lib/pricing`. Also
+    re-exports the VIP helpers (`checkVipStatus`, `getVipDiscount`,
+    `subscribeToVip`, `VipSubscriptionResult`) from `@/lib/vip` so the
+    pricing module is a one-stop import site for callers that need to
+    compute a price including VIP treatment. Keeps the legacy Phase-3
+    stub re-exports (`Invoice`, `Payment`, wallet schemas).
+
+### Task 5 — Wired pricing engine into CARE bookings
+
+`src/app/api/care/bookings/route.ts` POST handler — replaced the
+hardcoded `basePrice * 0.4` pricing block with the new engine:
+
+Before:
+```ts
+const basePrice = pkg?.basePrice ?? 0;
+const visitPrice = 15000;
+const laborPrice = basePrice * 0.4;
+const partsPrice = basePrice * 0.5;
+const subtotal = basePrice + visitPrice + laborPrice + partsPrice;
+const taxRate = 0.09;
+const taxTotal = subtotal * taxRate;
+const total = subtotal + taxTotal;
+```
+
+After:
+```ts
+const vipStatus = await checkVipStatus(session.userId);
+const pricing = await calculatePrice({
+  packageId: packageId || undefined,
+  vehicleType: vehicle.type,    // CAR / TRUCK / EXCAVATOR / ...
+  laborHours: 1,                 // conservative booking-time estimate
+  partsCost: 0,                  // unknown at booking time
+  travelDistanceKm: 0,           // no technician dispatched yet
+  isEmergency: serviceType === "emergency",
+  vipDiscountPercent: vipStatus.active ? vipStatus.discountPercent : 0,
+});
+```
+
+The booking's `pricingSnapshot` is then created inline within the
+existing `$transaction` (using `tx.pricingSnapshot.create`) rather than
+via the lib helper `createPricingSnapshot()` — because the helper uses
+its own db handle, calling it inside a transaction would break
+atomicity if the booking insert rolled back. The snapshot fields are
+populated directly from the `pricing` object returned by the engine.
+
+### Verification
+
+- **`bun run lint`** → exit 0, 0 errors, 0 warnings ✅
+- **`bunx tsc --noEmit`** → exit 0, 0 errors ✅
+    • Confirms the `vehicleType: vehicle.type` assignment type-checks:
+      `MachineType` (string literal union from Prisma) is assignable to
+      the engine's `vehicleType: string` parameter.
+    • Confirms the DispatchCandidate `createMany` payload type-checks
+      against the schema's `eta` / `finalRank` field names (not the
+      spec's `etaMins` / `rank`).
+    • Confirms the UserVipSubscription `create` / `updateMany` payloads
+      type-check against `startedAt` / `expiresAt` (not `startDate` /
+      `endDate`).
+- **`dev.log` tail** → only normal traffic (GET / 200, POST /api/care/
+  bookings 200). No `⨯` runtime errors caused by these changes ✅
+- **Smoke tests (Bun scripts)**:
+    1. **Dispatch**: Called `findBestTechnicians({ lat: 37.7749,
+       lng: -122.4194, requiredSkills: ["engine", "diagnostic"],
+       vehicleType: "CAR" }, 3)` near SF. Got 3 candidates ranked by
+       score; top candidate Marcus Cole (PLATINUM, rating 4.9, distance
+       0, score 0.99). Then called `autoAssignTechnician(testId,
+       input)` and verified 5 `DispatchCandidate` rows persisted with
+       correct `finalRank` 1..5 and `eta` values; cleaned up afterward.
+    2. **VIP**: Subscribed test user Amara Okafor to Silver plan → got
+       back `{ subscriptionId, planName: "Silver", status: "ACTIVE",
+       startDate, endDate: startDate+1y, benefits: {
+       freePeriodicVisit: true, priorityService: true,
+       discountPercent: 10 } }`. Verified `checkVipStatus()` then
+       returned `{ active: true, plan: "silver", expiresAt: <1y later>,
+       discountPercent: 10 }`. `getVipDiscount()` returned 10. Cleaned
+       up afterward.
+    3. **Pricing (no VIP)**: `calculatePrice({ vehicleType: "CAR",
+       laborHours: 1, partsCost: 0, travelDistanceKm: 0,
+       isEmergency: false, vipDiscountPercent: 0 })` →
+       labor=50,000, travel=15,000, discount=0, subtotal=65,000,
+       taxTotal=5,850, total=70,850 IRR ✅
+    4. **Pricing (with VIP 10%)**: same input with
+       `vipDiscountPercent: 10` → labor=50,000, travel=15,000,
+       discount=6,500, subtotal=58,500, taxTotal=5,265, total=63,765
+       IRR. Savings = 7,085 IRR (= 6,500 + 585 tax on the discount) ✅
+    5. **End-to-end via HTTP**: Subscribed the active demo customer to
+       Silver VIP, then `POST /api/care/bookings` with `{vehicleId,
+       location, serviceType:"periodic"}`. Verified the persisted
+       `PricingSnapshot` row has discount=6,500, total=63,765,
+       currency="IRR", pricingVersion="2.0" ✅. Cleaned up afterward.
+    6. **End-to-end emergency TRUCK**: `POST /api/care/bookings` with
+       `serviceType:"emergency"` on a TRUCK vehicle → snapshot has
+       servicePrice=75,000 (TRUCK multiplier 1.5 × 50,000 base),
+       visitPrice=15,000, taxTotal=12,150, total=147,150 IRR (includes
+       the 45,000 emergency surcharge baked into the subtotal) ✅.
+
+### Files changed
+
+- **NEW** `src/lib/dispatch.ts`              (dispatch scoring engine + auto-assign)
+- **NEW** `src/lib/pricing.ts`               (pricing engine + snapshot helper)
+- **REWRITE** `src/lib/vip.ts`               (subscribeToVip + adapted to schema; dropped unused calculateServicePrice)
+- **EDIT** `src/modules/dispatch/index.ts`   (barrel populated with engine exports)
+- **EDIT** `src/modules/pricing/index.ts`    (barrel populated with engine + VIP exports)
+- **EDIT** `src/app/api/care/bookings/route.ts`  (replaced hardcoded pricing with calculatePrice())
+
+### Architecture posture after Phase 4
+
+- **Dispatch engine**: `findBestTechnicians` + `autoAssignTechnician`
+  are now callable from any route that needs to rank technicians for a
+  service request. The 0.4/0.3/0.2/0.1 weighting is centralized in one
+  file — easy to tune per region/season. All ranked candidates are
+  persisted for audit, so we can later build analytics on "why was tech
+  X chosen over tech Y for booking Z".
+- **Pricing engine**: `calculatePrice` is a pure function of (vehicle
+  type, labor hours, parts cost, travel distance, emergency flag, VIP
+  discount %, region). The vehicle-type multiplier table makes heavy
+  machinery costlier than passenger cars by design (TRUCK=1.5x,
+  EXCAVATOR=2.0x, BULLDOZER=2.2x). All snapshots are immutable once
+  written — historical prices can't drift.
+- **VIP engine**: `subscribeToVip` + `checkVipStatus` cover the annual
+  subscription lifecycle. A user can only hold one ACTIVE VIP at a
+  time; re-subscribing auto-expires the prior one. The 1-year validity
+  is enforced both at write time (`expiresAt = startDate + 1y`) and at
+  read time (`expiresAt > now` check).
+- **Bookings route**: now uses the real pricing engine + applies VIP
+  discount server-side. The `basePrice * 0.4` heuristic is gone.
+
+### Next actions recommended (Phase 5)
+
+1. **Wire dispatch into CARE bookings**: when a CARE booking transitions
+   from `REQUESTED` → `MATCHING`, call `autoAssignTechnician(bookingId,
+   { lat, lng, requiredSkills, vehicleType })` and link the top
+   candidate to the booking's `technicianId` field.
+2. **Wire dispatch into service-requests/[id]/assign**: the existing
+   manual-assign endpoint should also use `findBestTechnicians` to
+   show a ranked shortlist to the dispatcher UI.
+3. **Re-price after inspection**: today the snapshot is frozen at
+   booking time with `partsCost=0` and `travelDistanceKm=0`. After the
+   technician inspects and adds findings/parts, the engine should
+   re-run with real values and create a SECOND snapshot (v2) linked to
+   the booking — the customer pays the final amount, but the booking-
+   time snapshot stays for audit.
+4. **Wire `Session` table into `verifySession()`**: still open from
+   Phase 2 — single highest-impact P0 security item.
+5. **Phase 1 cleanup**: 85 pre-existing TS errors blocking production
+   build (from when `ignoreBuildErrors` was removed in Phase 2) —
+   still open, not blocking dev.
+6. **VIP checkout flow**: `subscribeToVip` currently creates the sub
+   in `ACTIVE` status directly. Phase 5 should add a `PENDING_PAYMENT`
+   state and a Shaparak gateway integration so the sub only flips to
+   ACTIVE on payment verification.
+
+Stage Summary:
+- ✅ Dispatch engine implemented per ARCHITECTURE.md §10 with 0.4/0.3/
+  0.2/0.1 weighting; schema-adapted field names (`eta`, `finalRank`).
+- ✅ Pricing engine implemented per ARCHITECTURE.md §12 with vehicle-type
+  multipliers, emergency surcharge, VIP discount, 9% VAT.
+- ✅ VIP subscription flow with annual validity, auto-expire prior sub,
+  10% Silver discount wired end-to-end.
+- ✅ CARE bookings route now uses `calculatePrice()` + applies VIP
+  discount server-side; hardcoded `basePrice * 0.4` removed.
+- ✅ Module barrels `src/modules/dispatch` and `src/modules/pricing`
+  populated with engine exports (legacy Phase-3 stub exports preserved).
+- ✅ Lint: 0 errors. TSC: 0 errors. Smoke tests pass. dev.log clean.
+
+---
+
+Task ID: PHASE-5-LITE-MODE
+Agent: general-purpose sub-agent
+Task: Phase 5 — Lite Mode (offline queue + sync engine + lite API responses) for weak Iranian internet
+
+### Task 1 — `src/lib/offline-queue.ts` [NEW]
+
+Per ARCHITECTURE.md §16. localStorage-backed FIFO queue of pending user
+actions (POST/PATCH/DELETE) that should be replayed when connectivity
+returns. Public API:
+
+- `QueuedAction` interface — `{ id, url, method, body, timestamp, retryCount, maxRetries }`.
+- `MAX_RETRIES = 3` (constant).
+- `STORAGE_KEY = "mekanix-offline-queue"`.
+- `getQueuedActions()` — reads + parses localStorage; safe on SSR (returns `[]` when `window` is undefined, returns `[]` on JSON parse failure).
+- `enqueueAction(action)` — generates a unique id (`qa_<ts>_<rand>`), stamps timestamp, sets `retryCount=0`, `maxRetries=3`, appends to the persisted array. Returns the id.
+- `dequeueAction(id)` — filters the array to remove the action with the given id; persists.
+- `incrementRetry(id)` — finds the action, increments `retryCount`. If `retryCount >= maxRetries`, removes the action and returns `false` (dropped). Otherwise persists and returns `true` (still in queue). Returns `false` if the action is not found.
+- `getQueueSize()` — convenience wrapper.
+- `clearQueue()` — wipes the entire queue (e.g. for a "discard all pending changes" UI button).
+
+All writes are wrapped in `typeof window === "undefined"` guards so they
+are SSR-safe no-ops.
+
+### Task 2 — `src/lib/sync-engine.ts` [NEW]
+
+Processes the offline queue when internet returns. Strategy:
+
+- **Module-level `syncing` flag** prevents two concurrent sync runs.
+- **`syncQueue()`** returns `{ synced, failed, remaining }`:
+    1. If `typeof window === "undefined"`, no-op (server-side).
+    2. If already syncing, returns immediately with current `remaining` count.
+    3. If `navigator.onLine === false`, no-op.
+    4. Otherwise iterates the queue snapshot, calls `fetch()` for each
+       action with `credentials: "include"` + JSON body. Per-response
+       handling:
+        - `res.ok` → `dequeueAction(id)`, `synced++`.
+        - `4xx` (client error) → `dequeueAction(id)`, `failed++` (don't retry — the request is malformed/unauthorized and retrying won't help).
+        - `5xx` (server error) → `incrementRetry(id)`. If max retries exceeded, `failed++`.
+        - Network throw → `incrementRetry(id)`. If max retries exceeded, `failed++`.
+- **`initAutoSync()`** — sets up:
+    1. `window.addEventListener("online", () => syncQueue())` — fire the moment the browser regains connectivity.
+    2. `setInterval(() => { if (navigator.onLine && getQueueSize() > 0) syncQueue() }, 30000)` — also retry every 30s while online (covers transient 5xx where the "online" event already fired long ago).
+
+### Task 3 — `src/lib/lite-response.ts` [NEW]
+
+Compresses API responses when `?lite=true` is passed. Public API:
+
+- `wantsLite(req)` — parses `req.url`, returns `true` if
+  `searchParams.get("lite") === "true"`. Returns `false` for any other
+  value (including `"false"`, `"1"`, `"yes"` — strict opt-in).
+- `liteResponse<T>(data, lite)` — if `lite === false`, returns `data`
+  unchanged (same reference). If `lite === true`:
+    - Arrays → mapped via `liteMapper`.
+    - Objects → mapped via `liteMapper`.
+- `liteMapper(item)` — extracts only the minimal "lite" fields:
+    - `id` (always)
+    - `status` (for jobs/bookings/notifications)
+    - `name` (for users/technicians)
+    - `code` (for jobs/bookings/invoices)
+    - `total` (for invoices/bookings)
+    - `amount` (renamed to `amt` to save bytes — for invoices/payments)
+    - `createdAt` → renamed to `ts` (epoch millis; shorter than ISO string)
+    - `technician.user.name` → flattened to `tech`
+    - `vehicle.make + " " + vehicle.model` → flattened to `v`
+
+  The mapper preserves unknown-field safety — it only copies fields that
+  are present and truthy, so passing a notification (which has no
+  `technician` or `vehicle`) just yields `{ id, ts }` (or `{ id, status, code, ts }` if those exist).
+
+### Task 4 — `src/hooks/use-offline.ts` [NEW]
+
+React hook (`"use client"`) exposing offline state to UI components.
+Originally written with `useState + useEffect` per the spec, but the
+spec's version triggered the `react-hooks/set-state-in-effect` lint
+rule (synchronous `setState` in an effect body causes cascading renders).
+Rewrote using **`useSyncExternalStore`** — the React 19-idiomatic way to
+subscribe to external browser-only state:
+
+- `subscribeOnline` — adds/removes `online`/`offline` listeners.
+- `getOnlineSnapshot` — `navigator.onLine`.
+- `getOnlineServerSnapshot` — `true` (assume online during SSR; the hook re-hydrates on the client).
+- `subscribeQueueSize` — listens for `storage` events (cross-tab queue changes) + polls every 5s (same-tab mutations don't fire `storage`).
+- `getQueueSizeSnapshot` — `getQueueSize()`.
+- `getQueueSizeServerSnapshot` — `0`.
+
+The hook also has a small `useEffect([isOnline])` that triggers a
+`syncQueue()` flush when `isOnline` transitions to `true`. After the
+flush, it dispatches a synthetic `storage` event to nudge the external
+store to re-read the new (smaller) queue size.
+
+Returns `{ isOnline, queueSize, enqueueAction, syncQueue }`. The
+`syncQueue` returned is wrapped so that callers can `await` it and the
+returned object will reflect the post-sync queue size.
+
+### Task 5 — Lite mode wired into three GET routes
+
+Three list endpoints were updated to support `?lite=true`. All
+existing behavior is preserved when the param is absent —
+`liteResponse(data, false)` returns the input by reference (zero-cost
+passthrough). Pattern used:
+
+```ts
+import { wantsLite, liteResponse } from "@/lib/lite-response";
+
+// at the end of the GET handler:
+const lite = wantsLite(req);
+return NextResponse.json(liteResponse(list, lite));
+```
+
+Routes updated:
+1. **`src/app/api/jobs/route.ts`** — GET now respects `?lite=true`.
+2. **`src/app/api/notifications/route.ts`** — GET now respects `?lite=true`. Added a header comment noting BOLA protection (userId from session, not query) and the new `lite` param.
+3. **`src/app/api/care/bookings/route.ts`** — GET (POST handler untouched) now respects `?lite=true`.
+
+No changes to schema, no changes to auth, no changes to mutation
+endpoints — fully backwards compatible.
+
+### Verification
+
+- **`bun run lint`** → exit 0, 0 errors, 0 warnings ✅
+    • First run failed with `react-hooks/set-state-in-effect` on the
+      spec's `use-offline.ts`. Resolved by rewriting with
+      `useSyncExternalStore` (no `setState` calls in the effect body —
+      the external store handles all reads; the only effect is the
+      side-effecting `syncQueue()` flush on online transition).
+- **`bunx tsc --noEmit`** → exit 0, 0 errors ✅
+- **`dev.log` tail** → only normal traffic (GET/POST 200s, no `⨯`
+  runtime errors caused by these changes) ✅
+- **Smoke tests** (Bun scripts with mocked `localStorage` / `fetch`):
+    1. **offline-queue.ts**: 9 assertions — empty queue, enqueue×2,
+       read-back shape (`id`/`url`/`method`/`retryCount=0`/`maxRetries=3`),
+       `incrementRetry` increments and removes at max-retries,
+       `dequeueAction` works, `incrementRetry(missing)` returns `false`,
+       `clearQueue` empties. All pass ✅
+    2. **sync-engine.ts**: 6 scenarios — all-success, 4xx → failed (not
+       retried), 5xx → retried 3 times then removed/failed, network
+       throw → retried 3 times then removed/failed, mix of all three,
+       offline no-op. All pass ✅
+    3. **lite-response.ts**: 6 scenarios — non-lite passthrough (same
+       ref), object lite mapping (drops unknown fields), array lite
+       mapping, invoice-like fields (`total`/`amt`), vehicle flattening
+       (`v = "Toyota Camry"`), `wantsLite` true/false. All pass ✅
+- **End-to-end HTTP test** (signed a JWT for the demo CUSTOMER user
+  Daniel Reyes, called each route with and without `?lite=true`,
+  measured sample-item JSON byte size):
+    | Route | Full sample size | Lite sample size | Saved |
+    |---|---:|---:|---:|
+    | `/api/notifications` | 271 B | 53 B | **80%** |
+    | `/api/jobs` | 6732 B | 113 B | **98%** |
+    | `/api/care/bookings` | 690 B | 95 B | **86%** |
+
+  The jobs endpoint benefits most because its Prisma `include` nests
+  `request.customer.user`, `technician.user.specialties`,
+  `parts`, `diagnosisRecords`, `invoice`, `reviews`, `messages`,
+  `tracking` — all of which are dropped in lite mode. For an Iranian
+  user on 2G/3G pulling a 50-job dashboard, this is ~330 KB → ~5 KB
+  (98% reduction) per page load.
+
+  Sample lite responses from the E2E test:
+  ```json
+  // notification (full: 9 keys, 271 B)
+  {"id":"cmu4o27o400aqves8rxnu96zp","ts":1789593758669}
+
+  // job (full: 30 keys including 9 nested relations, 6732 B)
+  {"id":"cmu4o27kc0052ves8b8cdz96x","status":"REPAIRING","code":"JOB-4010","ts":1789547093780,"tech":"Marcus Cole"}
+
+  // care booking (full: 21 keys including nested package + timeline, 690 B)
+  {"id":"cmug0vk6o000omsuidl5yab25","status":"REQUESTED","code":"CARE-253261","ts":1790284011504}
+  ```
+
+### Files changed
+
+- **NEW** `src/lib/offline-queue.ts`              (localStorage queue)
+- **NEW** `src/lib/sync-engine.ts`                (queue processor)
+- **NEW** `src/lib/lite-response.ts`              (response compressor)
+- **NEW** `src/hooks/use-offline.ts`              (React 19 useSyncExternalStore-based hook)
+- **EDIT** `src/app/api/jobs/route.ts`            (import + 2-line GET change)
+- **EDIT** `src/app/api/notifications/route.ts`   (import + 2-line GET change + comment)
+- **EDIT** `src/app/api/care/bookings/route.ts`   (import + 2-line GET change; POST untouched)
+
+### Architecture posture after Phase 5
+
+- **Offline write queue**: customers in low-connectivity areas can keep
+  submitting booking requests / message replies / status updates; the
+  queue persists them in localStorage and the sync engine replays them
+  the moment the browser fires `online` (or every 30s thereafter). 4xx
+  failures are dropped silently (the request was bad — retrying won't
+  help); 5xx and network failures are retried up to 3 times before
+  being discarded.
+- **Lite API mode**: any GET route that lists entities can opt into a
+  compressed response by adding `?lite=true` to the URL. The three
+  highest-traffic list endpoints (jobs, notifications, care/bookings)
+  are wired. The mapper is intentionally a whitelist (`id`, `status`,
+  `code`, `name`, `total`, `amt`, `ts`, `tech`, `v`) so adding new
+  fields to a Prisma `include` won't accidentally bloat the lite
+  response. Savings on real data: 80–98% per item.
+- **Hook surface**: `useOffline()` exposes `{ isOnline, queueSize,
+  enqueueAction, syncQueue }` — UI components (e.g. a small "offline
+  mode" badge in the header, or a "5 pending actions" toast) can
+  consume it without re-implementing the subscription logic. The hook
+  uses `useSyncExternalStore`, so it's safe under React 19 concurrent
+  rendering and SSR.
+
+### Next actions recommended (Phase 6+)
+
+1. **Wire `useOffline()` into the app shell** (`src/components/mek/app-shell.tsx`) to show an "offline — N actions queued" banner when `!isOnline || queueSize > 0`. Call `initAutoSync()` once at app boot.
+2. **Wrap mutation fetch calls** in `src/lib/api.ts` with the queue: if `!navigator.onLine` OR fetch throws, `enqueueAction(...)` instead of throwing — the sync engine will retry.
+3. **Extend `liteResponse`** to more endpoints: `/api/vehicles`, `/api/invoices`, `/api/messages`, `/api/technicians`. Each is a list endpoint that returns nested relations and would benefit from the same 80–98% size cut.
+4. **Add a `/api/queue/status` endpoint** that returns the current queue size for the active session (used by the app-shell banner without needing `localStorage` access).
+5. **Persist `useOffline` state across reloads**: today `useSyncExternalStore` re-subscribes on mount; if the queue is mid-sync when the user reloads, the in-flight `syncQueue()` promise is dropped. Consider moving the `syncing` flag from a module variable into the offline-queue module itself (persisted as part of the queue metadata).
+6. **Backpressure**: when the queue grows beyond N (say 100) items, surface a "your device is holding too many pending changes — please reconnect to sync" warning rather than silently enqueueing forever.
+7. **Phase 1 cleanup** (85 pre-existing TS errors blocking `next build`): still open from Phase 2, not blocking dev.
+
+Stage Summary:
+- ✅ Offline queue (localStorage, FIFO, max 3 retries) implemented per ARCHITECTURE.md §16.
+- ✅ Sync engine replays queued actions on `online` event + every 30s while online; 4xx → drop, 5xx/net → retry then drop.
+- ✅ Lite response helper (`?lite=true` query param) implemented; reduces payload by 80–98% on real data.
+- ✅ `useOffline()` hook built on `useSyncExternalStore` (React 19 idiomatic, SSR-safe, no `setState` in effect).
+- ✅ Three list endpoints wired (`/api/jobs`, `/api/notifications`, `/api/care/bookings`); existing behavior preserved when `?lite` absent.
+- ✅ Lint: 0 errors. TSC: 0 errors. Smoke tests pass (queue + sync + lite mapper). E2E HTTP tests confirm 80–98% payload reduction. dev.log clean.
+
+---
+
+Task ID: PHASE-6-TESTING
+Agent: general-purpose (sub)
+Task: Phase 6 — Testing setup (Vitest + 8 test files / 158 assertions)
+
+Work Log:
+- Installed Vitest stack: `vitest@5.0.1`, `@vitejs/plugin-react@6.1.1`,
+  `jsdom@30.1.1`, `@testing-library/react@16.3.3`,
+  `@testing-library/jest-dom@7.0.1` (89 transitive packages, 1.1s).
+- Created `vitest.config.ts` per spec: jsdom env, globals enabled,
+  `tests/setup.ts` setup file, includes `tests/**/*.test.{ts,tsx}`,
+  `@/` alias → `./src/`.
+- Created `tests/setup.ts` — imports `@testing-library/jest-dom/vitest`
+  for DOM matchers + cleans up between tests.
+- Added `test` / `test:watch` / `test:coverage` scripts to `package.json`.
+- Wrote 6 unit test files (133 tests) and 2 integration test files (25 tests),
+  158 tests total — all pass.
+- Verified: `bun run lint` → 0 errors. `bunx tsc --noEmit` → 0 errors.
+  `bun run test` → 158 passed / 0 failed / 8 files, 5.8s wall-clock.
+- `dev.log` tail: clean (no `⨯` runtime errors). The single pre-existing
+  `EADDRINUSE :::3000` is from the Next dev server being restarted while
+  another instance held the port — unrelated to Phase 6 (test files don't
+  touch runtime code paths).
+
+### Test files created (8 files, 158 tests)
+
+| File | Tests | What it covers |
+|---|---:|---|
+| `tests/unit/permissions.test.ts` | 20 | Role→Permission matrix: ADMIN bypass / CUSTOMER vs TECHNICIAN / FLEET_MANAGER inherits customer / PARTNER limited / unknown role denied / `requirePermission` 403 vs null / `canSession` / `requireSessionPermission` (full Session) / introspection helpers (`permissionsForRole`, `isKnownRole`, `listRoles`) |
+| `tests/unit/care-auth.test.ts` | 45 | State machine: forward transitions (REQUESTED→SCHEDULED→…→COMPLETED), terminal states (COMPLETED/CANCELLED/FAILED reject all), invalid jumps (REQUESTED→COMPLETED), backwards rejected, role-gated transitions (CUSTOMER can only APPROVE/CANCEL/INSPECTING from WAITING_CUSTOMER_APPROVAL, TECHNICIAN drives workflow but can't CANCEL/APPROVE, PARTNER has none, FLEET_MANAGER mirrors CUSTOMER, ADMIN all). `validateTransition` returns 409 NextResponse. Approval machine: PROPOSED→CUSTOMER_APPROVED/REJECTED valid; both terminal states reject |
+| `tests/unit/pricing.test.ts` | 14 | `calculatePrice` breakdown for CAR / emergency 50% surcharge / VIP discount reduces total / TRUCK 1.5x + EXCAVATOR 2.0x labor rate / 9% tax = round(subtotal * 0.09) / all numeric outputs are `Number.isInteger` |
+| `tests/unit/dispatch.test.ts` | 17 | Shadow-implementation test: re-implements `haversineKm` / `normalize` / `estimateEta` in the test and asserts the engine produces matching `distance` / `etaMins` / `score` for known coordinates (Tehran center + 5/10/30/55 km offsets). 50km radius filter, sorting by score desc, custom `limit`, skill matching (matched vs total) |
+| `tests/unit/offline-queue.test.ts` | 20 | `enqueueAction` adds + stamps id/timestamp/retryCount=0/maxRetries=3, unique ids across 50 enqueues, `dequeueAction` removes by id (no-op if missing), `getQueueSize`, `incrementRetry` returns true until max (3) then removes + returns false, `clearQueue` empties + idempotent, safe JSON parse on corrupt localStorage |
+| `tests/unit/lite-response.test.ts` | 17 | `wantsLite` strict opt-in (only `?lite=true`; `false`/`1`/`yes` all return false), `liteResponse(array)` maps each item to whitelist (id/status/name/code/total/amt/ts/tech/v), `liteResponse(object)` maps a single object, `lite=false` returns input by reference (same `===`), exhaustive whitelist check (all 9 fields present → 9 keys in output) |
+| `tests/integration/auth.test.ts` | 13 | Calls actual `POST` route handlers for `/api/auth/otp/send` + `/api/auth/otp/verify`. Send: 200 + 6-digit `code` in dev mode for valid phone, 400 for regex mismatch / too short / missing / invalid JSON. Verify: 200 + `user` + `created=false` for existing user, 200 + `created=true` for new user (OTP consumption + customer profile creation exercised), 400 for invalid code / expired / wrong length / missing phone / missing code |
+| `tests/integration/care.test.ts` | 12 | BOLA protection on 3 CARE endpoints. Mints real JWTs via `createSession()` so the verify path is exercised end-to-end. `/api/care/bookings`: 401 without auth, 200 with auth, BOLA scopes `where.userId = session.userId`. `/api/care/technician/missions`: 401 without auth, 403 for CUSTOMER, 200 for TECHNICIAN (resolves technicianId via `getTechnicianFromSession`), 403 if Technician profile missing, 200 for ADMIN with empty `where`. `/api/care/admin/rules`: 401 / 403 for CUSTOMER / 403 for TECHNICIAN / 200 + rules list for ADMIN |
+
+### Mocking strategy
+
+- **`@/lib/db`** is mocked in every test that touches a DB-reading function
+  (pricing, dispatch, both integration test files). Mock factories use
+  `vi.fn()` so individual tests can `mockResolvedValueOnce(...)` per-case.
+- **`@/lib/rate-limit`** is mocked in both integration test files — the
+  in-memory rate-limit store accumulates across tests and would produce
+  false 429s. The mock returns `{ success: true, resetMs: 60_000 }` for
+  `rateLimit`, `null` for `checkRateLimit`, `"127.0.0.1"` for `getClientId`,
+  and the same `RATE_LIMITS` constant object as the real module.
+- **No `fetch` mock was needed** because the integration tests call the
+  route handlers directly (imported `POST` / `GET` functions) with mocked
+  `Request` objects. This is faster than spinning up a server and avoids
+  the Next.js dev server startup cost.
+
+### Notable implementation choices
+
+1. **`@vitest-environment node` for integration tests.** Both integration
+   test files have `// @vitest-environment node` as the first line. The
+   OTP verify route (and `createSession` in care.test.ts) sign JWTs via
+   `jose`'s `SignJWT`. In jsdom, `TextEncoder().encode()` returns a
+   `Uint8Array` from a different realm than the one jose's
+   `key instanceof Uint8Array` check tests against — so jose rejects the
+   key with a misleading "Key for the HS256 algorithm must be one of
+   type CryptoKey, KeyObject, JSON Web Key, or Uint8Array. Received an
+   instance of Uint8Array" error. The `node` environment shares a single
+   `Uint8Array` constructor and the test passes. None of the integration
+   tests touch the DOM, so jsdom is unnecessary for them. The 6 unit
+   test files stay on jsdom (only `offline-queue.test.ts` actually uses
+   jsdom's `localStorage`, but the others are env-agnostic and inherit
+   jsdom from the config default).
+
+2. **`dispatch.test.ts` uses a shadow implementation.** The pure helpers
+   `haversineKm`, `normalize`, `estimateEta` are NOT exported from
+   `@/lib/dispatch` — they're internal. Rather than refactoring the source
+   to expose them (out of scope), the test re-implements the same formulas
+   from ARCHITECTURE.md §10 and asserts the engine produces matching
+   `distance` / `etaMins` / `score` values for known coordinates. If the
+   source formula changes without an ARCHITECTURE update, the test breaks
+   loudly — which is the whole point of a shadow test.
+
+3. **`permissions.test.ts` uses a full `Session` object for
+   `requireSessionPermission`.** `canSession` accepts `{ role: string }`
+   (loose), but `requireSessionPermission` takes a full `Session`
+   (`userId`/`role`/`phone`/`isGuest`). The test imports `Session` from
+   `@/lib/auth` as a type and constructs a complete object — keeps tsc
+   strict-mode happy without weakening the production types.
+
+4. **Approval-status naming.** The spec said "PROPOSED→APPROVED, PROPOSED→REJECTED"
+   but the actual implementation uses `PROPOSED→CUSTOMER_APPROVED` and
+   `PROPOSED→CUSTOMER_REJECTED` (terminal). The tests assert against the
+   actual implementation, not the spec's shorthand — a comment in the
+   test file documents the divergence.
+
+5. **One test fix during integration.** First run: 157/158 passed. The
+   failing assertion was in `care.test.ts` for the ADMIN missions route —
+   the test expected `where = { status: { in: [...] } }` but the
+   implementation uses `where = {}` for ADMIN (no status filter at all).
+   Fixed the test to match the implementation (the role check above
+   guards the route, so the where clause is unconstrained for admin).
+
+### Files changed / created
+
+- **NEW** `vitest.config.ts`                 (Vitest config — jsdom env, @/ alias, setup file)
+- **NEW** `tests/setup.ts`                   (jest-dom matchers + RTL cleanup)
+- **NEW** `tests/unit/permissions.test.ts`   (20 tests)
+- **NEW** `tests/unit/care-auth.test.ts`     (45 tests)
+- **NEW** `tests/unit/pricing.test.ts`       (14 tests)
+- **NEW** `tests/unit/dispatch.test.ts`      (17 tests)
+- **NEW** `tests/unit/offline-queue.test.ts` (20 tests)
+- **NEW** `tests/unit/lite-response.test.ts` (17 tests)
+- **NEW** `tests/integration/auth.test.ts`   (13 tests)
+- **NEW** `tests/integration/care.test.ts`   (12 tests)
+- **EDIT** `package.json`                    (test/test:watch/test:coverage scripts + 5 dev deps)
+
+### Verification (final)
+
+- `bun run lint` → exit 0, 0 errors, 0 warnings ✅
+- `bunx tsc --noEmit` → exit 0, 0 errors ✅
+- `bun run test` → 8 files, 158 tests, all passed in 5.8s ✅
+- `dev.log` tail → no `⨯` runtime errors (EADDRINUSE is pre-existing,
+  unrelated to Phase 6) ✅
+
+Stage Summary:
+- ✅ Vitest + jsdom + Testing Library + jest-dom installed (Phase 6 Task 1).
+- ✅ `vitest.config.ts` + `tests/setup.ts` + 3 npm scripts wired (Tasks 2–4).
+- ✅ 6 unit test files covering `permissions`, `care-auth`, `pricing`,
+  `dispatch`, `offline-queue`, `lite-response` — all pure-function and
+  state-machine behavior is asserted, with `@/lib/db` mocked where needed
+  (Task 5).
+- ✅ 2 integration test files covering OTP send/verify flow + CARE BOLA
+  protection on 3 endpoints — `@/lib/db` + `@/lib/rate-limit` mocked;
+  real JWTs minted via `createSession()` so the jose verify path is
+  exercised end-to-end (Task 6).
+- ✅ Lint + tsc + tests all green. `dev.log` clean.
+
+### Next actions recommended (Phase 7+)
+
+1. **Add React component tests** for the `useOffline()` hook and the
+   `app-shell.tsx` offline banner (the Phase 5 follow-up items). Use
+   `@testing-library/react` (already installed) — render the component,
+   fire `window.dispatchEvent(new Event("online"))`, assert the banner
+   appears/disappears.
+2. **Add a `test:ci` script** that runs vitest with `--reporter=junit`
+   to produce a JUnit XML for CI dashboards.
+3. **Coverage gate**: add `coverage: { thresholds: { lines: 70,
+   branches: 60 } }` to `vitest.config.ts` so PRs that drop coverage
+   below the floor fail CI.
+4. **E2E tests with Playwright**: the integration tests call route
+   handlers directly with mocked `Request` objects; a Playwright suite
+   would exercise the real HTTP stack (cookie-based session, fetch
+   credentials: include, etc.) and catch issues the unit/integration
+   layer misses (e.g. CORS, cookie SameSite, redirect chains).
+5. **Mock data factories**: today each test builds its own ad-hoc mock
+   objects (`mkTech`, `mkBooking`, etc.). Extract these into
+   `tests/factories/*.ts` so the mock shapes stay in sync with the
+   Prisma schema as it evolves.
+6. **Contract tests against `prisma/schema.prisma`**: a test that
+   imports `@prisma/client` and asserts the model fields match what the
+   mock factories return — catches drift between the test doubles and
+   the real DB shape.
