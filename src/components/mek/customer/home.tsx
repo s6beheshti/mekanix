@@ -210,7 +210,7 @@ export function CustomerHome({ customer }: { customer: DemoUser }) {
                       <p className="truncate text-sm font-medium">{job.request.title}</p>
                       <p className="text-[11px] text-muted-foreground">{job.request.vehicle.make} {job.request.vehicle.model} · {fmtDate(job.completedAt ?? job.createdAt, undefined, isFa ? "fa" : "en")}</p>
                     </div>
-                    {job.invoice && <span className="font-mono text-xs text-amber">{money(job.invoice.total)}</span>}
+                    {job.invoice && <span className="font-mono text-xs text-amber">{money(Number(job.invoice.total))}</span>}
                   </button>
                 ))}
               </div>

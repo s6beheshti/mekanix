@@ -48,7 +48,7 @@ export function useT() {
   const type = (slug: string) => translate(lang, `type.${slug}`, slug);
   const notifType = (ntype: string) => translate(lang, `notif.type.${ntype}`, ntype);
   // Money helper: when language is Persian, force IRR conversion (Iran market).
-  const money = (amount: number, currency: string = "USD") =>
+  const money = (amount: number, currency: string = "IRR") =>
     fmtMoney(amount, lang === "fa" ? "IRR" : currency, lang);
   const isFa = lang === "fa";
   return { t, lang, isFa, dir: lang === "fa" ? ("rtl" as const) : ("ltr" as const), cat, type, notifType, money };

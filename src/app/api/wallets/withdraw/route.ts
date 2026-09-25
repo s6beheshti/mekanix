@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   }
 
-  if (wallet.balance < amount) {
+  if (Number(wallet.balance) < amount) {
     return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
   }
 
@@ -42,11 +42,11 @@ export async function POST(req: Request) {
     const result = await db.$transaction(async (tx) => {
       // 1. Re-check balance inside transaction (prevent race condition)
       const lockedWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      if (!lockedWallet || lockedWallet.balance < amount) {
+      if (!lockedWallet || Number(lockedWallet.balance) < amount) {
         throw new Error("موجودی کافی نیست");
       }
 
-      const balanceBefore = lockedWallet.balance;
+      const balanceBefore = Number(lockedWallet.balance);
       const balanceAfter = balanceBefore - amount;
 
       // 2. Create withdrawal request

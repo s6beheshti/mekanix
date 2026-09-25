@@ -48,7 +48,7 @@ export function RevenueAreaChart({
           <CartesianGrid stroke="oklch(1 0 0 / 6%)" vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 10, fill: "oklch(0.68 0.012 260)" }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fill: "oklch(0.68 0.012 260)" }} axisLine={false} tickLine={false} tickFormatter={(v) => (lang === "fa" ? toPersianDigits(String(v)) : String(v))} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => fmtMoney(v, lang === "fa" ? "IRR" : "USD", lang)} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => fmtMoney(v, "IRR", lang)} />
           <Area type="monotone" dataKey="revenue" stroke={AMBER} strokeWidth={2} fill="url(#rev)" />
         </AreaChart>
       </ResponsiveContainer>

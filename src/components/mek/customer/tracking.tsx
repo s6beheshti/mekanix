@@ -164,8 +164,8 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{job.technician.user.name}</p>
                 <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <StarRating value={job.technician.rating ?? 0} size={11} />
-                  <span>{isFa ? toPersianDigits((job.technician as any).rating?.toFixed?.(1) ?? "—") : ((job.technician as any).rating?.toFixed?.(1) ?? "—")}</span>
+                  <StarRating value={Number(job.technician.rating ?? 0)} size={11} />
+                  <span>{isFa ? toPersianDigits((job.technician as any).rating != null ? Number(job.technician.rating).toFixed(1) : "—") : ((job.technician as any).rating != null ? Number(job.technician.rating).toFixed(1) : "—")}</span>
                   <span>· {job.technician.user.phone ?? "—"}</span>
                 </div>
               </div>

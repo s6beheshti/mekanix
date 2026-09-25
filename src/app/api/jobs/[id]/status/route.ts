@@ -278,10 +278,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Auto-create invoice on WAITING_APPROVAL if none exists
   if (status === "WAITING_APPROVAL" && !job.invoice) {
     const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = job.technician.hourlyRate;
+    const laborRate = Number(job.technician.hourlyRate);
     const laborTotal = laborHours * laborRate;
-    const partsTotal = job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0);
-    const travelFee = job.technician.travelFeeBase;
+    const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
+    const travelFee = Number(job.technician.travelFeeBase);
     const subtotal = laborTotal + partsTotal + travelFee;
     const taxTotal = subtotal * 0.09;
     const total = subtotal + taxTotal;
@@ -299,7 +299,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         taxTotal,
         discount: 0,
         total,
-        currency: "USD",
+        currency: "IRR",
         status: "SENT",
         notes: "Parts covered by 6-month warranty.",
       },

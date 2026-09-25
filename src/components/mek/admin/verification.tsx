@@ -56,7 +56,7 @@ export function AdminVerification() {
                       <p className="font-medium">{tk.user.name}</p>
                       <Badge variant={tk.verified ? "default" : "secondary"} className={tk.verified ? "bg-emerald-glow/15 text-emerald-glow" : ""}>{tk.verified ? t("common.verified") : t("common.pending")}</Badge>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{t("common.specialtiesCount").replace("{n}", isFa ? toPersianDigits(tk.specialties.length) : String(tk.specialties.length))} · {isFa ? toPersianDigits(tk.experienceYears) : tk.experienceYears} {t("common.yrsShort")} · <span className="inline-flex items-center gap-1"><StarRating value={tk.rating} size={10} />{isFa ? toPersianDigits(tk.rating.toFixed(1)) : tk.rating.toFixed(1)}</span></p>
+                    <p className="text-[11px] text-muted-foreground">{t("common.specialtiesCount").replace("{n}", isFa ? toPersianDigits(tk.specialties.length) : String(tk.specialties.length))} · {isFa ? toPersianDigits(tk.experienceYears) : tk.experienceYears} {t("common.yrsShort")} · <span className="inline-flex items-center gap-1"><StarRating value={Number(tk.rating)} size={10} />{isFa ? toPersianDigits(Number(tk.rating).toFixed(1)) : Number(tk.rating).toFixed(1)}</span></p>
                   </div>
                 </div>
                 <Button size="sm" variant={tk.verified ? "outline" : "default"} className={tk.verified ? "" : "bg-emerald-glow text-black hover:bg-emerald-glow/90"} onClick={() => verifyTech(tk)}>

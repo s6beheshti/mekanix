@@ -86,7 +86,7 @@ export async function findBestTechnicians(input: DispatchInput, limit = 5): Prom
 
     // Normalize metrics
     const distScore = 1 - normalize(distance, 0, 50); // closer = higher score
-    const ratingScore = normalize(tech.rating ?? 0, 0, 5);
+    const ratingScore = normalize(Number(tech.rating ?? 0), 0, 5);
     const speedScore = normalize(tech.responseMins ?? 30, 5, 60);
     const speedNormalized = 1 - speedScore; // faster response = higher score
 
@@ -102,7 +102,7 @@ export async function findBestTechnicians(input: DispatchInput, limit = 5): Prom
       etaMins: estimateEta(distance),
       skillsMatched,
       skillsTotal,
-      rating: tech.rating ?? 0,
+      rating: Number(tech.rating ?? 0),
       level: tech.level,
       available: tech.availableNow,
     });

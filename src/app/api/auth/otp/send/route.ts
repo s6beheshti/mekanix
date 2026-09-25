@@ -3,13 +3,18 @@ import { db } from "@/lib/db";
 import { checkRateLimit, validateBody } from "@/lib/api-helpers";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
+import { generateOtpCode, hashOtpCode } from "@/lib/otp-crypto";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
-// - In development, the code is returned so the UI can display it for testing.
-// - In production, the code is NEVER returned in the response body — it must be
-//   delivered out-of-band (SMS / push) so a malicious response interceptor or
-//   XSS cannot read it.
+// - The code is generated with a CSPRNG (`crypto.randomInt`) — NOT Math.random.
+// - The code is HASHED (SHA-256) before storage, so a read-only DB leak
+//   (SQL injection, backup theft, snapshot access) cannot reveal usable
+//   codes. See `src/lib/otp-crypto.ts` for the threat model.
+// - In development, the plaintext code is returned so the UI can display it
+//   for testing. In production, the plaintext is NEVER returned in the
+//   response body — it must be delivered out-of-band (SMS / push) so a
+//   malicious response interceptor or XSS cannot read it.
 export async function POST(req: Request) {
   // Validate request body with Zod before touching any rate-limit / DB state.
   // The schema enforces phone length + character-class, so a junk payload
@@ -50,16 +55,29 @@ export async function POST(req: Request) {
   }
 
   // 6-digit numeric code, valid for 5 minutes.
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  //
+  // SECURITY: `generateOtpCode()` uses Node's CSPRNG (`crypto.randomInt`),
+  // NOT `Math.random()`. An attacker who can predict `Math.random()` outputs
+  // (e.g. by observing enough outputs to reconstruct the V8 PRNG state) could
+  // mint valid OTP codes for any phone. CSPRNG output is unpredictable.
+  const code = generateOtpCode();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+  // Hash the code before persisting — see `src/lib/otp-crypto.ts`. The
+  // plaintext `code` variable above is NEVER written to the DB; only its
+  // SHA-256 hex digest is stored. The verify route re-hashes the
+  // user-supplied code and matches the digest.
+  const codeHash = hashOtpCode(code);
 
   // Invalidate any previous unconsumed codes for this phone (only the newest one is valid).
   await db.otpCode.updateMany({ where: { phone, consumed: false }, data: { consumed: true } });
-  await db.otpCode.create({ data: { phone, code, expiresAt } });
+  await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
 
   // TODO(production): Integrate an SMS provider here (e.g. Kavenegar, MeliPayamak, Farapayamak)
-  // and send the code to `phone`. Until that is wired up, the code is only visible
-  // in development responses for testing. Example:
+  // and send the plaintext `code` to `phone`. The SMS provider must receive
+  // the plaintext (the user needs to read it), but the DB only stores the
+  // hash. Until SMS is wired up, the code is only visible in development
+  // responses for testing. Example:
   //   if (process.env.NODE_ENV === "production") {
   //     await smsProvider.send(phone, `کد تأیید MEKANIX: ${code}`);
   //   }

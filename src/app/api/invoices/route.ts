@@ -81,10 +81,10 @@ export async function POST(req: Request) {
   const laborHoursRaw = typeof body.laborHours === "number" ? body.laborHours : 1.5;
   const laborHours = Math.max(0, Math.min(100, laborHoursRaw));
 
-  const laborRate = job.technician.hourlyRate; // from technician record
+  const laborRate = Number(job.technician.hourlyRate); // from technician record
   const laborTotal = laborHours * laborRate;
-  const partsTotal = job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0);
-  const travelFee = job.technician.travelFeeBase;
+  const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
+  const travelFee = Number(job.technician.travelFeeBase);
   const discount = 0; // server-controlled
   const subtotal = laborTotal + partsTotal + travelFee - discount;
   const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
       taxRate,
       taxTotal,
       total,
-      currency: "USD",
+      currency: "IRR",
       status: "SENT",
       notes: "Parts & labor covered by 6-month MEKANIX warranty.",
     },
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
         userId: cust.id,
         type: "invoice_issued",
         title: `Invoice ${inv.code} issued`,
-        body: `${tech?.name ?? "Mechanic"} issued invoice for ${inv.total}. Review and pay to complete the job.`,
+        body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(inv.total)}. Review and pay to complete the job.`,
         category: "payment",
         link: "customer/invoice",
       },
@@ -142,7 +142,7 @@ export async function POST(req: Request) {
           userId: tech.id,
           type: "invoice_issued",
           title: `Invoice ${inv.code} sent to customer`,
-          body: `${inv.code} for ${inv.total} was sent to ${cust.name} for review & payment.`,
+          body: `${inv.code} for ${Number(inv.total)} was sent to ${cust.name} for review & payment.`,
           category: "payment",
           link: "technician/earnings",
         },
@@ -153,7 +153,7 @@ export async function POST(req: Request) {
         jobId: refreshed.id,
         fromUserId: tech?.id ?? cust.id,
         kind: "system",
-        body: `Invoice ${inv.code} issued — total ${inv.total} ${inv.currency}.`,
+        body: `Invoice ${inv.code} issued — total ${Number(inv.total)} ${inv.currency}.`,
       },
     });
   }

@@ -31,8 +31,8 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
       const active = list.filter((j) => ["ACCEPTED", "EN_ROUTE", "ARRIVED", "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL"].includes(j.status));
       // mock today/week earnings from completed jobs
       const completed = list.filter((j) => j.status === "COMPLETED");
-      const today = completed.slice(0, 2).reduce((s, j) => s + (j.invoice?.total ?? 0), 0);
-      const week = completed.reduce((s, j) => s + (j.invoice?.total ?? 0), 0);
+      const today = completed.slice(0, 2).reduce((s, j) => s + (j.invoice?.total != null ? Number(j.invoice.total) : 0), 0);
+      const week = completed.reduce((s, j) => s + (j.invoice?.total != null ? Number(j.invoice.total) : 0), 0);
       setTodayEarnings(today);
       setWeekEarnings(week);
     }).catch(() => setJobs([]));

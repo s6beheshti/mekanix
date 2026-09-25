@@ -24,6 +24,23 @@ const mockServiceBookingFindMany = vi.fn().mockResolvedValue([]);
 const mockMaintenanceRuleFindMany = vi.fn().mockResolvedValue([]);
 const mockTechnicianFindUnique = vi.fn().mockResolvedValue(null);
 
+// Session DB mock — `findUnique` returns a valid (non-revoked, non-expired)
+// record so `verifySession` honours the JWT. Individual tests can override
+// `mockSessionFindUnique.mockResolvedValueOnce(null)` to simulate a
+// revoked/missing session.
+const mockSessionFindUnique = vi.fn().mockResolvedValue({
+  id: "sess_1",
+  userId: "user_customer",
+  tokenHash: "hash-placeholder",
+  device: null,
+  ip: null,
+  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // tomorrow
+  revokedAt: null,
+  createdAt: new Date(),
+});
+const mockSessionCreate = vi.fn().mockResolvedValue({});
+const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+
 vi.mock("@/lib/db", () => ({
   db: {
     serviceBooking: {
@@ -34,6 +51,11 @@ vi.mock("@/lib/db", () => ({
     },
     technician: {
       findUnique: (...args: any[]) => mockTechnicianFindUnique(...args),
+    },
+    session: {
+      create: (...args: any[]) => mockSessionCreate(...args),
+      findUnique: (...args: any[]) => mockSessionFindUnique(...args),
+      updateMany: (...args: any[]) => mockSessionUpdateMany(...args),
     },
   },
 }));
@@ -78,6 +100,20 @@ beforeEach(() => {
   mockServiceBookingFindMany.mockResolvedValue([]);
   mockMaintenanceRuleFindMany.mockResolvedValue([]);
   mockTechnicianFindUnique.mockResolvedValue(null);
+  // Restore the default "valid session" record — individual tests can
+  // override with `mockSessionFindUnique.mockResolvedValueOnce(...)`.
+  mockSessionFindUnique.mockResolvedValue({
+    id: "sess_1",
+    userId: "user_customer",
+    tokenHash: "hash-placeholder",
+    device: null,
+    ip: null,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    createdAt: new Date(),
+  });
+  mockSessionCreate.mockResolvedValue({});
+  mockSessionUpdateMany.mockResolvedValue({ count: 0 });
 });
 
 // ──────────── GET /api/care/bookings ────────────

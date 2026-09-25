@@ -26,7 +26,7 @@ export async function GET(req: Request) {
       db.payment.findMany({ where: { status: "SUCCEEDED", createdAt: { gte: since } } }),
     ]);
 
-  const revenue30d = payments30d.reduce((s, p) => s + p.amount, 0);
+  const revenue30d = payments30d.reduce((s, p) => s + Number(p.amount), 0);
 
   const techs = await db.technician.findMany({ select: { responseMins: true } });
   const avgResponseMins = techs.length
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     const jobs = await db.job.count({ where: { status: "COMPLETED", completedAt: { gte: start, lt: end } } });
     revenueSeries.push({
       date: end.toISOString().slice(5, 10),
-      revenue: Math.round(pays.reduce((s, p) => s + p.amount, 0)),
+      revenue: Math.round(pays.reduce((s, p) => s + Number(p.amount), 0)),
       jobs,
     });
   }
@@ -62,7 +62,7 @@ export async function GET(req: Request) {
         select: { job: { select: { invoice: { select: { total: true } } } } },
       });
       const revenue = reqs.reduce(
-        (s, r) => s + (r.job?.invoice?.total ?? 0),
+        (s, r) => s + (r.job?.invoice?.total != null ? Number(r.job.invoice.total) : 0),
         0
       );
       return { category: c.category, count: c._count, revenue: Math.round(revenue) };
@@ -79,11 +79,11 @@ export async function GET(req: Request) {
         where: { status: "SUCCEEDED", invoice: { job: { technicianId: t.id } } },
         select: { amount: true },
       });
-      const revenue = Math.round(pays.reduce((s, p) => s + p.amount, 0));
+      const revenue = Math.round(pays.reduce((s, p) => s + Number(p.amount), 0));
       return {
         name: t.user.name,
         jobs: jobCount,
-        rating: Math.round(t.rating * 10) / 10,
+        rating: Math.round(Number(t.rating) * 10) / 10,
         revenue,
       };
     })

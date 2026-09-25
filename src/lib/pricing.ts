@@ -91,7 +91,7 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   let packageBasePrice = 0;
   if (input.packageId) {
     const pkg = await db.servicePackage.findUnique({ where: { id: input.packageId } });
-    packageBasePrice = pkg?.basePrice ?? 0;
+    packageBasePrice = pkg?.basePrice != null ? Number(pkg.basePrice) : 0;
   }
 
   // Labor rate depends on vehicle type

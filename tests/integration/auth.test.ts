@@ -36,6 +36,12 @@ const mockUserCreate = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockUserFindMany = vi.fn().mockResolvedValue([]);
 const mockCustomerCreate = vi.fn().mockResolvedValue({});
+// Session DB mock — `createSession` now writes a Session row on login.
+// We don't exercise verifySession in this file, so `findUnique` /
+// `updateMany` are stubs to keep the mock shape complete.
+const mockSessionCreate = vi.fn().mockResolvedValue({});
+const mockSessionFindUnique = vi.fn().mockResolvedValue(null);
+const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -53,6 +59,11 @@ vi.mock("@/lib/db", () => ({
     },
     customer: {
       create: (...args: any[]) => mockCustomerCreate(...args),
+    },
+    session: {
+      create: (...args: any[]) => mockSessionCreate(...args),
+      findUnique: (...args: any[]) => mockSessionFindUnique(...args),
+      updateMany: (...args: any[]) => mockSessionUpdateMany(...args),
     },
   },
 }));
@@ -74,6 +85,8 @@ vi.mock("@/lib/rate-limit", () => ({
 // ──────────── Import route handlers (after mocks are hoisted) ────────────
 import { POST as otpSendPOST } from "@/app/api/auth/otp/send/route";
 import { POST as otpVerifyPOST } from "@/app/api/auth/otp/verify/route";
+import { hashOtpCode } from "@/lib/otp-crypto";
+import { createHash } from "node:crypto";
 
 // ──────────── Helpers ────────────
 function jsonReq(url: string, body: unknown): Request {
@@ -92,6 +105,9 @@ beforeEach(() => {
   mockOtpUpdate.mockResolvedValue({});
   mockUserFindMany.mockResolvedValue([]);
   mockCustomerCreate.mockResolvedValue({});
+  mockSessionCreate.mockResolvedValue({});
+  mockSessionFindUnique.mockResolvedValue(null);
+  mockSessionUpdateMany.mockResolvedValue({ count: 0 });
 });
 
 // ──────────── POST /api/auth/otp/send ────────────
@@ -113,6 +129,25 @@ describe("integration — POST /api/auth/otp/send", () => {
     // The route should have invalidated previous codes + created a new one
     expect(mockOtpUpdateMany).toHaveBeenCalledTimes(1);
     expect(mockOtpCreate).toHaveBeenCalledTimes(1);
+
+    // SECURITY regression check: the plaintext `code` returned to the client
+    // must NOT be what gets persisted to the DB. The DB column should hold
+    // the SHA-256 hex digest (64 lowercase hex chars), so a read-only DB
+    // leak cannot reveal usable codes.
+    const createCall = mockOtpCreate.mock.calls[0][0] as {
+      data: { phone: string; code: string; expiresAt: Date };
+    };
+    expect(createCall.data.phone).toBe("+989121234567");
+    expect(createCall.data.code).toHaveLength(64);
+    expect(createCall.data.code).toMatch(/^[0-9a-f]{64}$/);
+    // The persisted hash must equal SHA-256(body.code) — i.e. the two
+    // operations share the same hashing helper.
+    expect(createCall.data.code).toBe(hashOtpCode(body.code));
+    expect(createCall.data.code).toBe(
+      createHash("sha256").update(body.code).digest("hex")
+    );
+    // And it must NOT be the plaintext code itself.
+    expect(createCall.data.code).not.toBe(body.code);
   });
 
   it("accepts a phone with spaces / dashes (schema allows those, route strips them)", async () => {
@@ -212,9 +247,33 @@ describe("integration — POST /api/auth/otp/verify", () => {
       })
     );
 
+    // SECURITY regression check: the verify route must hash the user-supplied
+    // code with SHA-256 before looking it up — the DB column holds the hash,
+    // not the plaintext code. Assert findFirst was called with the digest.
+    expect(mockOtpFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          phone: "+989121234567",
+          code: hashOtpCode("123456"),
+          consumed: false,
+        }),
+      })
+    );
+
     // Session cookie should be set
     const setCookie = res.headers.get("set-cookie");
     expect(setCookie).toContain("mekanix-token=");
+
+    // createSession should have written a Session DB row (userId + hashed
+    // token + 30-day expiry). The tokenHash stored must NOT be the raw JWT
+    // — it's a SHA-256 hex digest.
+    expect(mockSessionCreate).toHaveBeenCalledTimes(1);
+    const createArgs = mockSessionCreate.mock.calls[0][0];
+    expect(createArgs.data.userId).toBe("user_1");
+    expect(createArgs.data.tokenHash).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex
+    expect(createArgs.data.tokenHash).not.toContain("."); // definitely not the JWT
+    expect(createArgs.data.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(createArgs.data.expiresAt.getTime()).toBeLessThan(Date.now() + 31 * 24 * 60 * 60 * 1000);
   });
 
   it("creates a new user when the phone is unknown (created=true)", async () => {

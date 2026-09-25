@@ -17,7 +17,7 @@ export function AdminPayments() {
   }, []);
 
   const succeeded = (rows ?? []).filter((p) => p.status === "SUCCEEDED");
-  const total = succeeded.reduce((s, p) => s + p.amount, 0);
+  const total = succeeded.reduce((s, p) => s + Number(p.amount), 0);
   const failed = (rows ?? []).filter((p) => p.status === "FAILED");
 
   const fmtCount = (n: number) => (isFa ? toPersianDigits(n) : String(n));

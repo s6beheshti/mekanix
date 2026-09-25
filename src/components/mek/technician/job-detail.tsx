@@ -314,7 +314,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                     <div key={p.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                       <span className="text-[11px] text-muted-foreground">×{isFa ? toPersianDigits(p.quantity) : p.quantity}</span>
-                      <span className="tabular-nums text-amber">{money(p.unitPrice)}</span>
+                      <span className="tabular-nums text-amber">{money(Number(p.unitPrice))}</span>
                       <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 className="size-3" />
                       </button>
@@ -350,14 +350,14 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 {job.invoice && <StatusBadge status={job.invoice.status === "PAID" ? "COMPLETED" : "WAITING_APPROVAL"} />}
               </div>
               <div className="mt-3 space-y-1.5 text-sm">
-                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * job.technician.hourlyRate} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.travelFee")} amount={job.technician.travelFeeBase} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * Number(job.technician.hourlyRate)} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0)} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.technician.travelFeeBase)} moneyFn={money} />
                 <div className="border-t border-border pt-1.5" />
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
                   <span className="font-display text-lg font-bold text-amber">
-                    {money((job.invoice?.total ?? (1.5 * job.technician.hourlyRate + job.parts.reduce((s, p) => s + p.unitPrice * p.quantity, 0) + job.technician.travelFeeBase) * 1.09))}
+                    {money(Number(job.invoice?.total ?? (1.5 * Number(job.technician.hourlyRate) + job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0) + Number(job.technician.travelFeeBase)) * 1.09))}
                   </span>
                 </div>
               </div>

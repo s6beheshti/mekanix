@@ -85,7 +85,7 @@ export function CustomerHistory({ customer }: { customer: DemoUser }) {
               </div>
               {job.invoice && (
                 <div className="hidden text-right sm:block">
-                  <p className="font-display text-sm font-semibold text-amber">{money(job.invoice.total, job.invoice.currency)}</p>
+                  <p className="font-display text-sm font-semibold text-amber">{money(Number(job.invoice.total), job.invoice.currency)}</p>
                   <p className="text-[10px] text-muted-foreground">{t(`invst.${job.invoice.status}`, job.invoice.status)}</p>
                 </div>
               )}

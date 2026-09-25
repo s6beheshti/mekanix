@@ -19,8 +19,8 @@ export async function GET(req: Request) {
     total: referrals.length,
     signedUp: referrals.filter((r) => r.status === "signed_up" || r.status === "first_job" || r.status === "rewarded").length,
     firstJob: referrals.filter((r) => r.status === "first_job" || r.status === "rewarded").length,
-    earned: referrals.filter((r) => r.rewardClaimed).reduce((s, r) => s + r.rewardAmount, 0),
-    available: referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).reduce((s, r) => s + r.rewardAmount, 0),
+    earned: referrals.filter((r) => r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0),
+    available: referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0),
   };
   return NextResponse.json({ referrals, stats });
 }
@@ -91,7 +91,7 @@ export async function PATCH(req: Request) {
       userId: updated.referrerId,
       type: "referral_rewarded",
       title: "Referral reward claimed!",
-      body: `You earned $${updated.rewardAmount} from your referral.`,
+      body: `You earned ${Number(updated.rewardAmount)} IRR from your referral.`,
       category: "system",
       link: "customer/referral",
     },

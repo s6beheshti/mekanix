@@ -4,6 +4,7 @@ import { createSession } from "@/lib/auth";
 import { checkRateLimit, validateBody } from "@/lib/api-helpers";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { otpVerifySchema } from "@/lib/schemas";
+import { hashOtpCode } from "@/lib/otp-crypto";
 
 const TECHNICIAN_INCLUDE = {
   specialties: true,
@@ -27,8 +28,16 @@ export async function POST(req: Request) {
   const code = body.data.code;
   const name = body.data.name;
 
+  // Hash the user-supplied code with the same SHA-256 used at send time so we
+  // can match against the stored digest. The DB only ever holds the hash —
+  // see `src/lib/otp-crypto.ts`. Note: this also means any OTP rows created
+  // before this change (which stored plaintext codes) will simply fail to
+  // match — the user will get a 400 and can request a new code. That's the
+  // correct, secure behavior; we do NOT fall back to plaintext lookup.
+  const codeHash = hashOtpCode(code);
+
   const otp = await db.otpCode.findFirst({
-    where: { phone, code, consumed: false },
+    where: { phone, code: codeHash, consumed: false },
     orderBy: { createdAt: "desc" },
   });
 
@@ -102,9 +111,12 @@ export async function POST(req: Request) {
     });
   }
 
-  const token = await createSession({
-    userId: user!.id, role: user!.role, phone: user!.phone, isGuest: false,
-  });
+  const token = await createSession(
+    {
+      userId: user!.id, role: user!.role, phone: user!.phone, isGuest: false,
+    },
+    req, // Pass request for device/IP tracking in the Session DB record
+  );
 
   // Set HttpOnly cookie — JavaScript cannot access it (XSS protection).
   // The session JWT is NEVER exposed to client-side JS: it lives only in the

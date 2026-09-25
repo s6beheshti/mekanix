@@ -21,7 +21,7 @@ export function TechnicianReviews({ user }: { user: DemoUser }) {
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
   const reviews = (tech as any)?.reviews ?? [];
 
-  const avg = tech?.rating ?? 0;
+  const avg = tech?.rating != null ? Number(tech.rating) : 0;
   const dist = [5, 4, 3, 2, 1].map((star) => {
     const count = reviews.filter((r: any) => r.rating === star).length;
     return { star, count, pct: reviews.length ? (count / reviews.length) * 100 : 0 };

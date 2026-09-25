@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       code,
       userId,
       amount,
-      currency: "USD",
+      currency: "IRR",
       gateway: "SHAPARAK_SIM",
       status: "REDIRECTED",
       purpose: purpose || "vip",

@@ -34,7 +34,7 @@ export async function POST(req: Request) {
       invoiceId: null, // gateway payments are standalone (not tied to invoice)
       userId: payerUserId,
       amount: log.amount,
-      currency: "USD",
+      currency: "IRR",
       method: "card",
       status: "SUCCEEDED",
     },

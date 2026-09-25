@@ -15,7 +15,8 @@
 //   1. Type definitions: AssetType, AssetBase, VehicleAsset, MachineryAsset
 //      and the discriminated union `Asset`.
 //   2. Conversion helpers (`vehicleToAsset`, `getAssetType`) that bridge the
-//      existing Vehicle DB record into the unified Asset shape.
+//      existing Vehicle DB record into the unified Asset shape, returning
+//      the correct asset kind based on Vehicle.type (MachineType enum).
 //
 // Usage:
 //   import { vehicleToAsset, isMachinery, getAssetType } from "@/lib/asset-types";
@@ -25,14 +26,19 @@
 // Notes:
 //   - `vehicleToAsset` accepts `any` so it works against any
 //     Vehicle-shaped record (Prisma payload, mock, or partial). The output
-//     is always a fully-typed VehicleAsset.
+//     is a fully-typed VehicleAsset OR MachineryAsset based on the `type`
+//     field (MachineType enum value).
 //   - `getAssetType` takes the Vehicle.type string (i.e. the MachineType
 //     enum value) and returns `"vehicle"` for CAR and `"machinery"` for
-//     everything else (TRUCK / BUS / EXCAVATOR / LOADER / TRACTOR / GRADER).
-//     This matches ARCHITECTURE.md §7 which groups TRUCK and BUS under the
-//     "vehicle" type — but only CAR is treated as a passenger vehicle here;
-//     we treat TRUCK/BUS as machinery for maintenance-cycle purposes. Adjust
-//     the predicate if the architecture evolves.
+//     everything else (TRUCK / BUS / EXCAVATOR / LOADER / TRACTOR / GRADER
+//     / BULLDOZER / AGRI / INDUSTRIAL / OTHER). This matches the audit
+//     finding that MEKANIX serves both passenger cars (CAR) and heavy
+//     machinery (everything else).
+//   - For vehicles (CAR), the existing `engineHours` field is reused as
+//     the mileage (since the schema has no separate `mileage` column).
+//   - For machinery, the existing `engineHours` field maps to `workingHours`
+//     (heavy equipment is maintained by working/engine hours rather than
+//     mileage) and the `vin` field is reused as `serialNumber`.
 
 // ──────────── Asset type discriminator ────────────
 
@@ -64,9 +70,10 @@ export interface VehicleAsset extends AssetBase {
 }
 
 // Machinery extends AssetBase — heavy equipment (EXCAVATOR / LOADER /
-// TRACTOR / GRADER / TRUCK / BUS / etc.). The maintenance-cycle fields are
-// machinery-specific because heavy equipment is maintained by working hours
-// / engine hours rather than mileage.
+// TRACTOR / GRADER / TRUCK / BUS / BULLDOZER / AGRI / INDUSTRIAL / OTHER).
+// The maintenance-cycle fields are machinery-specific because heavy
+// equipment is maintained by working hours / engine hours rather than
+// mileage.
 export interface MachineryAsset extends AssetBase {
   type: "machinery";
   serialNumber?: string;
@@ -81,29 +88,58 @@ export type Asset = VehicleAsset | MachineryAsset;
 // ──────────── Conversion helpers ────────────
 
 /**
- * Convert a Vehicle DB record (or any Vehicle-shaped object) into a
- * VehicleAsset. The mapping is:
+ * Convert a Vehicle DB record (or any Vehicle-shaped object) into an Asset
+ * — either a VehicleAsset (when Vehicle.type === "CAR") or a
+ * MachineryAsset (for every other MachineType value).
+ *
+ * The mapping is:
  *   - customerId → ownerId
  *   - make       → brand
- *   - engineHours→ mileage  (existing schema reuses `engineHours` for both
- *                             passenger-car mileage and machinery hours)
+ *
+ * For vehicles (CAR):
+ *   - engineHours → mileage  (the existing schema reuses `engineHours` for
+ *                             passenger-car mileage since there's no
+ *                             separate `mileage` column)
+ *   - vin / plate → vin / plate (1:1)
+ *
+ * For machinery (everything else):
+ *   - engineHours → workingHours (heavy equipment is maintained by
+ *                                 working/engine hours rather than mileage)
+ *   - vin         → serialNumber  (VIN field reused for machinery serial)
  *
  * Accepts `any` so callers can pass Prisma payloads, mocks, or partials
  * without first having to satisfy the full Vehicle type.
  */
-export function vehicleToAsset(v: any): VehicleAsset {
-  return {
+export function vehicleToAsset(v: any): Asset {
+  const assetType = getAssetType(v?.type);
+  const base = {
     id: v.id,
     ownerId: v.customerId,
-    type: "vehicle",
     brand: v.make,
     model: v.model,
     year: v.year,
     location: v.location,
     createdAt: v.createdAt,
-    vin: v.vin,
-    plate: v.plate,
-    mileage: v.engineHours,
+  };
+
+  if (assetType === "vehicle") {
+    return {
+      ...base,
+      type: "vehicle" as const,
+      vin: v.vin ?? undefined,
+      plate: v.plate ?? undefined,
+      // engineHours maps to mileage for vehicles (CAR)
+      mileage: v.engineHours ?? undefined,
+    };
+  }
+
+  return {
+    ...base,
+    type: "machinery" as const,
+    // engineHours maps to workingHours for machinery
+    workingHours: v.engineHours ?? undefined,
+    // VIN field reused for machinery serial number
+    serialNumber: v.vin ?? undefined,
   };
 }
 
@@ -111,9 +147,11 @@ export function vehicleToAsset(v: any): VehicleAsset {
  * Helper: get asset type from a Vehicle.type (MachineType enum) string.
  *
  * CAR is treated as a passenger vehicle; everything else (TRUCK / BUS /
- * EXCAVATOR / LOADER / TRACTOR / GRADER / etc.) is treated as machinery.
+ * EXCAVATOR / LOADER / BULLDOZER / GRADER / AGRI / INDUSTRIAL / OTHER) is
+ * treated as machinery.
  */
 export function getAssetType(machineType: string): AssetType {
+  // CAR is the only "vehicle" type; everything else is "machinery"
   return machineType === "CAR" ? "vehicle" : "machinery";
 }
 

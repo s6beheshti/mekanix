@@ -49,12 +49,12 @@ export function TechnicianProfile({ user }: { user: DemoUser }) {
               {tech.verified && <span className="rounded-full bg-emerald-glow/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-glow">{t("tech.profile.verified")}</span>}
             </div>
             <div className="mt-1 flex items-center gap-2 text-sm">
-              <StarRating value={tech.rating} />
-              <span className="font-semibold">{isFa ? toPersianDigits(tech.rating.toFixed(2)) : tech.rating.toFixed(2)}</span>
+              <StarRating value={Number(tech.rating)} />
+              <span className="font-semibold">{isFa ? toPersianDigits(Number(tech.rating).toFixed(2)) : Number(tech.rating).toFixed(2)}</span>
               <span className="text-muted-foreground">· {isFa ? toPersianDigits(tech.reviewCount) : tech.reviewCount} {t("tech.profile.reviews")} · {isFa ? toPersianDigits(tech.completedJobs) : tech.completedJobs} {t("tech.profile.jobs")} · {isFa ? toPersianDigits(tech.experienceYears) : tech.experienceYears} {t("common.yrs")}</span>
             </div>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1"><Wrench className="size-3 text-amber" /> {money(tech.hourlyRate)}/{t("common.hr")}</span>
+              <span className="inline-flex items-center gap-1"><Wrench className="size-3 text-amber" /> {money(Number(tech.hourlyRate))}/{t("common.hr")}</span>
               <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> {t(`level.${tech.level}`, tech.level)}</span>
             </div>
           </div>

@@ -102,7 +102,7 @@ export function CustomerFleetDashboard({ customer }: { customer: DemoUser }) {
       const diff = Date.now() - new Date(j.completedAt).getTime();
       return diff <= 30 * 24 * 60 * 60 * 1000;
     })
-    .reduce((sum, j) => sum + (j.invoice?.total ?? 0), 0);
+    .reduce((sum, j) => sum + (j.invoice?.total != null ? Number(j.invoice.total) : 0), 0);
 
   // Fleet health
   const overdueVehiclesCount = (vehicles ?? []).filter((v) => {

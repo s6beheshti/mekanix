@@ -34,8 +34,8 @@ export async function POST(req: Request) {
   // Determine fee based on machine type (passenger CAR vs heavy)
   const machineType = job.request.vehicle.type;
   const heavy = isHeavyMachine(machineType);
-  const inspectionFee = heavy ? tech.inspectionFeeHeavy : tech.inspectionFee;
-  const travelFee = tech.travelFeeBase;
+  const inspectionFee = Number(heavy ? tech.inspectionFeeHeavy : tech.inspectionFee);
+  const travelFee = Number(tech.travelFeeBase);
   const gross = inspectionFee + travelFee;
   const commission = gross * COMMISSION_RATE;
   const net = gross - commission;

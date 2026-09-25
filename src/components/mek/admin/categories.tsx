@@ -19,8 +19,8 @@ export function AdminCategories() {
   useEffect(() => { load(); }, []);
 
   const update = (c: ServiceCategory, patch: Partial<{ name: string; basePrice: number; active: boolean }>) => {
-    setRows((prev) => prev?.map((x) => x.id === c.id ? { ...x, ...patch } : x) ?? null);
-    setDrafts((d) => ({ ...d, [c.id]: { name: patch.name ?? c.name, basePrice: patch.basePrice ?? c.basePrice, active: patch.active ?? c.active } }));
+    setRows((prev) => prev?.map((x) => x.id === c.id ? { ...x, name: patch.name ?? x.name, active: patch.active ?? x.active } : x) ?? null);
+    setDrafts((d) => ({ ...d, [c.id]: { name: patch.name ?? c.name, basePrice: patch.basePrice ?? Number(c.basePrice), active: patch.active ?? c.active } }));
   };
 
   const save = async (c: ServiceCategory) => {
@@ -57,7 +57,7 @@ export function AdminCategories() {
                 <Input value={c.name} onChange={(e) => update(c, { name: e.target.value })} className="mt-3 h-8 text-sm" />
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-[11px] text-muted-foreground">{t("admin.categories.col.basePrice")}</span>
-                  <Input value={c.basePrice} onChange={(e) => update(c, { basePrice: parseFloat(e.target.value) || 0 })} type="number" className="h-8 text-xs" />
+                  <Input value={Number(c.basePrice)} onChange={(e) => update(c, { basePrice: parseFloat(e.target.value) || 0 })} type="number" className="h-8 text-xs" />
                 </div>
                 <Button size="sm" disabled={!dirty} onClick={() => save(c)} className="mt-3 w-full bg-amber text-black hover:bg-amber/90 disabled:opacity-40">
                   <Save className="mr-1.5 size-3.5" /> {dirty ? t("admin.categories.save") : t("admin.categories.saved")}

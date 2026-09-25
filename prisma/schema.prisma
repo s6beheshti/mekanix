@@ -23,7 +23,7 @@ model User {
   role          Role       @default(CUSTOMER)
   status        UserStatus @default(ACTIVE)
   country       String     @default("IR")
-  currency      String     @default("USD")
+  currency      String     @default("IRR")
   language      String     @default("en")
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -113,12 +113,12 @@ model Technician {
   bio                String?
   experienceYears    Int        @default(0)
   completedJobs      Int        @default(0)
-  rating             Float      @default(0)
+  rating             Decimal    @default(0)
   reviewCount        Int        @default(0)
-  hourlyRate         Float      @default(15) // USD; ~900k IRR — realistic Iranian mobile mechanic rate
-  travelFeeBase      Float      @default(3) // USD; ~180k IRR base travel fee (within-city)
-  inspectionFee      Float      @default(7) // USD passenger; ~420k IRR — Sanjaq-like Iranian market
-  inspectionFeeHeavy Float      @default(20) // USD heavy machinery; ~1.2M IRR
+  hourlyRate         Decimal    @default(15) // IRR — realistic Iranian mobile mechanic rate
+  travelFeeBase      Decimal    @default(3) // IRR base travel fee (within-city)
+  inspectionFee      Decimal    @default(7) // IRR passenger — Sanjaq-like Iranian market
+  inspectionFeeHeavy Decimal    @default(20) // IRR heavy machinery
   status             TechStatus @default(OFFLINE)
   verified           Boolean    @default(false)
   level              TechLevel  @default(BRONZE)
@@ -284,13 +284,13 @@ model Job {
   arrivedAt          DateTime?
   completedAt        DateTime?
   // Pre-service payment
-  inspectionFee      Float          @default(0)
-  travelFee          Float          @default(0)
+  inspectionFee      Decimal       @default(0)
+  travelFee          Decimal       @default(0)
   prepayPaid         Boolean        @default(false)
   prepayPaidAt       DateTime?
   // Commission + hold period
-  platformCommission Float          @default(0)
-  netEarnings        Float          @default(0)
+  platformCommission Decimal       @default(0)
+  netEarnings        Decimal       @default(0)
   holdUntil          DateTime?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
@@ -340,7 +340,7 @@ model Part {
   name      String
   sku       String?
   quantity  Int      @default(1)
-  unitPrice Float
+  unitPrice Decimal
   createdAt DateTime @default(now())
 }
 
@@ -362,16 +362,16 @@ model Invoice {
   jobId      String        @unique
   job        Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   laborHours Float         @default(1)
-  laborRate  Float         @default(45)
-  laborTotal Float         @default(0)
-  partsTotal Float         @default(0)
-  travelFee  Float         @default(0)
-  subtotal   Float         @default(0)
+  laborRate  Decimal       @default(45)
+  laborTotal Decimal       @default(0)
+  partsTotal Decimal       @default(0)
+  travelFee  Decimal       @default(0)
+  subtotal   Decimal       @default(0)
   taxRate    Float         @default(0.09)
-  taxTotal   Float         @default(0)
-  discount   Float         @default(0)
-  total      Float         @default(0)
-  currency   String        @default("USD")
+  taxTotal   Decimal       @default(0)
+  discount   Decimal       @default(0)
+  total      Decimal       @default(0)
+  currency   String        @default("IRR")
   notes      String?
   status     InvoiceStatus @default(DRAFT)
   createdAt  DateTime      @default(now())
@@ -396,8 +396,8 @@ model Payment {
   invoice   Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   userId    String
   user      User          @relation(fields: [userId], references: [id])
-  amount    Float
-  currency  String        @default("USD")
+  amount    Decimal
+  currency  String        @default("IRR")
   method    String        @default("card")
   status    PaymentStatus @default(PENDING)
   createdAt DateTime      @default(now())
@@ -482,7 +482,7 @@ model ServiceCategory {
   name        String
   icon        String
   description String?
-  basePrice   Float   @default(0)
+  basePrice   Decimal @default(0)
   active      Boolean @default(true)
   order       Int     @default(0)
 }
@@ -576,7 +576,7 @@ model Referral {
   referredUserId String? // userId of referred friend (after they sign up)
   referredUser   User?     @relation("referralsReceived", fields: [referredUserId], references: [id], onDelete: SetNull)
   status         String    @default("pending") // pending | signed_up | first_job | rewarded | expired
-  rewardAmount   Float     @default(5) // USD credit to referrer
+  rewardAmount   Decimal   @default(5) // IRR credit to referrer
   rewardClaimed  Boolean   @default(false)
   createdAt      DateTime  @default(now())
   completedAt    DateTime?
@@ -601,8 +601,8 @@ model InsurancePolicy {
   type           String   @default("third-party") // third-party | comprehensive | zero
   startDate      DateTime
   endDate        DateTime
-  premiumAmount  Float // USD
-  coverageAmount Float    @default(0)
+  premiumAmount  Decimal  // IRR
+  coverageAmount Decimal @default(0)
   status         String   @default("active") // active | expired | cancelled | claimed
   notes          String?
   createdAt      DateTime @default(now())
@@ -621,7 +621,7 @@ model InsuranceClaim {
   jobId         String?
   job           Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
   description   String
-  amount        Float // USD claimed
+  amount        Decimal  // IRR claimed
   status        String          @default("submitted") // submitted | under_review | approved | rejected | paid
   reviewerNotes String?
   createdAt     DateTime        @default(now())
@@ -662,11 +662,11 @@ model Wallet {
   id              String     @id @default(cuid())
   technicianId    String     @unique
   technician      Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
-  balance         Float      @default(0) // current withdrawable balance (USD)
-  pendingBalance  Float      @default(0) // held balance (in 12h escrow, USD)
-  totalEarned     Float      @default(0) // lifetime gross earnings (USD)
-  totalCommission Float      @default(0) // lifetime platform commission (USD)
-  totalWithdrawn  Float      @default(0) // lifetime withdrawn amount (USD)
+  balance         Decimal    @default(0) // current withdrawable balance (IRR)
+  pendingBalance  Decimal    @default(0) // held balance (in 12h escrow, IRR)
+  totalEarned     Decimal    @default(0) // lifetime gross earnings (IRR)
+  totalCommission Decimal    @default(0) // lifetime platform commission (IRR)
+  totalWithdrawn  Decimal    @default(0) // lifetime withdrawn amount (IRR)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -699,9 +699,9 @@ model WalletTransaction {
   job              Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
   kind             TxnKind
   status           TxnStatus @default(PENDING)
-  grossAmount      Float     @default(0) // amount paid by customer (USD)
-  commissionAmount Float     @default(0) // 10% platform cut (USD)
-  netAmount        Float     @default(0) // amount credited to technician (USD)
+  grossAmount      Decimal   @default(0) // amount paid by customer (IRR)
+  commissionAmount Decimal   @default(0) // 10% platform cut (IRR)
+  netAmount        Decimal   @default(0) // amount credited to technician (IRR)
   holdUntil        DateTime? // when funds become AVAILABLE (12h after job completion)
   releasedAt       DateTime? // when actually released
   description      String?
@@ -723,7 +723,7 @@ model WithdrawalRequest {
   code        String           @unique // WD-...
   walletId    String
   wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  amount      Float // USD
+  amount      Decimal  // IRR
   method      String           @default("card") // card | bank | wallet-to-wallet
   cardNumber  String? // masked Iranian card number (shetab)
   bankName    String?
@@ -747,7 +747,7 @@ model VipPlan {
   id                      String   @id @default(cuid())
   slug                    String   @unique // silver | gold | platinum
   name                    String // display name (en) — UI uses i18n key vip.plan.<slug>
-  priceUSD                Float // one-time price per duration
+  priceIrr                Decimal  // one-time price per duration (IRR)
   durationDays            Int // validity period
   discountPct             Float    @default(0) // % off inspection fees
   priorityBoost           Int      @default(0) // matching priority boost
@@ -808,8 +808,8 @@ model PaymentGatewayLog {
   code            String        @unique // PG-...
   userId          String?
   user            User?         @relation(fields: [userId], references: [id])
-  amount          Float // USD
-  currency        String        @default("USD")
+  amount          Decimal  // IRR
+  currency        String        @default("IRR")
   gateway         GatewayType   @default(SHAPARAK_SIM)
   status          GatewayStatus @default(INITIATED)
   purpose         String // vip | prepay | invoice | wallet_topup
@@ -907,14 +907,14 @@ model DiscountCode {
   code        String   @unique
   description String?
   type        String   @default("PERCENT")
-  value       Float
+  value       Decimal    @default(0)
   maxUses     Int      @default(0)
   usedCount   Int      @default(0)
   validFrom   DateTime @default(now())
   validUntil  DateTime?
   active      Boolean  @default(true)
   appliesTo   String   @default("ALL")
-  minAmount   Float?
+  minAmount   Decimal?
   createdBy   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -965,9 +965,9 @@ model WalletLedger {
   walletId        String
   wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   type            String   // CREDIT | DEBIT | HOLD | RELEASE | REFUND | COMMISSION | WITHDRAWAL
-  amount          Float
-  balanceBefore   Float
-  balanceAfter    Float
+  amount          Decimal    @default(0)
+  balanceBefore   Decimal    @default(0)
+  balanceAfter    Decimal    @default(0)
   referenceType   String?  // Job | Payment | Withdrawal | Manual
   referenceId     String?
   description     String?
@@ -1046,7 +1046,7 @@ model ServicePackage {
   nameFa          String
   description     String?
   category        String   @default("periodic") // periodic | repair | emergency
-  basePrice       Float    @default(0)
+  basePrice       Decimal  @default(0)
   active          Boolean  @default(true)
   version         String   @default("1.0")
   order           Int      @default(0)
@@ -1167,9 +1167,9 @@ model CustomerApproval {
   partNumber      String?
   partType        String?  // OEM | AFTERMARKET | ALTERNATIVE
   quantity        Int      @default(1)
-  partPrice       Float    @default(0)
-  laborPrice      Float    @default(0)
-  totalPrice      Float    @default(0)
+  partPrice       Decimal    @default(0)
+  laborPrice      Decimal    @default(0)
+  totalPrice      Decimal    @default(0)
   imageUrl        String?
   technicianNote  String?
   status          String   @default("PROPOSED") // PROPOSED | CUSTOMER_APPROVED | CUSTOMER_REJECTED
@@ -1191,8 +1191,8 @@ model PartUsage {
   partType        String   @default("OEM") // OEM | AFTERMARKET | ALTERNATIVE
   category        String?
   quantity        Int      @default(1)
-  unitPrice       Float
-  totalPrice      Float
+  unitPrice       Decimal
+  totalPrice      Decimal
   supplier        String?
   technicianId    String?
   installedAt     DateTime @default(now())
@@ -1205,15 +1205,15 @@ model PartUsage {
 model PricingSnapshot {
   id              String   @id @default(cuid())
   bookingId       String?  @unique
-  servicePrice    Float    @default(0)
-  visitPrice      Float    @default(0)
-  laborPrice      Float    @default(0)
-  partsPrice      Float    @default(0)
-  discount        Float    @default(0)
-  taxRate         Float    @default(0.09)
-  taxTotal        Float    @default(0)
-  total           Float    @default(0)
-  currency        String   @default("USD")
+  servicePrice    Decimal    @default(0)
+  visitPrice      Decimal    @default(0)
+  laborPrice      Decimal    @default(0)
+  partsPrice      Decimal    @default(0)
+  discount        Decimal    @default(0)
+  taxRate         Decimal    @default(0.09)
+  taxTotal        Decimal    @default(0)
+  total           Decimal    @default(0)
+  currency        String   @default("IRR")
   pricingVersion  String   @default("1.0")
   createdAt       DateTime @default(now())
 }

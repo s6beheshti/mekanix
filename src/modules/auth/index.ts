@@ -12,6 +12,8 @@
 export {
   createSession,
   verifySession,
+  revokeSession,
+  revokeAllUserSessions,
   getSessionFromRequest,
   requireAuth,
   requireRole,

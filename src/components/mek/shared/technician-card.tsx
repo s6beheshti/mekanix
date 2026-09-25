@@ -72,8 +72,8 @@ export function TechnicianCard({
             <span className="font-mono text-[9px] uppercase tracking-wide" style={{ color: level.color }}>{level.label}</span>
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <StarRating value={tech.rating} size={11} />
-            <span className="font-medium text-foreground">{isFa ? toPersianDigits(tech.rating.toFixed(1)) : tech.rating.toFixed(1)}</span>
+            <StarRating value={Number(tech.rating)} size={11} />
+            <span className="font-medium text-foreground">{isFa ? toPersianDigits(Number(tech.rating).toFixed(1)) : Number(tech.rating).toFixed(1)}</span>
             <span>·</span>
             <span>{isFa ? toPersianDigits(tech.completedJobs) : tech.completedJobs} {t("common.jobs")}</span>
           </div>
@@ -122,7 +122,7 @@ export function TechnicianCard({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-display text-sm font-semibold">{money(tech.hourlyRate)}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></span>
+          <span className="font-display text-sm font-semibold">{money(Number(tech.hourlyRate))}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></span>
           <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
       </div>

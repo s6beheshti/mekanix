@@ -438,13 +438,15 @@ export function Matching({ customer }: { customer: DemoUser }) {
     const km = tk.lat && tk.lng ? haversine({ lat: 35.6892, lng: 51.3890 }, { lat: tk.lat, lng: tk.lng }) : 99;
     const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
     // Score: weighted combination of rating, distance, verified, completed jobs.
-    const proximityScore = tk.rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+    const rating = Number(tk.rating ?? 0);
+    const hourlyRate = Number(tk.hourlyRate ?? 0);
+    const proximityScore = rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
     // Value score: rating/cost ratio — higher rating + lower total cost = better value.
-    const inspectionFee = tk.inspectionFee ?? (tk.hourlyRate * 0.5);
-    const inspectionFeeHeavy = tk.inspectionFeeHeavy ?? (tk.hourlyRate * 1.5);
-    const travelFee = (tk.travelFeeBase ?? 0) + km * 0.5;
+    const inspectionFee = tk.inspectionFee != null ? Number(tk.inspectionFee) : hourlyRate * 0.5;
+    const inspectionFeeHeavy = tk.inspectionFeeHeavy != null ? Number(tk.inspectionFeeHeavy) : hourlyRate * 1.5;
+    const travelFee = (tk.travelFeeBase != null ? Number(tk.travelFeeBase) : 0) + km * 0.5;
     const totalCost = inspectionFee + travelFee;
-    const valueScore = (tk.rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
+    const valueScore = (rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
     return { tech: tk, km, eta, score: proximityScore, valueScore, inspectionFee, inspectionFeeHeavy, travelFee };
   });
 
@@ -651,14 +653,14 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
               <span className="rounded-full bg-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber">{tech.level}</span>
             </div>
             <div className="mt-1 flex items-center gap-2 text-sm">
-              <StarRating value={tech.rating} />
-              <span className="font-semibold">{isFa ? toPersianDigits(tech.rating.toFixed(2)) : tech.rating.toFixed(2)}</span>
+              <StarRating value={Number(tech.rating)} />
+              <span className="font-semibold">{isFa ? toPersianDigits(Number(tech.rating).toFixed(2)) : Number(tech.rating).toFixed(2)}</span>
               <span className="text-muted-foreground">· {isFa ? toPersianDigits(tech.reviewCount) : tech.reviewCount} {t("common.reviews")} · {isFa ? toPersianDigits(tech.completedJobs) : tech.completedJobs} {t("common.jobs")}</span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="font-display text-2xl font-bold text-amber">{money(tech.hourlyRate)}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></div>
+            <div className="font-display text-2xl font-bold text-amber">{money(Number(tech.hourlyRate))}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></div>
             <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
           </div>
         </div>
@@ -725,12 +727,12 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
           <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
             <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
             <div className="mt-3 space-y-2 text-sm">
-              <Row label={t("req.techProfile.hourlyRate")} value={`${money(tech.hourlyRate)}/${t("common.hr")}`} />
-              <Row label={t("req.techProfile.travelFee")} value={money(tech.travelFeeBase)} />
+              <Row label={t("req.techProfile.hourlyRate")} value={`${money(Number(tech.hourlyRate))}/${t("common.hr")}`} />
+              <Row label={t("req.techProfile.travelFee")} value={money(Number(tech.travelFeeBase))} />
               <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
               <Row label={t("req.techProfile.experience")} value={`${isFa ? toPersianDigits(tech.experienceYears) : tech.experienceYears} ${t("common.yrs")}`} />
               <Row label={t("req.techProfile.level")} value={tech.level} />
-              <Row label={t("fees.totalEstimate")} value={money(tech.hourlyRate * 0.5 + tech.travelFeeBase)} />
+              <Row label={t("fees.totalEstimate")} value={money(Number(tech.hourlyRate) * 0.5 + Number(tech.travelFeeBase))} />
             </div>
             <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
               <ShieldCheck className="mr-1 inline size-3.5 text-amber" />

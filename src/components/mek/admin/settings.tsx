@@ -50,7 +50,7 @@ export function AdminSettings() {
           </div>
           <div>
             <Label className="text-xs">{t("admin.settings.defaultCurrency")}</Label>
-            <Select defaultValue="USD">
+            <Select defaultValue="IRR">
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="USD">USD — $</SelectItem>

@@ -136,9 +136,9 @@ async function main() {
 
   // ── VIP Plans ──
   const vipPlans = [
-    { slug: "silver", name: "Silver", priceUSD: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
-    { slug: "gold", name: "Gold", priceUSD: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
-    { slug: "platinum", name: "Platinum", priceUSD: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
+    { slug: "silver", name: "Silver", priceIrr: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
+    { slug: "gold", name: "Gold", priceIrr: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
+    { slug: "platinum", name: "Platinum", priceIrr: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
   ];
   for (const p of vipPlans) {
     await db.vipPlan.create({ data: p });
@@ -301,10 +301,10 @@ async function main() {
     // Invoice + payment for WAITING_APPROVAL & COMPLETED
     if (["WAITING_APPROVAL", "COMPLETED"].includes(s.status)) {
       const laborHours = s.status === "COMPLETED" ? 4.5 : 2;
-      const laborRate = tech.tech.hourlyRate;
+      const laborRate = Number(tech.tech.hourlyRate);
       const laborTotal = laborHours * laborRate;
       const partsTotal = s.status === "COMPLETED" ? 396 : 396;
-      const travelFee = tech.tech.travelFeeBase;
+      const travelFee = Number(tech.tech.travelFeeBase);
       const subtotal = laborTotal + partsTotal + travelFee;
       const taxTotal = subtotal * 0.09;
       const total = subtotal + taxTotal;
@@ -322,7 +322,7 @@ async function main() {
           taxTotal,
           discount: 0,
           total,
-          currency: "USD",
+          currency: "IRR",
           notes: "Parts covered by 6-month warranty.",
           status: s.status === "COMPLETED" ? "PAID" : "SENT",
           createdAt: iso(-day),
@@ -335,7 +335,7 @@ async function main() {
             invoiceId: inv.id,
             userId: cust.user.id,
             amount: total,
-            currency: "USD",
+            currency: "IRR",
             method: "card",
             status: "SUCCEEDED",
             createdAt: iso(-day * 0.5),
@@ -417,9 +417,9 @@ async function main() {
         updatedAt: iso(-ago + day * 0.5),
       },
     });
-    const laborTotal = 1.5 * tech.tech.hourlyRate;
+    const laborTotal = 1.5 * Number(tech.tech.hourlyRate);
     const partsTotal = 92;
-    const travelFee = tech.tech.travelFeeBase;
+    const travelFee = Number(tech.tech.travelFeeBase);
     const subtotal = laborTotal + partsTotal + travelFee;
     const taxTotal = subtotal * 0.09;
     const total = subtotal + taxTotal;
@@ -437,13 +437,13 @@ async function main() {
         taxTotal,
         discount: 0,
         total,
-        currency: "USD",
+        currency: "IRR",
         status: "PAID",
         createdAt: iso(-ago + day * 0.5),
       },
     });
     await db.payment.create({
-      data: { code: `PAY-${4900 + i}`, invoiceId: inv.id, userId: cust.user.id, amount: total, currency: "USD", method: "card", status: "SUCCEEDED", createdAt: iso(-ago + day * 0.45) },
+      data: { code: `PAY-${4900 + i}`, invoiceId: inv.id, userId: cust.user.id, amount: total, currency: "IRR", method: "card", status: "SUCCEEDED", createdAt: iso(-ago + day * 0.45) },
     });
     await db.warranty.create({ data: { jobId: job.id, months: 6, active: true } });
     await db.review.create({

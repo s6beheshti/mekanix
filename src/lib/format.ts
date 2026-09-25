@@ -23,7 +23,7 @@ function toPersianDigits(s: string | number): string {
   return String(s).replace(/\d/g, (d) => map[Number(d)]);
 }
 
-export function fmtMoney(amount: number, currency = "USD", lang: "en" | "fa" = "en"): string {
+export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
   const c = CURRENCIES[currency] ?? CURRENCIES.USD;
   let converted = amount || 0;
   let symbol = c.symbol;

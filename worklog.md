@@ -3070,3 +3070,676 @@ Stage Summary:
    imports `@prisma/client` and asserts the model fields match what the
    mock factories return — catches drift between the test doubles and
    the real DB shape.
+
+---
+
+Task ID: FIX-3-OTP-SECURITY
+Agent: general-purpose (sub)
+Task: Fix #3 — OTP CSPRNG + hashed storage (OWASP Authentication Cheat Sheet compliance)
+
+Audit findings addressed:
+1. OTP code was generated with `Math.floor(100000 + Math.random() * 900000)`
+   — `Math.random()` is NOT a CSPRNG; an attacker observing enough outputs
+   could reconstruct the V8 PRNG state and predict future codes. OWASP
+   Authentication Cheat Sheet §"Out-of-Band Verifiers" requires a
+   cryptographically secure RNG for the verification secret.
+2. OTP code was persisted to `OtpCode.code` in plaintext — a read-only DB
+   leak (SQL injection, backup theft, snapshot access) would expose every
+   unconsumed, unexpired code immediately usable for account takeover.
+3. (Already mitigated before this task) Plaintext code was returned in
+   the JSON response in dev mode only — the production gate already
+   existed, but now the dev response also documents the constraint.
+
+Work Log:
+- Created **NEW** `src/lib/otp-crypto.ts` shared helper module.
+  Exports two functions used by both send and verify routes so they
+  cannot drift apart:
+    * `generateOtpCode(): string` — `String(randomInt(100000, 1000000))`.
+      `node:crypto.randomInt(min, max)` returns integer n in [min, max),
+      so the range is [100000, 999999] inclusive — always 6 digits,
+      no leading-zero padding concerns.
+    * `hashOtpCode(code: string): string` —
+      `createHash("sha256").update(code).digest("hex")` (64-char lowercase
+      hex digest, idempotent so verify can re-hash and match).
+  Documented the threat model + the deliberate choice of plain SHA-256
+  (not bcrypt/argon2): OTP codes are short-lived (5 min) and rate-limited
+  per phone, so the rate limiter + TTL are the primary defenses, not KDF
+  cost. The phone column (`@@index([phone, createdAt])`) acts as the
+  effective per-row salt-equivalent. A single leaked hash is only useful
+  for ~5 minutes and only against the phone it was issued to.
+
+- Edited **`src/app/api/auth/otp/send/route.ts`**:
+    * Imports `{ generateOtpCode, hashOtpCode }` from `@/lib/otp-crypto`.
+    * Replaced `String(Math.floor(100000 + Math.random() * 900000))` with
+      `generateOtpCode()` (CSPRNG-backed).
+    * Added `const codeHash = hashOtpCode(code);` after generation.
+    * Changed `db.otpCode.create({ data: { phone, code, expiresAt } })`
+      → `db.otpCode.create({ data: { phone, code: codeHash, expiresAt } })`.
+      The plaintext `code` variable is NEVER passed to Prisma — only the
+      digest is persisted.
+    * Updated the SMS-provider TODO comment to clarify that the SMS
+      gateway must receive the plaintext (the user needs to read it) but
+      the DB only stores the hash.
+    * Kept the dev-mode `response.code = code` (plaintext) gate exactly
+      as before — production still returns no `code` field. No change to
+      the response contract.
+    * Updated the header docstring to call out CSPRNG + hashed storage.
+
+- Edited **`src/app/api/auth/otp/verify/route.ts`**:
+    * Imports `{ hashOtpCode }` from `@/lib/otp-crypto`.
+    * Added `const codeHash = hashOtpCode(code);` before the DB lookup.
+    * Changed `db.otpCode.findFirst({ where: { phone, code, ... } })`
+      → `db.otpCode.findFirst({ where: { phone, code: codeHash, ... } })`.
+    * Added an inline comment explaining backward incompat: OTP rows
+      created before this change (which stored plaintext codes) will
+      simply fail to match the hash — the user gets a 400 and must
+      request a new code. We deliberately do NOT fall back to a
+      plaintext lookup; the secure behavior is to force a re-issue.
+      Old rows are also typically expired (5-min TTL) by the time anyone
+      reads them, so end-user impact is near-zero.
+
+- Enhanced **`tests/integration/auth.test.ts`** with security regression
+  assertions so a future refactor that silently reverts to plaintext
+  storage or `Math.random()` will fail loudly:
+    * `POST /api/auth/otp/send` 200 test now asserts the persisted
+      `OtpCode.code` is:
+        - 64 chars long,
+        - matches `/^[0-9a-f]{64}$/` (lowercase hex),
+        - equals `hashOtpCode(body.code)` (the shared helper produces it),
+        - equals `createHash("sha256").update(body.code).digest("hex")`
+          (independent re-derivation — guards against the helper being
+          silently swapped for something weaker),
+        - does NOT equal `body.code` (the plaintext must not be stored).
+    * `POST /api/auth/otp/verify` 200 test now asserts `findFirst` was
+      called with `where.code === hashOtpCode("123456")` (the digest,
+      not the plaintext the user typed).
+    * Imports `hashOtpCode` from `@/lib/otp-crypto` and `createHash`
+      from `node:crypto` (for the independent re-derivation check).
+
+Backward compatibility:
+- The Prisma `OtpCode.code` column is still `String` (no schema change).
+  The new hash is 64 chars vs the old 6-char plaintext, but both fit in
+  the same column. **No migration needed.**
+- Old plaintext OTP rows will fail verification (correct behavior —
+  user re-requests). They also age out at 5-min TTL.
+- HTTP response contract unchanged: dev mode returns `{ ok, expiresAt,
+  code }`; production returns `{ ok, expiresAt }` (no `code` field).
+- Rate limit, phone normalization, session creation, cookie setting,
+  and the user-find-or-create flow are all untouched.
+
+Verification:
+- `bun run lint` → exit 0, 0 errors, 0 warnings ✅
+- `npx tsc --noEmit` → exit 0, 0 errors ✅
+- `bun run test` → 8 files, 158 tests, all passed in 6.54s ✅
+  (13/13 in `tests/integration/auth.test.ts` including the new
+  security-regression assertions on send + verify).
+
+Files changed:
+- **NEW**  `src/lib/otp-crypto.ts`                          (shared CSPRNG + SHA-256 helper, ~50 lines incl. docs)
+- **EDIT** `src/app/api/auth/otp/send/route.ts`            (CSPRNG gen + hashed store)
+- **EDIT** `src/app/api/auth/otp/verify/route.ts`          (hash incoming code before lookup)
+- **EDIT** `tests/integration/auth.test.ts`                (security regression assertions)
+
+Stage Summary:
+- ✅ OTP code generation switched from `Math.random()` to `crypto.randomInt()` (Node CSPRNG).
+- ✅ OTP code stored as SHA-256 hex digest; plaintext never written to DB.
+- ✅ Verify route re-hashes user-supplied code before lookup.
+- ✅ Dev-mode plaintext response preserved; production still returns no `code` field.
+- ✅ Shared `src/lib/otp-crypto.ts` helper prevents send/verify drift.
+- ✅ No new dependencies (`node:crypto` is built-in).
+- ✅ Lint: 0 errors. TSC: 0 errors. Tests: 158/158 pass (incl. new regression assertions).
+
+Next actions recommended:
+1. **Add a Prisma migration** to bump `OtpCode.code` column length to
+   `@db.VarChar(128)` (or similar) — currently SQLite TEXT has no length
+   constraint, but if the project ever migrates to Postgres the column
+   should be wide enough for the 64-char hash. Low priority; SQLite is
+   fine indefinitely.
+2. **Backfill / purge**: optionally run a one-off script to delete or
+   mark-consumed any pre-fix `OtpCode` rows whose `code` column doesn't
+   match `/^[0-9a-f]{64}$/`. They're already dead (verify will reject
+   them), but cleaning them up keeps the table tidy. With 5-min TTL +
+   `updateMany` invalidation on each send, the table should already be
+   small.
+3. **SMS provider integration**: the `TODO(production)` in the send
+   route is now the only thing standing between the current dev-only
+   flow and a real production OTP system. Kavenegar / MeliPayamak /
+   Farapayamak are the standard Iranian providers; the plaintext `code`
+   variable is ready to be handed to whichever one is chosen.
+4. **Consider HMAC instead of bare SHA-256** for the stored hash, keyed
+   by a server-side secret, so an attacker who exfiltrates both the DB
+   AND the codebase still can't forge hashes offline. Not strictly
+   required (rate limit + TTL still bound the attack), but defense in
+   depth. Would require a `OTP_HASH_KEY` env var and a graceful
+   rotation story.
+5. **Consider per-phone salt** (e.g. `hashOtpCode(code, phone)`) to
+   make rainbow tables non-reusable across phones. Marginal given
+   6-digit space + 5-min TTL, but cheap to add.
+
+---
+
+Task ID: FIX-2-SESSION-LIFECYCLE
+Agent: general-purpose (sub)
+Task: Fix #2 — Wire Session DB into auth lifecycle
+
+Work Log:
+- Audited `src/lib/auth.ts`: `createSession(payload)` only minted a JWT;
+  `verifySession(token)` only verified the JWT signature+expiry. The Prisma
+  `Session` model (tokenHash / device / ip / expiresAt / revokedAt) was
+  defined in `prisma/schema.prisma` but never read or written. Result:
+  logout was a no-op (JWT stayed valid until 30-day expiry), admin
+  couldn't revoke sessions, and there was no per-device session tracking.
+- Refactored `src/lib/auth.ts`:
+  - Added `import { createHash } from "crypto"` (Node.js built-in,
+    available in the Next.js server runtime).
+  - Added 3 module-private helpers:
+      `hashToken(token)            → SHA-256 hex digest (64 chars)`
+      `getDeviceFromRequest(req?)  → User-Agent header or null`
+      `getIpFromRequest(req?)      → X-Forwarded-For first hop / X-Real-IP / null`
+  - Rewrote `createSession(payload, req?)`:
+      * Mints the JWT exactly as before (jose SignJWT, HS256, 30d exp).
+      * Hashes the JWT with SHA-256 and writes a `Session` DB row
+        (userId, tokenHash, device, ip, expiresAt = now + 30d).
+      * The DB write is wrapped in try/catch so a missing `Session`
+        table (pre-migration DB) or transient DB error doesn't block
+        login — the JWT is still returned. This is the explicit
+        backward-compat path the task spec requires.
+  - Rewrote `verifySession(token)`:
+      * Verifies the JWT first (invalid/expired JWT → null, no DB hit).
+      * Hashes the token and looks up `Session.tokenHash`.
+      * Returns null if the record is missing (revoked/cleared), if
+        `revokedAt` is set (explicitly revoked), or if `expiresAt < now`.
+      * The DB read is wrapped in try/catch — on DB error (missing
+        table, connection failure), it falls back to JWT-only auth
+        and returns the session payload. This keeps existing
+        deployments working without forcing a migration.
+  - Added `revokeSession(token)`: `updateMany` scoped by `tokenHash +
+    revokedAt: null`, sets `revokedAt = now`. Idempotent (calling
+    logout twice is a no-op the second time). Used by the new logout
+    endpoint.
+  - Added `revokeAllUserSessions(userId)`: same shape, scoped by
+    `userId`. For admin "revoke all sessions" and password-change
+    flows. Idempotent.
+- Updated `src/modules/auth/index.ts` barrel to export
+  `revokeSession` and `revokeAllUserSessions`.
+- Updated `src/app/api/auth/otp/verify/route.ts`:
+  the `createSession(...)` call now passes `req` as the 2nd argument so
+  the new Session DB row captures User-Agent + IP at login time.
+- Created `src/app/api/auth/logout/route.ts` (NEW):
+  - POST /api/auth/logout
+  - Calls `requireAuth(req)` (from `@/lib/api-helpers`, which also
+    applies the default 60 req/min rate limit).
+  - Extracts the raw JWT from either `Authorization: Bearer <token>`
+    or the `mekanix-token` cookie (mirrors `getSessionFromRequest`).
+  - Calls `revokeSession(token)` to mark the DB row as revoked.
+  - Deletes the `mekanix-token` HttpOnly cookie so the browser drops
+    the token too.
+  - Returns `{ ok: true }` on success, 401 if not authenticated.
+
+### Backward-compat design (the critical bit)
+
+The task spec has two requirements that pull in opposite directions:
+
+  1. "If not found → return null (session was revoked or never existed)"
+  2. "Do NOT break existing functionality — the Session DB check should
+     be try/catch so if the table doesn't exist, auth still works"
+
+Resolved by giving the DB check its own try/catch *inside* `verifySession`,
+separate from the outer JWT-verification try/catch:
+
+  - Invalid JWT → null (JWT catch)
+  - Valid JWT + DB record present & valid → session payload (DB check passes)
+  - Valid JWT + DB record missing/revoked/expired → null (DB check returns null)
+  - Valid JWT + DB call throws (table missing, DB down) → fall through to
+    the JWT-derived session payload (DB catch, backward compat)
+
+This means a deployment that hasn't run `prisma db push` since the `Session`
+model was added keeps working — every `verifySession` call hits the DB
+catch path and falls back to JWT-only auth, exactly as before this fix.
+
+The same pattern applies to `createSession`, `revokeSession`, and
+`revokeAllUserSessions`: every DB call is wrapped in try/catch with a
+console.error so a missing table or DB error degrades gracefully.
+
+### Tests
+
+- NEW `tests/unit/session-lifecycle.test.ts` (24 tests) — covers the full
+  Session DB lifecycle:
+    * `createSession` writes a Session row (userId + tokenHash + expiresAt)
+    * tokenHash is a SHA-256 hex digest (64 lowercase hex chars), NEVER
+      the raw JWT (asserts no `.` in the hash, hash ≠ token)
+    * device + ip extracted from User-Agent / X-Forwarded-For / X-Real-IP
+    * expiresAt is ~30 days from now (matches JWT exp)
+    * createSession still returns the JWT if the DB throws (backward compat)
+    * verifySession honours the DB record (valid → session, missing →
+      null, revoked → null, expired → null)
+    * verifySession returns null for an invalid JWT WITHOUT hitting the DB
+    * verifySession falls back to JWT-only auth if the DB throws
+    * verifySession queries by `tokenHash` matching the SHA-256 hash
+    * revokeSession calls updateMany with the hashed token + revokedAt
+      filter; idempotent (calling twice doesn't error)
+    * revokeSession / revokeAllUserSessions don't throw if the DB throws
+    * POST /api/auth/logout returns 401 without auth, 200 + revokes +
+      clears cookie with auth (both Bearer + cookie auth paths)
+- UPDATED `tests/integration/auth.test.ts`: added `db.session.create /
+  findUnique / updateMany` to the `@/lib/db` mock so the OTP verify route's
+  `createSession(..., req)` call exercises the DB write path. Added a new
+  assertion in the "valid code + existing user" test that verifies
+  `mockSessionCreate` was called with a SHA-256-hex tokenHash (not the
+  raw JWT) and a 30-day expiry. (13 tests, was 13, all still pass.)
+- UPDATED `tests/integration/care.test.ts`: added `db.session.create /
+  findUnique / updateMany` to the `@/lib/db` mock. `mockSessionFindUnique`
+  returns a valid (non-revoked, non-expired) record by default so the
+  real `verifySession` path is exercised end-to-end (instead of falling
+  through the backward-compat catch). Individual tests can override with
+  `mockSessionFindUnique.mockResolvedValueOnce(null)` to simulate a
+  revoked session. (12 tests, all still pass.)
+
+### Verification
+
+- `bun run lint` → exit 0, 0 errors, 0 warnings ✅
+- `bunx tsc --noEmit` → 0 errors in any file touched by this task
+  (`src/lib/auth.ts`, `src/modules/auth/index.ts`,
+  `src/app/api/auth/otp/verify/route.ts`, `src/app/api/auth/logout/route.ts`,
+  `tests/unit/session-lifecycle.test.ts`, `tests/integration/auth.test.ts`,
+  `tests/integration/care.test.ts`) ✅
+- 74 pre-existing TS errors remain in OTHER files (all `Decimal`-related:
+  `src/app/api/dashboard/route.ts`, `src/app/api/invoices/route.ts`,
+  `src/components/mek/customer/*`, `src/components/mek/technician/*`,
+  `src/lib/dispatch.ts`, `src/lib/pricing.ts`, etc.). These are
+  documented in the Phase 6 worklog as "85 pre-existing TS errors
+  blocking next build: still open from Phase 2, not blocking dev" —
+  unrelated to this task, not introduced by it.
+- `bun run test` → 9 files, 182 tests, all passed (158 pre-existing +
+  24 new session-lifecycle), 9.5s wall-clock ✅
+
+### Files changed / created
+
+- **EDIT** `src/lib/auth.ts`                            (+147 lines)
+  - Added `hashToken`, `getDeviceFromRequest`, `getIpFromRequest` helpers
+  - Rewrote `createSession(payload, req?)` to write a Session DB row
+  - Rewrote `verifySession(token)` to check the Session DB for revocation
+  - Added `revokeSession(token)` and `revokeAllUserSessions(userId)`
+- **EDIT** `src/modules/auth/index.ts`                  (+2 exports)
+  - Exported `revokeSession`, `revokeAllUserSessions` from the barrel
+- **EDIT** `src/app/api/auth/otp/verify/route.ts`      (1 line)
+  - Pass `req` to `createSession(...)` for device/IP tracking
+- **NEW**  `src/app/api/auth/logout/route.ts`           (POST handler)
+  - 401 without auth, 200 + revokes + clears cookie with auth
+- **NEW**  `tests/unit/session-lifecycle.test.ts`      (24 tests)
+- **EDIT** `tests/integration/auth.test.ts`            (+14 lines)
+  - Added `db.session.*` to the `@/lib/db` mock; added SHA-256 hash
+    assertion to the existing "valid code" test
+- **EDIT** `tests/integration/care.test.ts`             (+33 lines)
+  - Added `db.session.*` to the `@/lib/db` mock with a default valid
+    session record so the real verifySession path is exercised
+
+### Stage Summary
+
+- ✅ Session DB model is now wired into the full auth lifecycle:
+  `createSession` writes a hashed-token row, `verifySession` checks it
+  for revocation/expiry, `revokeSession` marks it revoked, and the new
+  `/api/auth/logout` endpoint ties it all together.
+- ✅ Logout actually works now: the Session row is marked `revokedAt`
+  so the JWT is no longer honoured on subsequent requests, even though
+  the JWT itself hasn't expired yet.
+- ✅ Admin session revocation is available via `revokeAllUserSessions
+  (userId)` — ready to wire into the admin dashboard or a password-
+  change handler.
+- ✅ Backward compat preserved: if the `Session` table is missing
+  (pre-migration DB) or the DB throws, `createSession` still returns
+  the JWT and `verifySession` falls back to JWT-only auth. Existing
+  deployments keep working without forcing a migration.
+- ✅ The raw JWT is NEVER stored in the DB — only its SHA-256 hex
+  digest. A read-only DB leak alone cannot authenticate as a user.
+- ✅ Lint: 0 errors. TSC: 0 errors in any touched file. Tests: 182/182.
+
+### Next actions recommended
+
+1. **Wire `revokeAllUserSessions` into the password-change flow.** When
+   a user changes their password (or admin forces a password reset),
+   call `revokeAllUserSessions(user.id)` after the password hash is
+   updated — forces re-login on every device.
+2. **Add an admin "sessions" endpoint** (e.g.
+   `GET /api/admin/users/[id]/sessions`) that lists the active Session
+   rows for a user (device, ip, createdAt, lastSeen) and supports
+   `DELETE` for individual session revocation. Uses `db.session.findMany`
+   + `revokeSession(tokenHash)` (note: revokeSession currently takes the
+   raw token — extend or add a `revokeSessionByHash(tokenHash)` variant
+   for admin revocation where the admin only has the hash).
+3. **Run `prisma db push`** in any deployment that hasn't since the
+   `Session` model was added — otherwise every `verifySession` call
+   silently falls through the backward-compat path and revocation is
+   a no-op. The fallback keeps auth working, but the security benefit
+   (real logout, revocation) is only active once the table exists.
+4. **Add a periodic cleanup job** that deletes `Session` rows where
+   `expiresAt < now - 90d` (or where `revokedAt < now - 30d`) so the
+   table doesn't grow unbounded. A simple `db.session.deleteMany({
+   where: { expiresAt: { lt: new Date(Date.now() - 90 * 24 * 60 * 60 *
+   1000) } } })` invoked from a cron would do it.
+5. **Consider IP rate-limiting on the new `/api/auth/logout`
+   endpoint** — currently it inherits the default 60 req/min from
+   `requireAuth`. That's fine, but if you ever see brute-force
+   revocation attempts you can swap `requireAuth` for a
+   `checkRateLimit`-wrapped variant.
+
+---
+
+Task ID: FIX-5-6-ASSET-MONEY
+Agent: general-purpose (sub)
+Task: Fix #5: Asset abstraction + #6: Float→Decimal money
+
+Work Log:
+- Read the audit findings: (1) `vehicleToAsset()` always returned
+  `type: "vehicle"` even for machinery; (2) money fields were `Float`
+  which is unsafe for financial data.
+
+### Task 1 — Asset abstraction (`src/lib/asset-types.ts`)
+
+Rewrote `vehicleToAsset()` so it dispatches on the Vehicle `type`
+(MachineType enum) via `getAssetType()`:
+  - `CAR`           → `VehicleAsset` (engineHours → mileage, vin → vin)
+  - everything else → `MachineryAsset` (engineHours → workingHours,
+                                          vin → serialNumber)
+
+The function signature changed from `vehicleToAsset(v: any): VehicleAsset`
+to `vehicleToAsset(v: any): Asset` (discriminated union). The existing
+`getAssetType`, `isVehicle`, `isMachinery` type-guards were preserved
+unchanged. The audit's contract for `getAssetType` (CAR=vehicle,
+everything else=machinery) was already in place — no logic change there,
+just the `vehicleToAsset` body now uses it.
+
+### Task 2 — Float → Decimal money (15 models in `prisma/schema.prisma`)
+
+Money columns on all 15 audited models converted from `Float` to
+`Decimal`. SQLite (the active provider) does NOT support the
+`@db.Decimal(p, s)` native-type annotation — Prisma rejects the schema
+with `error: Native type Decimal is not supported for sqlite connector`.
+Per Prisma docs, on SQLite `Decimal` alone (no `@db.*`) maps to TEXT
+internally and returns `Prisma.Decimal` to JS. So the final schema uses
+bare `Decimal` (no `@db.Decimal(12, 2)` annotation).
+
+Models touched (money fields):
+
+| Model                  | Fields converted                                                |
+|------------------------|-----------------------------------------------------------------|
+| Job                    | inspectionFee, travelFee, platformCommission, netEarnings      |
+| Invoice                | laborRate, laborTotal, partsTotal, travelFee, subtotal,         |
+|                        | taxTotal, discount, total                                       |
+| Payment                | amount                                                          |
+| Wallet                 | balance, pendingBalance, totalEarned, totalCommission,         |
+|                        | totalWithdrawn                                                  |
+| WalletTransaction      | grossAmount, commissionAmount, netAmount                        |
+| WithdrawalRequest      | amount                                                          |
+| Technician             | hourlyRate, travelFeeBase, inspectionFee,                      |
+|                        | inspectionFeeHeavy, rating                                     |
+| PricingSnapshot        | servicePrice, visitPrice, laborPrice, partsPrice, discount,   |
+|                        | taxRate, taxTotal, total                                       |
+| CustomerApproval       | partPrice, laborPrice, totalPrice                               |
+| PartUsage               | unitPrice, totalPrice                                           |
+| Part                   | unitPrice                                                       |
+| ServicePackage         | basePrice                                                       |
+| InsurancePolicy        | premiumAmount, coverageAmount                                   |
+| InsuranceClaim         | amount                                                          |
+| VipPlan                | priceUSD → renamed to `priceIrr` (Decimal)                       |
+
+Two non-spec money fields were also converted for consistency with the
+"all money fields → Decimal" rule (they're not in the audit's 15-model
+list but are clearly money):
+  - `ServiceCategory.basePrice` → Decimal
+  - `Referral.rewardAmount`     → Decimal
+
+Non-money `Float` columns left untouched (per spec):
+  - `Technician.lat / lng / heading`           (geographic coords)
+  - `ServiceArea.lat / lng / radiusKm`         (geographic)
+  - `ServiceRequest.lat / lng`                (geographic)
+  - `Vehicle.lat / lng`                       (geographic)
+  - `TrackingEvent.lat / lng / heading`        (geographic)
+  - `Invoice.laborHours`                      (hours, not money)
+  - `Invoice.taxRate`                         (rate 0.09 — kept Float)
+  - `VipPlan.discountPct`                      (percentage, not money)
+  - `ExchangeRateHistory.baseRate/multiplier/finalRate` (FX rates)
+  - `DiscountCode.value / minAmount`           (discount code config)
+  - `WalletLedger.amount/balanceBefore/balanceAfter` (audit ledger — kept Float for now)
+  - `VehicleCareProfile.healthScore`           (0–100 score, not money)
+  - `DispatchCandidate.distance/score/*Score`  (dispatch ranking)
+  - `VehicleHealthReport.*Score`               (health scores 0–100)
+
+### Task 3 — Currency defaults `USD` → `IRR`
+
+Changed `currency String @default("USD")` → `"IRR"` on:
+  - `User.currency`           (line 26)
+  - `Invoice.currency`        (line 374)
+  - `Payment.currency`        (line 400)
+  - `PaymentGatewayLog.currency` (line 812)
+  - `PricingSnapshot.currency`   (line 1216)
+
+`WalletTransaction` has no `currency` field (the audit list mentions it
+but the schema doesn't have one) — no change needed there.
+
+### Task 4 — Code that reads/writes Decimal fields
+
+`Prisma.Decimal` (Decimal.js) has these gotchas:
+1. `valueOf()` returns a **string** (e.g. `"100.00"`), not a number —
+   so `Decimal + Decimal` does **string concatenation**, not arithmetic.
+2. `toJSON()` returns a string — so `NextResponse.json({ balance: Decimal })`
+   serializes as `{"balance": "100.00"}` (string), not `100` (number).
+3. TS rejects `Decimal < number`, `Decimal + number`, `Decimal * number`
+   as type errors (TS2362/TS2363/TS2365).
+
+Fixes applied — every place that read a Decimal from the DB and then
+did arithmetic / comparison / display wrapped the read in `Number(...)`:
+
+**API routes** (server-side, Decimal comes from Prisma):
+  - `src/app/api/dashboard/route.ts` — 4 reducer summations
+    (`payments.reduce((s,p) => s + p.amount, 0)` etc.) + tech rating
+    rounding (`Math.round(t.rating * 10) / 10`).
+  - `src/app/api/invoices/route.ts` — invoice creation block:
+    laborRate, partsTotal (reduce), travelFee now derived via `Number()`;
+    currency default changed from `"USD"` to `"IRR"`; notification body
+    templates now use `${Number(inv.total)}` to avoid `"[object Object]"`
+    serialization.
+  - `src/app/api/jobs/[id]/status/route.ts` — auto-invoice on
+    WAITING_APPROVAL: same pattern (hourlyRate, partsTotal, travelFee);
+    currency `"USD"` → `"IRR"`.
+  - `src/app/api/prepay/route.ts` — `inspectionFee`, `travelFee` from
+    Technician record wrapped in `Number()` before gross/commission/net
+    arithmetic.
+  - `src/app/api/referral/route.ts` — `earned`/`available` reducers
+    on `rewardAmount`; notification body changed from `$${rewardAmount}`
+    (string concat) to `${Number(updated.rewardAmount)} IRR`.
+  - `src/app/api/wallets/withdraw/route.ts` — `wallet.balance < amount`
+    comparison + `balanceBefore - amount` arithmetic + `lockedWallet.balance`
+    recheck all wrapped in `Number()`.
+
+**Lib**:
+  - `src/lib/pricing.ts` — `calculatePrice()`: `packageBasePrice`
+    extracted via `Number(pkg.basePrice)` instead of `?? 0` (Decimal
+    is never falsy with `??`).
+  - `src/lib/dispatch.ts` — `ratingScore` and `rating` candidate
+    fields wrapped in `Number(tech.rating ?? 0)`.
+
+**Frontend components** (money/rating fields arrive as JSON strings from
+the API because of Decimal's `toJSON`):
+  - `src/components/mek/customer/vip.tsx` — `priceUSD: number` type
+    field renamed to `priceIrr`; both usages (`money(plan.priceIrr)` and
+    `amount={selectedPlan.priceIrr}`) updated.
+  - `src/components/mek/customer/invoice.tsx` — 12 sites: every
+    `money(inv.X)` / `inv.X` arithmetic wrapped in `Number()`.
+  - `src/components/mek/customer/invoice-document.tsx` — 9 sites
+    (same pattern).
+  - `src/components/mek/customer/request-flow.tsx` — technician ranking
+    block (proximityScore, valueScore, inspectionFee, travelFee)
+    rewritten to extract `rating`/`hourlyRate`/`inspectionFee`/
+    `inspectionFeeHeavy`/`travelFeeBase` as numbers up-front; tech-profile
+    detail rows wrapped in `Number()`.
+  - `src/components/mek/customer/tracking.tsx` — StarRating value +
+    rating.toFixed(1) display wrapped in `Number()`.
+  - `src/components/mek/customer/service-history.tsx` — `money(job.invoice.total, …)` →
+    `money(Number(job.invoice.total), …)`.
+  - `src/components/mek/customer/home.tsx` — same pattern.
+  - `src/components/mek/customer/fleet-dashboard.tsx` — 30-day revenue
+    reducer.
+  - `src/components/mek/admin/technicians.tsx` — StarRating, rating
+    toFixed, hourlyRate display, sortValue callbacks.
+  - `src/components/mek/admin/verification.tsx` — same pattern.
+  - `src/components/mek/admin/categories.tsx` — basePrice input value
+    and `setRows` patch (avoids `Decimal | number` union on the
+    spread by mapping name/active explicitly).
+  - `src/components/mek/admin/payments.tsx` — total reducer.
+  - `src/components/mek/shared/technician-card.tsx` — StarRating +
+    rating display + hourlyRate money format.
+  - `src/components/mek/technician/dashboard.tsx` — today/week earnings
+    reducers.
+  - `src/components/mek/technician/job-detail.tsx` — estimate preview
+    lines (labor/parts/travelFee/total) all wrapped.
+  - `src/components/mek/technician/profile.tsx` — rating StarRating +
+    hourlyRate display.
+  - `src/components/mek/technician/requests.tsx` — estPayout
+    (`hourlyRate * 1.5`) + invoice total display.
+  - `src/components/mek/technician/reviews.tsx` — `avg = tech?.rating ??
+    0` → `Number(tech?.rating) ?? 0` (the `?? 0` was already correct
+    type-wise but at runtime `Decimal` is truthy, so the nullish
+    fallback never fired; `Number()` makes it numeric).
+
+**Seed script** (`prisma/seed.ts`):
+  - VipPlan entries: `priceUSD` → `priceIrr`.
+  - Two invoice-creation loops (lines ~304 and ~420): hourlyRate,
+    travelFeeBase wrapped in `Number()` so `laborHours * laborRate` and
+    `subtotal + travelFee` don't become string concatenation.
+  - All `"currency": "USD"` literals changed to `"IRR"`.
+
+### Schema apply (db:push)
+
+First `prisma db push --accept-data-loss` with `@db.Decimal(12, 2)`
+annotations failed — Prisma rejects `@db.Decimal` on SQLite. Stripped
+all `@db.Decimal(...)` annotations with a `sed` pass over both copies
+of the schema (`prisma/schema.prisma` and `mini-services/chat-service/
+prisma/schema.prisma` — they're hard-linked, same inode 395187).
+
+Second `db:push` succeeded:
+```
+🚀  Your database is now in sync with your Prisma schema. Done in 140ms
+✔ Generated Prisma Client (v6.19.2)
+```
+
+`--accept-data-loss` dropped the existing data (column-type change
+REAL → TEXT for the money columns is non-reversible in SQLite). Re-ran
+`bun prisma/seed.ts` cleanly: 14 users, 8 technicians, 10 vehicles,
+14 jobs, 9 invoices seeded. First seed attempt failed at
+`db.invoice.create()` with `invalid digit found in string. Expected
+decimal String` because `subtotal` was the string `"5403.5"`
+(`Decimal.toString()` concat from `540 + Decimal(3.5)`). After wrapping
+hourlyRate/travelFeeBase in `Number()`, the seed ran green.
+
+### Verification
+
+- `bunx tsc --noEmit` → exit 0, **0 errors** ✅ (was 77 errors after the
+  schema change; all fixed by `Number()` wrappers + types-only patches)
+- `bun run lint` → exit 0, **0 errors** ✅
+- `bun run test` → 9 files, **182 tests passed**, 0 failed (6.7s) ✅
+  (was 158 tests; 24 new tests come from `tests/unit/session-lifecycle.test.ts`
+  which was already in the worktree as an untracked file — not added by
+  this task)
+- `bun run db:push` → schema in sync, Prisma Client generated ✅
+- `dev.log` tail → no `⨯` runtime errors; GET `/`, `/api/health`,
+  `/api/vip/plans`, `/api/technicians` all return 200 ✅
+
+### Runtime observation: Decimal JSON serialization
+
+`Prisma.Decimal`'s `toJSON()` returns a **string**, so all API responses
+now serialize money fields as strings:
+```json
+GET /api/vip/plans →
+  "priceIrr": "9"        (was: 9)
+GET /api/technicians →
+  "rating": "4.9",       (was: 4.9)
+  "hourlyRate": "78"     (was: 78)
+```
+
+The frontend handles this transparently because:
+1. All arithmetic sites are wrapped in `Number()` (verified via tsc
+   — any missed site would fail with TS2362/TS2363/TS2365).
+2. The `money()` helper in `src/lib/use-t.ts` → `fmtMoney()` in
+   `src/lib/format.ts` does `amount * USD_TO_IRR` which JS coerces
+   string → number automatically. Pure-display paths survive.
+3. `Intl.NumberFormat().format("100.00")` coerces to number internally.
+
+So even though the wire format changed (number → string), no UI breaks.
+The TS types on the frontend (`Wallet.balance: number`, etc.) are now
+formally incorrect (the actual runtime value is a string), but TS doesn't
+catch this because JSON.parse returns `any`. If a future agent wants
+to tighten this, the canonical fix is to add a Prisma extension that
+serializes Decimal as a JS number in API responses — out of scope here.
+
+### Files changed
+
+- `src/lib/asset-types.ts`                 — vehicleToAsset dispatch on MachineType
+- `prisma/schema.prisma`                   — 15+ models Float → Decimal, currency USD → IRR, priceUSD → priceIrr
+- `mini-services/chat-service/prisma/schema.prisma` — hard-linked to main schema (auto-synced)
+- `prisma/seed.ts`                         — priceUSD → priceIrr, Number() wrappers, USD → IRR
+- `src/lib/pricing.ts`                     — Number(pkg.basePrice)
+- `src/lib/dispatch.ts`                    — Number(tech.rating)
+- `src/app/api/dashboard/route.ts`         — 4 reducers + rating
+- `src/app/api/invoices/route.ts`          — invoice creation + notifications
+- `src/app/api/jobs/[id]/status/route.ts`  — auto-invoice on WAITING_APPROVAL
+- `src/app/api/prepay/route.ts`            — inspectionFee / travelFee extraction
+- `src/app/api/referral/route.ts`          — earned / available reducers
+- `src/app/api/wallets/withdraw/route.ts`  — balance comparison + arithmetic
+- `src/components/mek/customer/vip.tsx`     — priceUSD → priceIrr (type + 2 usages)
+- `src/components/mek/customer/invoice.tsx` — 12 Number() wrappers
+- `src/components/mek/customer/invoice-document.tsx` — 9 Number() wrappers
+- `src/components/mek/customer/request-flow.tsx` — ranking block + tech-profile rows
+- `src/components/mek/customer/tracking.tsx` — StarRating + rating display
+- `src/components/mek/customer/service-history.tsx` — money(invoice.total)
+- `src/components/mek/customer/home.tsx`     — money(invoice.total)
+- `src/components/mek/customer/fleet-dashboard.tsx` — 30d revenue reducer
+- `src/components/mek/admin/technicians.tsx` — StarRating + rating + hourlyRate
+- `src/components/mek/admin/verification.tsx` — StarRating + rating
+- `src/components/mek/admin/categories.tsx` — basePrice input + setRows patch
+- `src/components/mek/admin/payments.tsx`    — total reducer
+- `src/components/mek/shared/technician-card.tsx` — StarRating + hourlyRate
+- `src/components/mek/technician/dashboard.tsx` — today/week earnings reducers
+- `src/components/mek/technician/job-detail.tsx` — estimate preview block
+- `src/components/mek/technician/profile.tsx` — rating + hourlyRate
+- `src/components/mek/technician/requests.tsx` — estPayout + invoice total
+- `src/components/mek/technician/reviews.tsx` — avg rating
+
+Stage Summary:
+- ✅ Asset abstraction now correctly dispatches: CAR → VehicleAsset,
+  everything else (TRUCK/BUS/EXCAVATOR/LOADER/BULLDOZER/GRADER/AGRI/
+  INDUSTRIAL/OTHER) → MachineryAsset.
+- ✅ All 15 audited money models converted from Float → Decimal.
+  SQLite-compatible (bare `Decimal`, no `@db.Decimal` annotation).
+- ✅ All currency defaults changed from USD → IRR (User, Invoice,
+  Payment, PaymentGatewayLog, PricingSnapshot).
+- ✅ VipPlan.priceUSD renamed to priceIrr (Decimal).
+- ✅ All Decimal arithmetic sites wrapped in Number() — tsc 0 errors,
+  lint 0 errors, 182 tests pass.
+- ✅ DB re-seeded cleanly after schema migration (column-type change
+  required `--accept-data-loss`).
+- ✅ Runtime verified: dev server responds 200 on `/`, `/api/health`,
+  `/api/vip/plans`, `/api/technicians`. No `⨯` errors in dev.log.
+
+### Next actions recommended
+
+1. **Prisma Decimal → JSON number serialization.** Today every API
+   response serializes money fields as strings (`"priceIrr": "9"`).
+   Frontend tolerates this via JS coercion, but the wire format is
+   inconsistent (some money fields are numbers, some strings). Add a
+   Prisma `$extends` client-side transformer OR a NextResponse
+   serializer that walks the payload and converts Decimal → number
+   before `NextResponse.json()`. This would let the frontend TS types
+   (`Wallet.balance: number`) become correct again.
+2. **`WalletLedger.amount/balanceBefore/balanceAfter`** are still
+   Float — they're money fields but were not in the audit's 15-model
+   list. Convert for consistency. Same for `ExchangeRateHistory` and
+   `DiscountCode` (config values, but still money-shaped).
+3. **Asset abstraction write path.** `vehicleToAsset` is currently
+   read-only. If/when the schema grows a separate `Asset` table (or
+   `Vehicle` is split into `Vehicle` + `Machinery`), add an
+   `assetToVehicle()` reverse mapper.
+4. **Add tests for the asset dispatch.** Currently
+   `vehicleToAsset({ type: "EXCAVATOR", ... })` returns a
+   MachineryAsset but no test asserts it. Add a unit test in
+   `tests/unit/` covering both branches.

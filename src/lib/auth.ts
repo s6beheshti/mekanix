@@ -6,6 +6,7 @@
 // - API5: Broken Function Level Authorization
 
 import { SignJWT, jwtVerify } from "jose";
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { db } from "./db";
 
@@ -32,25 +33,153 @@ export type Session = {
   isGuest: boolean;
 };
 
-export async function createSession(payload: Session): Promise<string> {
-  return new SignJWT({ ...payload })
+// ──────────── Session DB helpers ────────────
+//
+// We NEVER store the raw JWT in the database — only a SHA-256 hash of it.
+// This way a DB read alone is never enough to authenticate as a user; an
+// attacker with read-only DB access cannot replay any session token.
+//
+// The Session table gives us:
+//   - Real logout (mark revokedAt = now → verifySession returns null)
+//   - Admin "revoke all sessions" (revokeAllUserSessions) for password
+//     change / account compromise response
+//   - Per-device tracking (device + ip columns) for the security dashboard
+//
+// Backward compatibility: if the Session table doesn't exist yet (e.g. a
+// pre-migration DB) or the DB call throws, `createSession`/`verifySession`
+// fall back to JWT-only behaviour so existing deployments keep working
+// without forcing a migration.
+
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — matches JWT exp
+
+/** SHA-256 hex digest of the token — what we store in `Session.tokenHash`. */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Extract the User-Agent header (best-effort device label). */
+function getDeviceFromRequest(req?: Request): string | null {
+  if (!req) return null;
+  return req.headers.get("user-agent") ?? null;
+}
+
+/** Extract the client IP, preferring X-Forwarded-For (first hop). */
+function getIpFromRequest(req?: Request): string | null {
+  if (!req) return null;
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const first = xff.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.headers.get("x-real-ip") ?? null;
+}
+
+export async function createSession(payload: Session, req?: Request): Promise<string> {
+  const token = await new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
     .sign(getSecret());
+
+  // Persist a Session DB record so the token can be revoked/tracked.
+  // Wrap in try/catch: if the Session table doesn't exist (pre-migration
+  // DB) or the DB is unavailable, we still return the JWT so login works.
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  try {
+    await db.session.create({
+      data: {
+        userId: payload.userId,
+        tokenHash,
+        device: getDeviceFromRequest(req),
+        ip: getIpFromRequest(req),
+        expiresAt,
+      },
+    });
+  } catch (e) {
+    console.error("[auth] Failed to create Session DB record:", e);
+  }
+
+  return token;
 }
 
 export async function verifySession(token: string): Promise<Session | null> {
+  // 1. Verify JWT signature + expiry first. If the JWT itself is invalid
+  //    (bad signature, expired, malformed), nothing else matters.
+  let payload;
   try {
-    const { payload } = await jwtVerify(token, getSecret());
-    return {
-      userId: payload.userId as string,
-      role: payload.role as Session["role"],
-      phone: payload.phone as string | null,
-      isGuest: payload.isGuest as boolean,
-    };
+    ({ payload } = await jwtVerify(token, getSecret()));
   } catch {
     return null;
+  }
+
+  const session: Session = {
+    userId: payload.userId as string,
+    role: payload.role as Session["role"],
+    phone: payload.phone as string | null,
+    isGuest: payload.isGuest as boolean,
+  };
+
+  // 2. Check the Session DB for revocation. Wrap in try/catch for backward
+  //    compat: if the Session table doesn't exist (pre-migration DB) or the
+  //    DB call throws, fall back to JWT-only auth so existing deployments
+  //    keep working.
+  try {
+    const tokenHash = hashToken(token);
+    const sessionRecord = await db.session.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!sessionRecord) return null;                  // not in DB → revoked or never existed
+    if (sessionRecord.revokedAt) return null;         // explicitly revoked
+    if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
+  } catch (e) {
+    console.error("[auth] Failed to query Session DB:", e);
+    // Fall through — return the JWT-derived session (backward compat).
+  }
+
+  return session;
+}
+
+// ──────────── Session revocation ────────────
+
+/**
+ * Revoke a single session by its raw JWT token.
+ * Used by the logout endpoint: marks `revokedAt = now` so subsequent
+ * `verifySession` calls return null even though the JWT itself hasn't
+ * expired yet.
+ *
+ * `updateMany` + `revokedAt: null` filter makes this idempotent — calling
+ * logout twice on the same token is a no-op the second time.
+ */
+export async function revokeSession(token: string): Promise<void> {
+  const tokenHash = hashToken(token);
+  try {
+    await db.session.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  } catch (e) {
+    console.error("[auth] Failed to revoke session:", e);
+  }
+}
+
+/**
+ * Revoke every active session for a user.
+ * Used by:
+ *   - Admin "revoke all sessions" action (account compromise response)
+ *   - Password change (force re-login on all devices)
+ *
+ * Idempotent: only touches sessions where `revokedAt` is still null.
+ */
+export async function revokeAllUserSessions(userId: string): Promise<void> {
+  try {
+    await db.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  } catch (e) {
+    console.error("[auth] Failed to revoke all user sessions:", e);
   }
 }
 
