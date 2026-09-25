@@ -38,8 +38,8 @@ jobs:
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
             /tmp/mekanix-build/prisma/schema.prisma
           
-          # Copy docker-compose.yml to build context
-          cp docker-compose.yml /tmp/mekanix-build/
+          # Copy docker compose.yml to build context
+          cp docker compose.yml /tmp/mekanix-build/
           cp Dockerfile /tmp/mekanix-build/
           
           echo "✅ Build context prepared with PostgreSQL config"
@@ -54,7 +54,7 @@ jobs:
           cd /tmp/mekanix-build
           export DB_PASSWORD=test_password
           export JWT_SECRET=test_secret_for_ci
-          docker-compose up -d
+          docker compose up -d
       
       - name: Wait for health check
         run: |
@@ -70,7 +70,7 @@ jobs:
             sleep 2
           done
           echo "❌ App did not become healthy"
-          docker-compose logs
+          docker compose logs
           exit 1
       
       - name: Verify database is PostgreSQL
@@ -103,8 +103,8 @@ jobs:
       
       - name: Check container logs
         if: always()
-        run: docker-compose logs --tail=50
+        run: docker compose logs --tail=50
       
       - name: Stop containers
         if: always()
-        run: docker-compose down -v
+        run: docker compose down -v

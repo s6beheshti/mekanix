@@ -76,9 +76,9 @@ echo "   ✅ Developer working tree: UNCHANGED"
 echo ""
 
 # ─── Build and deploy ───
-echo "🏗️  Building and deploying with docker-compose..."
+echo "🏗️  Building and deploying with docker compose..."
 # Use the build context directory
-DOCKER_BUILDKIT=1 docker-compose -f "$REPO_DIR/docker-compose.yml" \
+DOCKER_BUILDKIT=1 docker compose -f "$REPO_DIR/docker compose.yml" \
   --project-directory "$BUILD_CTX" \
   up -d --build
 
@@ -100,7 +100,7 @@ print(f'  Redis: {d[\"services\"][\"redis\"]}')
   fi
   if [ "$i" = "60" ]; then
     echo "❌ App did not become healthy within 120s"
-    echo "   Check logs: docker-compose logs app"
+    echo "   Check logs: docker compose logs app"
     exit 1
   fi
   echo "   Waiting... ($i/60)"
@@ -116,6 +116,6 @@ echo "║  Health: http://localhost:3000/api/health               ║"
 echo "║  DB:     localhost:5432 (PostgreSQL 16)                ║"
 echo "║  Redis:  localhost:6379 (Redis 7)                      ║"
 echo "║                                                          ║"
-echo "║  Logs:   docker-compose logs -f                         ║"
-echo "║  Stop:   docker-compose down                            ║"
+echo "║  Logs:   docker compose logs -f                         ║"
+echo "║  Stop:   docker compose down                            ║"
 echo "╚══════════════════════════════════════════════════════════╝"
