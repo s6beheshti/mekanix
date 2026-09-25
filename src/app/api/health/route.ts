@@ -1,24 +1,19 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isRedisAvailable } from "@/lib/redis";
+import { getSmsProviderStatus } from "@/lib/sms-provider";
 
-// GET /api/health — health check for deployment monitoring.
+// GET /api/health — comprehensive health check for deployment monitoring
 //
-// Shape (HTTP 200 when fully healthy, 503 when any service is down):
-//   {
-//     ok: boolean,
-//     timestamp: ISO string,
-//     uptime: seconds,
-//     environment: "production" | "development" | ...,
-//     services: {
-//       database: "healthy" | "unhealthy" | "unknown",
-//       redis:    "healthy" | "not-configured" | "unhealthy" | "unknown"
-//     }
-//   }
+// Checks:
+//   1. Database connectivity (raw query)
+//   2. Redis availability (if configured)
+//   3. SMS provider configuration
+//   4. ETA provider configuration
+//   5. Migration status (if _prisma_migrations table exists)
 //
-// `ok` is true only when the database is reachable. Redis is optional —
-// when REDIS_URL is unset, `services.redis` is "not-configured" and the
-// overall check still returns 200 (single-instance dev mode).
+// Returns HTTP 200 if all critical services are healthy, 503 otherwise.
+
 export async function GET() {
   const health = {
     ok: true,
@@ -28,24 +23,86 @@ export async function GET() {
     services: {
       database: "unknown" as string,
       redis: "unknown" as string,
+      sms: "unknown" as string,
+      eta: "unknown" as string,
     },
+    warnings: [] as string[],
   };
 
-  // Check database
+  // ─── 1. Database ───
   try {
     await db.$queryRaw`SELECT 1`;
     health.services.database = "healthy";
-  } catch {
+  } catch (e) {
     health.services.database = "unhealthy";
     health.ok = false;
+    health.warnings.push(`Database: ${(e as Error).message}`);
   }
 
-  // Check Redis (optional — degrades gracefully to in-memory)
+  // ─── 2. Redis ───
   try {
     const redisOk = await isRedisAvailable();
-    health.services.redis = redisOk ? "healthy" : "not-configured";
-  } catch {
+    if (process.env.REDIS_URL) {
+      health.services.redis = redisOk ? "healthy" : "unhealthy";
+      if (!redisOk) {
+        health.ok = false;
+        health.warnings.push("Redis: configured but not reachable");
+      }
+    } else {
+      health.services.redis = "not-configured";
+      health.warnings.push("Redis: not configured (rate limiting is in-memory)");
+    }
+  } catch (e) {
     health.services.redis = "unhealthy";
+    health.warnings.push(`Redis: ${(e as Error).message}`);
+  }
+
+  // ─── 3. SMS Provider ───
+  try {
+    const smsStatus = getSmsProviderStatus();
+    if (smsStatus.provider === "console") {
+      health.services.sms = "dev-mode (console)";
+      health.warnings.push("SMS: running in console mode (no real SMS delivery)");
+    } else if (smsStatus.configured) {
+      health.services.sms = `healthy (${smsStatus.provider})`;
+    } else {
+      health.services.sms = `misconfigured (${smsStatus.provider})`;
+      health.ok = false;
+      health.warnings.push(`SMS: ${smsStatus.warnings.join(", ")}`);
+    }
+  } catch (e) {
+    health.services.sms = "unknown";
+    health.warnings.push(`SMS: ${(e as Error).message}`);
+  }
+
+  // ─── 4. ETA Provider ───
+  try {
+    const neshan = process.env.NESHAN_API_KEY;
+    const google = process.env.GOOGLE_MAPS_API_KEY;
+    const osrm = process.env.OSRM_API_URL;
+    if (neshan) {
+      health.services.eta = "healthy (neshan)";
+    } else if (google) {
+      health.services.eta = "healthy (google-maps)";
+    } else if (osrm) {
+      health.services.eta = "healthy (osrm)";
+    } else {
+      health.services.eta = "default (40km/h estimate)";
+      health.warnings.push("ETA: no routing provider configured — using 40km/h default");
+    }
+  } catch (e) {
+    health.services.eta = "unknown";
+  }
+
+  // ─── 5. Migration status (non-critical, informational) ───
+  try {
+    // Check if _prisma_migrations table exists and count applied migrations
+    const migrations = await db.$queryRaw`SELECT count(*)::int as count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL` as any[];
+    if (migrations && migrations[0]) {
+      health.warnings.push(`Migrations: ${migrations[0].count} applied`);
+    }
+  } catch {
+    // Table doesn't exist (SQLite dev mode without migrations) — not critical
   }
 
   const status = health.ok ? 200 : 503;

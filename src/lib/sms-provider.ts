@@ -2,19 +2,10 @@
 //
 // Pluggable SMS provider for OTP delivery.
 // Set SMS_PROVIDER env var to choose:
-//   - "kavenegar" — set KAVENEGAR_API_KEY
-//   - "melipayamak" — set MELIPAYAMAK_USERNAME + MELIPAYAMAK_PASSWORD
-//   - "farapayamak" — set FARAPAYAMAK_USERNAME + FARAPAYAMAK_PASSWORD
+//   - "kavenegar"   — set KAVENEGAR_API_KEY
+//   - "melipayamak" — set MELIPAYAMAK_USERNAME + MELIPAYAMAK_PASSWORD + MELIPAYAMAK_SENDER
+//   - "farapayamak" — set FARAPAYAMAK_USERNAME + FARAPAYAMAK_PASSWORD + FARAPAYAMAK_SENDER
 //   - "console" (default) — logs to console (dev mode)
-//
-// Auto-initialized on first `sendOtp()` call, OR explicitly via
-// `initSmsProvider()` (called by `src/lib/init.ts` at server boot).
-// The selected provider is captured once and reused for the process lifetime.
-//
-// Failures are non-fatal: an OTP send failure is logged + surfaced via the
-// returned `SmsResult.error`, but the caller (`/api/auth/otp/send`) does NOT
-// abort the request — the hashed code is already persisted in the DB so the
-// user can still verify (e.g. via a retry / fallback channel).
 
 export interface SmsResult {
   success: boolean;
@@ -32,21 +23,19 @@ const consoleProvider: SendOtpFn = async (phone, code) => {
 };
 
 // ──────────── Kavenegar provider ────────────
-// Iranian SMS gateway: https://kavenegar.com/
-// Uses the "verify/lookup" template endpoint so OTP messages don't require
-// pre-registered sender-line approval. Template `mekanix-otp` must exist in
-// the Kavenegar panel.
-function createKavenegarProvider(apiKey: string): SendOtpFn {
+// https://kavenegar.com/rest.html
+
+function createKavenegarProvider(apiKey: string, template?: string): SendOtpFn {
   return async (phone, code) => {
     try {
-      const res = await fetch(
-        `https://api.kavenegar.com/v1/${apiKey}/verify/lookup.json?receptor=${encodeURIComponent(
-          phone
-        )}&token=${encodeURIComponent(code)}&template=mekanix-otp`
-      );
+      const tpl = template || "mekanix-otp";
+      const url = `https://api.kavenegar.com/v1/${apiKey}/verify/lookup.json?receptor=${phone}&token=${code}&template=${tpl}`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+      });
       const data = await res.json();
       if (data.return?.status === 200) {
-        return { success: true, messageId: data.entries?.messageid };
+        return { success: true, messageId: String(data.entries?.messageid ?? "") };
       }
       return { success: false, error: data.return?.message || "Kavenegar error" };
     } catch (e) {
@@ -56,11 +45,9 @@ function createKavenegarProvider(apiKey: string): SendOtpFn {
 }
 
 // ──────────── MeliPayamak provider ────────────
-// Iranian SMS gateway: https://melipayamak.com/
-// Uses the plain-text SendSMS endpoint. The `from` number is the dedicated
-// sender line issued with the account (replace the placeholder below with the
-// real 10-digit line before production use).
-function createMeliPayamakProvider(username: string, password: string): SendOtpFn {
+// https://melipayamak.com/api/
+
+function createMeliPayamakProvider(username: string, password: string, sender: string): SendOtpFn {
   return async (phone, code) => {
     try {
       const res = await fetch("https://rest.payamak-panel.com/api/SendSMS/SendSMS", {
@@ -70,14 +57,18 @@ function createMeliPayamakProvider(username: string, password: string): SendOtpF
           username,
           password,
           to: phone,
-          from: "5000...",
+          from: sender,
           text: `کد تأیید MEKANIX: ${code}`,
+          isFlash: false,
         }),
+        signal: AbortSignal.timeout(10000),
       });
       const data = await res.json();
-      return data.retStatus
-        ? { success: true, messageId: String(data.smsId ?? "") }
-        : { success: false, error: "MeliPayamak error" };
+      // MeliPayamak returns retStatus = true on success
+      if (data.retStatus === true || data.retStatus === "true") {
+        return { success: true, messageId: String(data.sendId ?? "") };
+      }
+      return { success: false, error: data.retMsg || "MeliPayamak error" };
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
@@ -85,33 +76,36 @@ function createMeliPayamakProvider(username: string, password: string): SendOtpF
 }
 
 // ──────────── Farapayamak provider ────────────
-// Iranian SMS gateway: https://farapayamak.com/
-// Uses the REST SendSimpleSMS endpoint.
-function createFarapayamakProvider(username: string, password: string): SendOtpFn {
+// https://farapayamak.com/api/
+
+function createFarapayamakProvider(username: string, password: string, sender: string): SendOtpFn {
   return async (phone, code) => {
     try {
-      const res = await fetch("https://rest.farapayamak.com/api/SendSMS/SimpleSMS", {
+      const res = await fetch("https://rest.farapayamak.com/api/SendSMS/SendSMS", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username,
           password,
           to: phone,
-          from: "5000...",
+          from: sender,
           text: `کد تأیید MEKANIX: ${code}`,
+          isFlash: false,
         }),
+        signal: AbortSignal.timeout(10000),
       });
       const data = await res.json();
-      return data.retStatus
-        ? { success: true, messageId: String(data.smsId ?? "") }
-        : { success: false, error: "Farapayamak error" };
+      if (data.retStatus === true || data.retStatus === "true") {
+        return { success: true, messageId: String(data.sendId ?? "") };
+      }
+      return { success: false, error: data.retMsg || "Farapayamak error" };
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
   };
 }
 
-// ──────────── Provider selection (env-driven, idempotent) ────────────
+// ──────────── Initialization ────────────
 
 let currentProvider: SendOtpFn = consoleProvider;
 let initialized = false;
@@ -120,34 +114,36 @@ export function initSmsProvider(): void {
   if (initialized) return;
   initialized = true;
 
-  const provider = process.env.SMS_PROVIDER?.toLowerCase();
+  const provider = process.env.SMS_PROVIDER?.toLowerCase().trim();
 
   if (provider === "kavenegar" && process.env.KAVENEGAR_API_KEY) {
     console.log("📱 SMS provider: Kavenegar");
-    currentProvider = createKavenegarProvider(process.env.KAVENEGAR_API_KEY);
-  } else if (
-    provider === "melipayamak" &&
-    process.env.MELIPAYAMAK_USERNAME &&
-    process.env.MELIPAYAMAK_PASSWORD
-  ) {
+    currentProvider = createKavenegarProvider(
+      process.env.KAVENEGAR_API_KEY,
+      process.env.KAVENEGAR_TEMPLATE
+    );
+  } else if (provider === "melipayamak" && process.env.MELIPAYAMAK_USERNAME) {
+    if (!process.env.MELIPAYAMAK_SENDER) {
+      console.warn("⚠️  MELIPAYAMAK_SENDER not set — MeliPayamak will fail to send");
+    }
     console.log("📱 SMS provider: MeliPayamak");
     currentProvider = createMeliPayamakProvider(
-      process.env.MELIPAYAMAK_USERNAME,
-      process.env.MELIPAYAMAK_PASSWORD
+      process.env.MELIPAYAMAK_USERNAME!,
+      process.env.MELIPAYAMAK_PASSWORD!,
+      process.env.MELIPAYAMAK_SENDER || ""
     );
-  } else if (
-    provider === "farapayamak" &&
-    process.env.FARAPAYAMAK_USERNAME &&
-    process.env.FARAPAYAMAK_PASSWORD
-  ) {
+  } else if (provider === "farapayamak" && process.env.FARAPAYAMAK_USERNAME) {
+    if (!process.env.FARAPAYAMAK_SENDER) {
+      console.warn("⚠️  FARAPAYAMAK_SENDER not set — Farapayamak will fail to send");
+    }
     console.log("📱 SMS provider: Farapayamak");
     currentProvider = createFarapayamakProvider(
-      process.env.FARAPAYAMAK_USERNAME,
-      process.env.FARAPAYAMAK_PASSWORD
+      process.env.FARAPAYAMAK_USERNAME!,
+      process.env.FARAPAYAMAK_PASSWORD!,
+      process.env.FARAPAYAMAK_SENDER || ""
     );
   } else {
     console.log("📱 SMS provider: console (dev mode)");
-    // currentProvider stays as consoleProvider
   }
 }
 
@@ -156,16 +152,35 @@ export async function sendOtp(phone: string, code: string): Promise<SmsResult> {
   return currentProvider(phone, code);
 }
 
-// ──────────── Test-only helpers ────────────
-// Allows tests to inject a mock provider and reset the singleton state
-// between cases. Not exported from the package public surface — only used by
-// the test suite (`tests/unit/...`).
-export function __setSmsProviderForTest(provider: SendOtpFn): void {
-  currentProvider = provider;
-  initialized = true;
-}
+// ──────────── Health check ────────────
 
-export function __resetSmsProviderForTest(): void {
-  currentProvider = consoleProvider;
-  initialized = false;
+export function getSmsProviderStatus(): { configured: boolean; provider: string; warnings: string[] } {
+  const provider = process.env.SMS_PROVIDER?.toLowerCase().trim() || "console";
+  const warnings: string[] = [];
+  let configured = true;
+
+  if (provider === "kavenegar") {
+    if (!process.env.KAVENEGAR_API_KEY) {
+      warnings.push("KAVENEGAR_API_KEY not set");
+      configured = false;
+    }
+  } else if (provider === "melipayamak") {
+    if (!process.env.MELIPAYAMAK_USERNAME || !process.env.MELIPAYAMAK_PASSWORD) {
+      warnings.push("MELIPAYAMAK_USERNAME or MELIPAYAMAK_PASSWORD not set");
+      configured = false;
+    }
+    if (!process.env.MELIPAYAMAK_SENDER) {
+      warnings.push("MELIPAYAMAK_SENDER not set — SMS will fail");
+    }
+  } else if (provider === "farapayamak") {
+    if (!process.env.FARAPAYAMAK_USERNAME || !process.env.FARAPAYAMAK_PASSWORD) {
+      warnings.push("FARAPAYAMAK_USERNAME or FARAPAYAMAK_PASSWORD not set");
+      configured = false;
+    }
+    if (!process.env.FARAPAYAMAK_SENDER) {
+      warnings.push("FARAPAYAMAK_SENDER not set — SMS will fail");
+    }
+  }
+
+  return { configured, provider, warnings };
 }
