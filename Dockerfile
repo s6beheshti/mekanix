@@ -1,29 +1,36 @@
 # MEKANIX — Production Dockerfile
 # Multi-stage build: install deps → build → run standalone server
 
-FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat
+# ─── Stage 1: Install dependencies ───
+FROM node:20-slim AS deps
+WORKDIR /app
+
+# Install bun
 RUN npm install -g bun
 
-# Stage 1: Install dependencies
-FROM base AS deps
-WORKDIR /app
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile
 
-# Stage 2: Build application
-FROM base AS builder
+# ─── Stage 2: Build application ───
+FROM node:20-slim AS builder
 WORKDIR /app
+
+RUN npm install -g bun
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
 # Generate Prisma Client
 RUN bunx prisma generate
-# Build Next.js
+
+# Disable telemetry
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build Next.js
 RUN bun run build
 
-# Stage 3: Production runner
-FROM node:20-alpine AS runner
+# ─── Stage 3: Production runner ───
+FROM node:20-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -41,6 +48,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 USER nextjs
 
@@ -50,4 +58,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Run migration then start server
-CMD ["sh", "-c", "node node_modules/.bin/prisma migrate deploy && node server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
