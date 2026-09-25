@@ -375,7 +375,7 @@ model Invoice {
   partsTotal Decimal       @default(0)
   travelFee  Decimal       @default(0)
   subtotal   Decimal       @default(0)
-  taxRate    Float         @default(0.09)
+  taxRate    Decimal       @default(0.09)
   taxTotal   Decimal       @default(0)
   discount   Decimal       @default(0)
   total      Decimal       @default(0)
