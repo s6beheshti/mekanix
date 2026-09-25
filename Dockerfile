@@ -1,5 +1,5 @@
 # MEKANIX — Production Dockerfile
-# Multi-stage build: install deps → build → run standalone server
+# Multi-stage build: install deps → build → migrate → run
 
 # ─── Stage 1: Install dependencies ───
 FROM node:20-slim AS deps
@@ -18,17 +18,21 @@ RUN bunx prisma generate
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 
-# ─── Stage 3: Migration runner (runs prisma migrate deploy) ───
+# ─── Stage 3: Migration runner ───
 FROM node:20-slim AS migrator
 WORKDIR /app
+# Install OpenSSL for Prisma
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
-# Run migration and exit
 CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
 
 # ─── Stage 4: Production runner ───
 FROM node:20-slim AS runner
 WORKDIR /app
+
+# Install OpenSSL for Prisma runtime
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -52,5 +56,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# App starts directly — migrations run separately via migrator stage
 CMD ["node", "server.js"]
