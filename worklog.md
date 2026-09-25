@@ -3743,3 +3743,522 @@ Stage Summary:
    `vehicleToAsset({ type: "EXCAVATOR", ... })` returns a
    MachineryAsset but no test asserts it. Add a unit test in
    `tests/unit/` covering both branches.
+
+---
+Task ID: FIX-10-CI-HYGIENE
+Agent: general-purpose (sub agent)
+Task: Fix #10 — CI hygiene + GitHub Actions
+
+Context:
+- Audit found CI is not green — no GitHub Actions workflow exists.
+- Hygiene script (if any) failed because of forbidden artifacts.
+- Need a CI workflow + local hygiene script to keep the repo clean.
+
+Work Log:
+
+### Task 1 — Created `.github/workflows/ci.yml`
+- Trigger: `push` and `pull_request` on `main` branch.
+- Single job `check` on `ubuntu-latest`.
+- Steps:
+  1. `actions/checkout@v4`
+  2. `oven-sh/setup-bun@v2` (bun-version: latest)
+  3. `bun install --frozen-lockfile`
+  4. Forbidden-artifacts scan: walks tree (excluding `node_modules`)
+     for `*.db` and `.env`, and uses `git ls-files --error-unmatch`
+     on the `upload/download/tool-results/backups/agent-ctx/.zscripts`
+     directories. Fails the build if any are tracked.
+  5. `bun run lint` (ESLint)
+  6. `bunx tsc --noEmit` (TypeScript)
+  7. `bun run test` with `DATABASE_URL="file:./test.db"` env.
+
+### Task 2 — Created `scripts/check-hygiene.sh` (chmod +x)
+- `set -e`, fails fast on any sub-error.
+- Checks `git ls-files` (so only tracked files matter) for:
+  - `*.db`, `*.sqlite`, `*.sqlite3` (databases)
+  - `.env` (exact filename, `.env.example` allowed)
+  - any path under `upload/`, `download/`, `tool-results/`,
+    `backups/`, `agent-ctx/`, `.zscripts/`
+- Walks every tracked file and flags any >10MB (`10485760` bytes)
+  via `stat -f%z` (BSD/macOS) → `stat -c%s` (Linux) → `0` fallback.
+- Counts errors; prints `❌ N hygiene issue(s) found.` and exits 1
+  on any failure, otherwise `✅ Repository hygiene is clean.`.
+- Minor correction from spec: the large-file `echo` line used
+  `$(size)` (which would invoke a non-existent `size` command).
+  Changed to `${size}` so the byte count actually prints. Behavior
+  of the check itself (the `[ "$size" -gt 10485760 ]` comparison)
+  is unchanged — only the error-message rendering is corrected.
+
+### Task 3 — Updated `package.json` scripts
+Added two entries after `test:coverage`:
+```json
+"check:hygiene": "bash scripts/check-hygiene.sh",
+"check:repo": "bun run lint && bunx tsc --noEmit && bun run check:hygiene"
+```
+`check:repo` is the one-shot local mirror of the CI `check` job.
+
+### Task 4 — Verified hygiene passes
+```
+$ bash scripts/check-hygiene.sh
+🔍 Checking repository hygiene...
+✅ Repository hygiene is clean.
+exit:0
+```
+- Pre-existing tracked files audited:
+  * `public/mekanix-source.tar.gz` (~225KB, well under the 10MB
+    threshold) — kept; not a forbidden artifact.
+  * `.env` exists on disk (50 bytes) but is gitignored and
+    **not** tracked (`git ls-files` returns empty for `^\.env$`).
+- No `git rm --cached` was needed; repo was already clean.
+
+### Task 5 — Verified lint + tsc
+```
+$ bun run lint       → exit 0  (0 errors, 0 warnings)
+$ npx tsc --noEmit   → exit 0  (0 errors)
+$ bun run check:hygiene → exit 0
+```
+
+### Files changed (this task only)
+- `.github/workflows/ci.yml`        (new, 76 lines)
+- `scripts/check-hygiene.sh`        (new, 56 lines, mode 0755)
+- `package.json`                    (+2 script entries)
+
+### Notes for downstream agents
+- The `ci.yml` workflow's "Check for forbidden artifacts" step uses
+  `find` (not `git ls-files`) for the `*.db` / `.env` scan, so it
+  will fail the build if those files exist on disk **at all** in
+  the runner checkout — even if gitignored. That's intentional: a
+  leaked `.env` checked into history would still exist in the
+  checkout on a fresh clone, and we want the build to fail loudly.
+- The local `scripts/check-hygiene.sh` is more forgiving — it only
+  inspects **tracked** files (`git ls-files`), so un-ignored local
+  artifacts (like the dev-time `.env`) don't block local `bun run
+  check:hygiene`.
+- If a future agent accidentally commits a `.db` or `.env`, the
+  fix is `git rm --cached <file> && git commit`. The CI step's
+  error message prints exactly that hint.
+
+Stage Summary:
+- ✅ GitHub Actions CI workflow created (`.github/workflows/ci.yml`)
+  covering forbidden-artifacts scan + lint + tsc + tests on every
+  push/PR to `main`.
+- ✅ Local hygiene script `scripts/check-hygiene.sh` (executable)
+  mirrors the CI scan using `git ls-files` so local runs only
+  complain about *tracked* offenses.
+- ✅ `package.json` exposes `bun run check:hygiene` (just hygiene)
+  and `bun run check:repo` (lint + tsc + hygiene, the local CI
+  equivalent).
+- ✅ Repo is clean: hygiene script passes, lint is 0 errors, tsc
+  is 0 errors. CI is structurally ready to go green on first push.
+
+### Next actions recommended
+1. Push the new files (`git add .github scripts/check-hygiene.sh
+   package.json && git commit -m "ci: add GitHub Actions workflow
+   + repo hygiene check (fixes #10)"`) — the workflow only runs
+   after it lands on `main`.
+2. Confirm the `bun install --frozen-lockfile` step works on the
+   runner — `bun.lock` is committed, so this should be fine; if
+   bun ever bumps lockfile format, this step fails first.
+3. Consider adding a `name: Build` job (next to `check`) that
+   runs `bun run build` and uploads `.next/standalone` as an
+   artifact — currently CI verifies type/lint/test but does
+   not exercise the Next.js production build. Out of scope for
+   this fix but would catch tree-shaking / RSC boundary issues.
+
+---
+Task ID: FIX-4-8-9-11-MISC
+Agent: sub-agent (general-purpose)
+Task: Fix audit findings #4, #8, #9, #11 (auth schema, dispatch engine,
+      offline sync, demo endpoint hardening)
+
+Work Log:
+
+### Fix #4 — Remove password/email from auth core (OTP-only design)
+
+**`prisma/schema.prisma`** (User model):
+- `email String @unique` → `email String?`
+  - Was unique + required; now OPTIONAL and NOT unique. OTP-first users
+    authenticate by phone only — email is informational at most.
+- `password String @default("demo")` → `password String?`
+  - Was a required field with an insecure plaintext default ("demo").
+    Now optional. MEKANIX is OTP-only (ARCHITECTURE.md §6); the field
+    is retained for backward compat with pre-OTP migrations and is NOT
+    used by the auth flow.
+- Inline comments added at both fields explaining the legacy rationale
+  and the ARCHITECTURE.md §6 reference.
+
+The hard-linked copy at `mini-services/chat-service/prisma/schema.prisma`
+(inode 442219) was updated atomically — single file, same inode.
+
+**`src/lib/auth.ts`** (file header):
+- Added a clarifying comment block right after the OWASP top-10 header:
+  ```typescript
+  // NOTE: The User model has a `password` field for legacy compatibility,
+  // but MEKANIX uses OTP-only authentication (per ARCHITECTURE.md §6).
+  // The password field is NOT used for login and should be ignored.
+  ```
+
+**`bun run db:push`** — schema synced, Prisma Client regenerated (v6.19.2).
+No data loss (column constraint changes only — no type changes).
+
+**Runtime verification**:
+- Existing seeded user `ops@mekanix.io` (with `password: "demo"`) is still
+  readable — backward compat preserved. ✅
+- Created a new user with `email: undefined, password: undefined`
+  (OTP-only) — succeeds, both fields stored as NULL. ✅
+- Created two users with `email: "shared@test.com"` — succeeds, no
+  unique violation. The `@unique` constraint is gone. ✅
+
+The only consumer of `user.email` in the codebase is the admin-panel
+customer list (`src/components/mek/admin/customers.tsx:39`), which
+renders `r.user.email` — works fine since the field is still optional
+String (just renders empty when null).
+
+### Fix #8 — Improve Dispatch Engine (pluggable ETA + larger pool + geospatial note)
+
+**`src/lib/dispatch.ts`** — substantial rewrite:
+
+1. **Pluggable ETA provider**:
+   ```typescript
+   export type EtaProvider = (lat1, lng1, lat2, lng2) => number;
+   const defaultEtaProvider: EtaProvider = (lat1, lng1, lat2, lng2) => {
+     const distance = haversineKm(lat1, lng1, lat2, lng2);
+     return Math.ceil((distance / 40) * 60);
+   };
+   let currentEtaProvider: EtaProvider = defaultEtaProvider;
+   export function setEtaProvider(provider: EtaProvider): void;
+   export function resetEtaProvider(): void;
+   export function getEtaProvider(): EtaProvider;
+   ```
+   - Default implementation produces identical output to the legacy
+     `estimateEta(distanceKm)` — all 17 dispatch tests pass unchanged.
+   - Production deployments can `setEtaProvider(googleMapsProvider)`
+     without touching the scoring code.
+
+2. **Pool size 50 → 200 (configurable via env)**:
+   ```typescript
+   const DISPATCH_POOL_SIZE = Number(process.env.DISPATCH_POOL_SIZE ?? 200);
+   // ... findMany({ ..., take: DISPATCH_POOL_SIZE })
+   ```
+   - The previous `take: 50` was too small for dense urban deployments.
+   - Now overridable at deploy time without a code change.
+
+3. **Geospatial pre-filtering documentation**:
+   - Extracted the radius into a named constant
+     `DISPATCH_RADIUS_KM = 50` (was a magic number).
+   - Added a long comment explaining that Prisma + SQLite doesn't support
+     native geospatial queries (no `ST_DWithin`), so we fetch a pool and
+     filter in-memory by Haversine. Includes a PostGIS code snippet for
+     future migration:
+     ```sql
+     -- where: ... AND ST_DWithin(location, ST_MakePoint(:lng, :lat)::geography, 50000)
+     ```
+   - In-memory filter `if (distance > DISPATCH_RADIUS_KM) continue;`
+     is unchanged in behavior.
+
+4. **Minor refactor** — `techLat`/`techLng` are now extracted once per
+   iteration and reused for both the Haversine call and the ETA provider
+   call (was previously re-evaluated twice via `tech.lat ?? input.lat`).
+
+The dispatch test suite (`tests/unit/dispatch.test.ts`, 17 tests) uses
+a `vi.mock("@/lib/db")` that ignores the `findMany` args, so the
+`take: 50 → 200` change is invisible to it. The default ETA provider
+matches `shadowEstimateEta(distanceKm) = Math.ceil((distanceKm / 40) * 60)`,
+so all ETA-asserting tests pass.
+
+### Fix #9 — Improve Offline Sync (idempotency key + 409 conflict resolution)
+
+**`src/lib/offline-queue.ts`**:
+1. Added `idempotencyKey?: string` to the `QueuedAction` interface.
+2. Updated `enqueueAction` signature to omit `idempotencyKey` from its
+   input (it's auto-generated):
+   ```typescript
+   export function enqueueAction(
+     action: Omit<QueuedAction, "id" | "timestamp" | "retryCount"
+                  | "maxRetries" | "idempotencyKey">
+   ): string
+   ```
+3. The function now sets `idempotencyKey: idem_${id}` on every queued
+   action — format `idem_qa_<ts>_<rand>`.
+
+Backward compat: existing queued actions in localStorage (pre-fix) lack
+the field — the sync engine sends the header only when present.
+
+**`src/lib/sync-engine.ts`** — full rewrite:
+
+1. **Idempotency-Key header**:
+   ```typescript
+   headers: {
+     "Content-Type": "application/json",
+     ...(action.idempotencyKey ? { "Idempotency-Key": action.idempotencyKey } : {}),
+   }
+   ```
+   Server-side `withIdempotency()` helper (already in `src/lib/auth.ts`)
+   deduplicates on this header.
+
+2. **409 Conflict handling** (NEW branch, distinct from generic 4xx):
+   ```typescript
+   if (res.status === 409) {
+     // Conflict — server has a newer version. Server wins.
+     dequeueAction(action.id);
+     conflicts++;
+   } else if (res.status >= 400 && res.status < 500) {
+     dequeueAction(action.id);
+     failed++;
+   }
+   ```
+   Treated as "server wins" per the spec — the action is removed and
+   counted as a conflict, so the UI can surface a refresh prompt rather
+   than masking it as a generic failure.
+
+3. **Return type** — added `conflicts`:
+   ```typescript
+   export interface SyncResult {
+     synced: number; failed: number; conflicts: number; remaining: number;
+   }
+   export async function syncQueue(): Promise<SyncResult>
+   ```
+   The empty-result fallbacks (window undefined / already syncing / offline)
+   now also return a zeroed `conflicts: 0` field.
+
+4. Added a header docblock explaining the idempotency + conflict
+   resolution strategy and the ARCHITECTURE.md §6 reference.
+
+**Consumer impact**: `src/hooks/use-offline.ts` calls `syncQueue()` and
+forwards the result; it doesn't destructure specific fields, so adding
+`conflicts` to the return type is backward compatible.
+
+### Fix #11 — Remove /api/auth/demo from production path
+
+**`src/app/api/auth/demo/route.ts`** — defense-in-depth rewrite:
+- Production guard now returns `new NextResponse(null, { status: 404 })`
+  (bare 404 — no JSON body, no DB query, no header leakage).
+  - Previously returned `NextResponse.json({ error: "Not Found" }, { status: 404 })`,
+    which still ran the route handler and emitted a JSON body.
+  - Verified via a stub Node script: `process.env.NODE_ENV = "production"`
+    produces status 404 with empty body.
+- Added a long file-level docblock noting the dual-layer strategy
+  (handler guard + next.config.ts rewrites) and the ARCHITECTURE.md §6
+  reference.
+
+**`docs/ARCHITECTURE.md`** — new section between Session Model and Asset
+Architecture: "Demo Endpoints (`/api/auth/demo`) — Production Stripping".
+Documents:
+- Layer 1: handler-level guard (defense-in-depth).
+- Layer 2 (recommended): `next.config.ts` `rewrites()` that short-circuits
+  `/api/auth/demo/:path*` → `/api/404` in production, before the route
+  handler ever runs. Includes a copy-pasteable example.
+
+I did NOT modify `next.config.ts` itself — the audit note asked for a
+note in ARCHITECTURE.md, and adding the rewrite silently would change
+build behavior. The recommended rewrite is documented for the next
+agent to apply if desired.
+
+### Verification
+
+- `npx tsc --noEmit` → exit 0, **0 errors** ✅
+- `bun run lint` → exit 0, **0 errors** ✅
+- `bun run test` → 9 files, **182 tests passed**, 0 failed (7.0s) ✅
+- `bun run db:push` → schema in sync, Prisma Client regenerated ✅
+- Runtime: schema allows OTP-only users (null email/password) AND
+  duplicate emails (unique constraint removed) — both verified with
+  live Prisma queries against `db/custom.db`. ✅
+- Runtime: `/api/auth/demo` GET in production returns bare 404 with
+  empty body (verified via stub script). ✅
+
+Stage Summary:
+- ✅ #4 — User.email no longer `@unique`, User.password no longer
+  required-with-default; both kept for backward compat. Auth header
+  comment in `src/lib/auth.ts` documents the OTP-only design.
+- ✅ #8 — Dispatch engine has a pluggable `EtaProvider` (with
+  `setEtaProvider`/`resetEtaProvider`/`getEtaProvider` exports),
+  pool size bumped to 200 (env-configurable via `DISPATCH_POOL_SIZE`),
+  geospatial filtering documented + radius constant extracted.
+- ✅ #9 — Offline sync carries an auto-generated `Idempotency-Key`
+  header; 409 Conflict responses are handled distinctly (server-wins
+  + counted as `conflicts`); return type now includes `conflicts`.
+- ✅ #11 — `/api/auth/demo` returns bare 404 in production (no DB
+  access, no JSON body); ARCHITECTURE.md documents the recommended
+  build-time rewrite strategy.
+- ✅ No existing functionality broken — 182/182 tests pass, 0 lint
+  errors, 0 type errors.
+
+### Files changed
+
+- `prisma/schema.prisma`                       — User.email: `String @unique` → `String?`; User.password: `String @default("demo")` → `String?` (+ explanatory comments)
+- `mini-services/chat-service/prisma/schema.prisma` — hard-linked to main schema (auto-synced, same inode 442219)
+- `src/lib/auth.ts`                            — added OTP-only legacy-password note to file header
+- `src/lib/dispatch.ts`                        — full rewrite: pluggable `EtaProvider` type + `setEtaProvider`/`resetEtaProvider`/`getEtaProvider`, `DISPATCH_POOL_SIZE` env (default 200), `DISPATCH_RADIUS_KM` constant, geospatial pre-filter docs
+- `src/lib/offline-queue.ts`                   — added `idempotencyKey?: string` to `QueuedAction`; `enqueueAction` now auto-generates `idem_<qaId>` and omits the field from its input Omit<>
+- `src/lib/sync-engine.ts`                     — full rewrite: `Idempotency-Key` header, 409-conflict branch, `SyncResult` interface with `conflicts` field
+- `src/app/api/auth/demo/route.ts`             — production guard now returns bare `new NextResponse(null, { status: 404 })` (no DB query, no JSON body); added docblock
+- `docs/ARCHITECTURE.md`                       — new section "Demo Endpoints (`/api/auth/demo`) — Production Stripping" with handler-guard + next.config.ts rewrites guidance
+
+### Next actions recommended
+
+1. **Apply the `next.config.ts` rewrite** documented in
+   `docs/ARCHITECTURE.md` to short-circuit `/api/auth/demo/*` at the
+   edge — currently the handler guard is the only defense layer.
+2. **Wire a real ETA provider** via `setEtaProvider()` (Google Maps /
+   Mapbox / OSRM) once API keys are provisioned — the default 40 km/h
+   estimate is intentionally conservative.
+3. **Add a server-side idempotency-key store** (Redis, not the current
+   in-memory `Map` in `src/lib/auth.ts:withIdempotency`) so the
+   `Idempotency-Key` header from offline sync is actually deduplicated
+   across server instances / restarts.
+4. **Add dispatch engine tests for the pluggable ETA path** —
+   `setEtaProvider(() => 999)` should propagate to `etaMins` on every
+   candidate. Currently tests only cover the default provider.
+5. **Migrate `WalletLedger.amount/balanceBefore/balanceAfter`** still
+   Float (carried over from previous task's "next actions" — out of
+   scope here but worth tracking).
+
+---
+Task ID: FIX-1-UNIFY-SERVICE
+Agent: general-purpose sub-agent
+Task: Fix #1 — Unify Service models (facade pattern, not migration)
+
+Work Log:
+- Audit confirmed two parallel service architectures in the codebase:
+  1. `ServiceRequest → Job` (general on-demand repair flow).
+     29 API routes under `src/app/api/jobs/**` + `src/app/api/service-requests/**`
+     reference `db.job`.
+  2. `ServiceBooking → Inspection / Finding / CustomerApproval / PartUsage /
+     VehicleHealthReport` (CARE scheduled-maintenance flow).
+     15 API routes under `src/app/api/care/bookings/**` reference
+     `db.serviceBooking`.
+  ARCHITECTURE.md §8 wants ONE unified service flow, but a full merge is
+  high-risk. Approach chosen: facade pattern (additive, non-breaking).
+
+- Created `src/lib/service-unified.ts` (NEW):
+  - `ServiceStatus` — unified vocabulary of 15 statuses (superset of
+    JobStatus + ServiceBooking.status). Includes statuses only on the
+    Job side (REJECTED) and only on the Booking side (APPROVED, MATCHING,
+    SCHEDULED, FINAL_CHECK, FAILED) so neither model's lifecycle is lost.
+  - `UnifiedService` interface — single normalised shape. `source: "job" |
+    "booking"` tells the client which underlying model a record came from.
+    `customerId` is always `User.id` on both sides (resolved via
+    `request.customer.userId` on the Job side, via `booking.userId` on the
+    Booking side). Optional relations (inspection / findings / approvals /
+    timeline / pricing / invoice / healthReport) are populated only by
+    `getServiceById`.
+  - `JOB_STATUS_MAP` / `BOOKING_STATUS_MAP` — pure status-mapping tables.
+    Notable collapses: Job's `WAITING_APPROVAL` → `WAITING_CUSTOMER_APPROVAL`;
+    Job's `ACCEPTED` → `ASSIGNED` (on-demand flow has no MATCHING state);
+    Job's `DIAGNOSING` → `INSPECTING`; Job's `REPAIRING` → `IN_SERVICE`.
+  - `jobToService(job)` / `bookingToService(booking)` — pure converter
+    functions (no DB calls). Tolerate missing nested objects (e.g. a Job
+    with no `request` field returns empty strings + null lat/lng instead
+    of throwing — important for legacy data).
+  - `getServicesForUser(userId, options)` — fetches from BOTH models in
+    parallel, merges + sorts newest-first, truncates to `limit`. Status
+    filter is applied independently per model using reverse-mapped statuses
+    (since multiple unified statuses can map to one JobStatus).
+  - `getServiceById(id)` — tries ServiceBooking first (full detail graph
+    including `findings` with nested `approvals`, `partUsages`, `inspection`,
+    `healthReport`, `package.items`, `timeline`), then falls back to Job.
+    Resolves the frozen PricingSnapshot (linked by FK on the booking side,
+    not a Prisma relation — fetched explicitly like the existing
+    /api/care/bookings/[id] route does).
+  - `getServiceStats(userId)` — returns `{ total, active, completed,
+    cancelled }` aggregated across both models. 4 parallel `count()` calls.
+
+- Updated `src/modules/services/index.ts` (barrel):
+  - Preserved all existing exports (service request + job + invoice types
+    from `@/lib/schemas/service` and `@/lib/api`; `requireJobParticipant`
+    from `@/lib/auth`).
+  - Added `careBookingSchema` re-export from `@/lib/schemas/care` (was
+    missing from the barrel — discovered while inspecting the actual
+    schema exports; the proposed spec referenced `serviceBookingSchema`
+    which doesn't exist in the codebase).
+  - Added unified facade exports: `getServicesForUser`, `getServiceById`,
+    `getServiceStats`, `jobToService`, `bookingToService`,
+    `type UnifiedService`, `type ServiceStatus`.
+
+- Created `src/app/api/services/route.ts` (NEW, ADDITIVE):
+  - `GET /api/services` — unified list endpoint.
+  - Query params: `status` (comma-sep unified statuses), `limit` (1–200,
+    default 50), `offset` (≥0), `stats=true` (returns aggregate counts for
+    dashboard tiles), `lite=true` (low-bandwidth shape via existing
+    `liteResponse` helper).
+  - Uses `requireAuth` for BFLA / auth gating.
+  - Does NOT touch `/api/jobs` or `/api/care/bookings` — those routes
+    continue to work unchanged.
+
+- Created `src/app/api/services/[id]/route.ts` (NEW, ADDITIVE):
+  - `GET /api/services/[id]` — unified detail endpoint. Looks up across
+    BOTH models via `getServiceById`.
+  - BOLA protection: ADMIN bypasses. Otherwise the caller must be either
+    the owning customer (`service.customerId === session.userId`) OR the
+    assigned technician (resolved via `getTechnicianFromSession(session)`
+    since `service.technicianId` references `Technician.id`, NOT
+    `User.id` — this is the same dual-join both existing routes use).
+    Returns 403 ("دسترسی مجاز نیست") if neither.
+
+- Created `tests/unit/service-unified.test.ts` (NEW — 28 tests, ~9ms):
+  - Pure-function tests for `jobToService` + `bookingToService` (no DB).
+  - Verifies status mapping for all 10 JobStatus values + all 14 booking
+    statuses, including cross-model collapses
+    (`WAITING_APPROVAL → WAITING_CUSTOMER_APPROVAL`, `ACCEPTED → ASSIGNED`,
+    `DIAGNOSING → INSPECTING`, `REPAIRING → IN_SERVICE`).
+  - Verifies the unknown-status fallback (→ REQUESTED) for both models.
+  - Verifies field projection (Job attaches `inspection` + `invoice` but
+    NOT `findings`/`approvals`/`timeline`/`healthReport`; Booking attaches
+    all six optional relations).
+  - Verifies tolerance of malformed/minimal inputs (Job without `request`,
+    Booking with null `lat`/`lng` + missing `package`).
+  - Sanity-checks the unified `ServiceStatus` vocabulary is a superset of
+    both models' statuses (Job-only: REJECTED; Booking-only: APPROVED,
+    MATCHING, SCHEDULED, FINAL_CHECK, FAILED; shared: 9 statuses).
+
+### Verification
+- `bun run lint` → 0 errors.
+- `npx tsc --noEmit` → 0 errors.
+- `bun run test` → 210 tests pass (10 test files). Test count went from
+  182 → 210 (+28 new tests in `tests/unit/service-unified.test.ts`).
+  All 182 pre-existing tests still pass unchanged.
+
+### Architecture notes — why facade not migration
+- The two models have non-isomorphic status graphs: Job has `REJECTED`
+  (booking never uses it — Booking uses `FAILED`); Booking has `APPROVED`
+  + `MATCHING` + `SCHEDULED` + `FINAL_CHECK` (Job has no equivalents —
+  on-demand flow collapses these into `customerApproved: Boolean`).
+- The two models also have non-isomorphic relation graphs: Job has
+  `invoice`, `parts`, `diagnosisRecords`, `tracking`, `reviews`,
+  `warranty`, `messages`; Booking has `inspection`, `findings`,
+  `approvals`, `partUsages`, `timeline`, `healthReport`, `package`.
+  A merged model would need ALL of these relations OR a destructive
+  cull of one side's relations — either way breaks existing API routes.
+- The facade sidesteps this: the unified read API exposes the union of
+  fields/relations, and each underlying model populates whichever
+  subset it has. Clients can branch on `service.source` if they need
+  model-specific behaviour, or just use the unified fields.
+
+### Files changed
+- `src/lib/service-unified.ts`                 — NEW (facade: types + converters + read API)
+- `src/modules/services/index.ts`              — re-export unified facade + careBookingSchema
+- `src/app/api/services/route.ts`              — NEW (`GET /api/services` unified list + stats)
+- `src/app/api/services/[id]/route.ts`        — NEW (`GET /api/services/[id]` unified detail)
+- `tests/unit/service-unified.test.ts`         — NEW (28 unit tests for converters)
+
+### Next actions recommended
+1. **Frontend wiring.** The customer "service history" tab currently calls
+   `/api/jobs` only. Switch it to `/api/services` so CARE bookings also
+   appear in the history list. `service-history.tsx` is the likely
+   consumer.
+2. **Admin dashboard.** The admin "overview" page could use
+   `/api/services?stats=true` for the platform-wide service count tile,
+   instead of summing `/api/jobs` + `/api/care/bookings` separately.
+3. **Pagination.** The current `getServicesForUser` queries each model
+   with `take: limit; skip: offset` independently, then merges + truncates
+   again. For small offsets this is fine; for large offsets (deep
+   pagination), consider cursor-based pagination per model.
+4. **Write-side facade.** This task is READ-ONLY. A future write-side
+   facade (`createService`, `transitionServiceStatus`) would unify the
+   dispatch logic — but each underlying model has its own state machine
+   (Job's is implicit; Booking's is in `src/lib/care-auth.ts`), so a
+   unified writer needs to merge those state machines first.
+5. **True merged model.** Eventually replace `Job` + `ServiceBooking`
+   with a single `Service` model that has ALL relations. The facade's
+   public API is the contract the migration must satisfy — so existing
+   /api/services consumers won't break when the underlying storage
+   consolidates.

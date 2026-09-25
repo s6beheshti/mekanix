@@ -34,6 +34,8 @@ export interface DispatchCandidate {
   available: boolean;
 }
 
+// ──────────── Geospatial helpers ────────────
+
 // Haversine distance (km)
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -53,30 +55,105 @@ function normalize(value: number, min: number, max: number): number {
   return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
-// ETA estimate: assume 40 km/h average urban speed
-function estimateEta(distanceKm: number): number {
-  return Math.ceil((distanceKm / 40) * 60);
+// ──────────── Pluggable ETA provider ────────────
+//
+// ETA calculation is intentionally pluggable so production deployments can
+// swap in a real routing provider (Google Maps, Mapbox, OSRM, etc.) without
+// touching the scoring logic. See ARCHITECTURE.md §10.
+//
+// Contract: takes the pickup + technician coordinates and returns estimated
+// travel time in MINUTES.
+
+export type EtaProvider = (lat1: number, lng1: number, lat2: number, lng2: number) => number;
+
+// Default: simple 40 km/h estimate (matches the legacy `estimateEta(distanceKm)`).
+// Good enough for the v1 demo; replace via `setEtaProvider()` for production.
+const defaultEtaProvider: EtaProvider = (lat1, lng1, lat2, lng2) => {
+  const distance = haversineKm(lat1, lng1, lat2, lng2);
+  return Math.ceil((distance / 40) * 60);
+};
+
+// Current provider (can be swapped at runtime via `setEtaProvider()`).
+let currentEtaProvider: EtaProvider = defaultEtaProvider;
+
+/**
+ * Replace the ETA provider at runtime.
+ *
+ * Example — wire in a Google Maps Distance Matrix client:
+ *
+ *   setEtaProvider(async (lat1, lng1, lat2, lng2) => {
+ *     const r = await googleMaps.distanceMatrix({ origins: [...], destinations: [...] });
+ *     return Math.ceil(r.duration / 60);
+ *   });
+ *
+ * NOTE: the provider signature is currently synchronous to keep the dispatch
+ * loop non-async per-candidate. If you wire in an async provider, refactor
+ * `findBestTechnicians` to await each call.
+ */
+export function setEtaProvider(provider: EtaProvider): void {
+  currentEtaProvider = provider;
 }
+
+/** Reset to the built-in default provider (useful for tests). */
+export function resetEtaProvider(): void {
+  currentEtaProvider = defaultEtaProvider;
+}
+
+/** Read-only accessor for the current provider (used by tests + introspection). */
+export function getEtaProvider(): EtaProvider {
+  return currentEtaProvider;
+}
+
+// ──────────── Pre-fetch pool size ────────────
+//
+// The dispatch engine fetches a pool of ONLINE + availableNow technicians and
+// then filters in-memory by Haversine distance (the SQLite backend doesn't
+// support native geospatial queries). The pool size is configurable via env
+// so production can tune it without a code change.
+//
+//   DISPATCH_POOL_SIZE=200 (default)
+//
+// The previous default was 50 — too small for dense urban deployments.
+const DISPATCH_POOL_SIZE = Number(process.env.DISPATCH_POOL_SIZE ?? 200);
+
+// Search radius (km). Technicians farther than this are skipped before scoring.
+const DISPATCH_RADIUS_KM = 50;
 
 // Rank technicians for a dispatch request
 export async function findBestTechnicians(input: DispatchInput, limit = 5): Promise<DispatchCandidate[]> {
-  // Fetch available technicians with their specialties
+  // Fetch available technicians with their specialties.
+  //
+  // NOTE: Prisma + SQLite doesn't support native geospatial filtering
+  // (no `ST_DWithin`, no `distance()` function). For PostGIS-backed deployments
+  // a future version of this query should add:
+  //
+  //   where: {
+  //     availableNow: true,
+  //     status: "ONLINE",
+  //     // ... AND ST_DWithin(location, ST_MakePoint(input.lng, input.lat)::geography, 50000)
+  //   }
+  //
+  // Until then we fetch a configurable pool (default 200) and filter in-memory
+  // by Haversine below. This is O(pool) per dispatch request and fine for the
+  // expected fleet size (<10k technicians).
   const technicians = await db.technician.findMany({
     where: { availableNow: true, status: "ONLINE" },
     include: {
       user: { select: { id: true, name: true } },
       specialties: true,
     },
-    take: 50, // pre-filter pool
+    take: DISPATCH_POOL_SIZE, // pre-filter pool — increased from 50 to 200 (configurable via env)
   });
 
   const candidates: DispatchCandidate[] = [];
 
   for (const tech of technicians) {
-    const distance = haversineKm(input.lat, input.lng, tech.lat ?? input.lat, tech.lng ?? input.lng);
+    const techLat = tech.lat ?? input.lat;
+    const techLng = tech.lng ?? input.lng;
+    const distance = haversineKm(input.lat, input.lng, techLat, techLng);
 
-    // Skip if too far (50km radius)
-    if (distance > 50) continue;
+    // In-memory geospatial filter — skip if outside the search radius.
+    if (distance > DISPATCH_RADIUS_KM) continue;
 
     // Skill matching
     const techSkills = tech.specialties.map((s) => s.category);
@@ -85,7 +162,7 @@ export async function findBestTechnicians(input: DispatchInput, limit = 5): Prom
     const skillRatio = skillsTotal > 0 ? skillsMatched / skillsTotal : 0.5;
 
     // Normalize metrics
-    const distScore = 1 - normalize(distance, 0, 50); // closer = higher score
+    const distScore = 1 - normalize(distance, 0, DISPATCH_RADIUS_KM); // closer = higher score
     const ratingScore = normalize(Number(tech.rating ?? 0), 0, 5);
     const speedScore = normalize(tech.responseMins ?? 30, 5, 60);
     const speedNormalized = 1 - speedScore; // faster response = higher score
@@ -99,7 +176,7 @@ export async function findBestTechnicians(input: DispatchInput, limit = 5): Prom
       name: tech.user.name ?? "Unknown",
       score: Math.round(score * 100) / 100,
       distance: Math.round(distance * 10) / 10,
-      etaMins: estimateEta(distance),
+      etaMins: currentEtaProvider(input.lat, input.lng, techLat, techLng),
       skillsMatched,
       skillsTotal,
       rating: Number(tech.rating ?? 0),

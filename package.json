@@ -13,7 +13,9 @@
     "db:reset": "prisma migrate reset",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "check:hygiene": "bash scripts/check-hygiene.sh",
+    "check:repo": "bun run lint && bunx tsc --noEmit && bun run check:hygiene"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

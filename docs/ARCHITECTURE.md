@@ -322,6 +322,41 @@ model Session {
 
 ---
 
+## Demo Endpoints (`/api/auth/demo`) — Production Stripping
+
+`/api/auth/demo/*` is a dev-only convenience endpoint that returns pre-seeded
+demo users for one-click sign-in. It MUST NOT exist in production builds.
+
+Two layers of defense:
+
+1. **Handler-level guard** (`src/app/api/auth/demo/route.ts`): the route
+   handler short-circuits with a bare `404` (no DB query, no JSON body)
+   whenever `process.env.NODE_ENV === "production"`. This is defense-in-depth.
+
+2. **Build-time stripping** (recommended): production `next.config.ts`
+   should add a rewrite that short-circuits `/api/auth/demo/*` → `/404`
+   before the route handler ever runs. Example:
+
+   ```ts
+   // next.config.ts
+   const nextConfig: NextConfig = {
+     async rewrites() {
+       if (process.env.NODE_ENV === "production") {
+         return [
+           { source: "/api/auth/demo/:path*", destination: "/api/404" },
+         ];
+       }
+       return [];
+     },
+   };
+   ```
+
+   This guarantees the route's code (and therefore any DB queries it would
+   run) is never executed in production even if the handler guard is
+   accidentally removed in a future refactor.
+
+---
+
 # 7. Asset Architecture
 
 هسته اصلی MEKANIX:

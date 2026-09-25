@@ -4,6 +4,10 @@
 // - API2: Broken Authentication
 // - API3: Broken Object Property Level Authorization (Mass Assignment)
 // - API5: Broken Function Level Authorization
+//
+// NOTE: The User model has a `password` field for legacy compatibility,
+// but MEKANIX uses OTP-only authentication (per ARCHITECTURE.md §6).
+// The password field is NOT used for login and should be ignored.
 
 import { SignJWT, jwtVerify } from "jose";
 import { createHash } from "crypto";

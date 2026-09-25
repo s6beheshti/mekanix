@@ -14,10 +14,18 @@ datasource db {
 
 model User {
   id            String     @id @default(cuid())
-  email         String     @unique
+  // Email is OPTIONAL — OTP-first users authenticate by phone only.
+  // Not @unique: legacy imports / multiple-phone-only accounts may share an
+  // address, and the unique constraint was removed per ARCHITECTURE.md §6
+  // (OTP-only auth — email is purely informational).
+  email         String?
   phone         String?    @unique
   phoneVerified Boolean    @default(false)
-  password      String     @default("demo") // demo only — never store plaintext in prod
+  // LEGACY: kept for backward compatibility with pre-OTP migrations only.
+  // MEKANIX is OTP-only (see ARCHITECTURE.md §6); this field is NOT used for
+  // authentication. Source: src/lib/auth.ts. Optional so OTP-only users
+  // can have NULL.
+  password      String?
   name          String
   avatar        String?
   role          Role       @default(CUSTOMER)
