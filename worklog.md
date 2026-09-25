@@ -4980,3 +4980,130 @@ Stage Summary:
   4. ✅ Real SMS provider — sms-provider.ts supports Kavenegar + MeliPayamak + Farapayamak + console (dev), auto-initialized via init.ts, wired into /api/auth/otp/send
   5. ✅ Real routing/ETA provider — eta-provider.ts (already existed) auto-initializes via init.ts alongside the new SMS init; supports Neshan + Google + OSRM + 40km/h default
 - Existing functionality preserved: all 216 tests pass, no UI/route changes, no schema changes, no breaking response-shape changes (health endpoint was the only shape change but no consumer depends on the old shape — deploy.sh greps for `"ok":true` which the new shape still emits)
+
+---
+Task ID: PROD-READINESS
+Agent: general-purpose (production readiness — docs + endpoints + scripts)
+Task: Create PRODUCTION_READINESS.md + /api/ready + backup/restore scripts + payment gateway abstraction + Caddy production config + security audit script + rollback docs
+
+Work Log:
+- Read worklog.md (4882 lines of prior work history) for context. Verified current state:
+  * `/api/health/route.ts` already exists (53 lines) — liveness check with DB/Redis/SMS/ETA/migration status
+  * `src/lib/sms-provider.ts` already exists (Kavenegar/MeliPayamak/Farapayamak + console dev)
+  * `src/lib/eta-provider.ts` already exists (Neshan/Google/OSRM/default)
+  * `src/lib/init.ts` already auto-inits SMS + ETA providers
+  * `scripts/backup-db.sh` already existed but was SQLite-only (used by mini-services/backup-scheduler)
+  * `Caddyfile` already existed but was dev-only (port 81 + XTransformPort dynamic routing)
+  * No `/api/ready` endpoint (only `/api/health`)
+  * No `docs/PRODUCTION_READINESS.md`, no `docs/ROLLBACK.md`
+  * No payment provider abstraction (existing `/api/gateway/initiate` + `verify` use a hardcoded Shaparak simulator)
+  * No security audit script
+
+- Task 1 — Created `/home/z/my-project/docs/PRODUCTION_READINESS.md` (~430 lines):
+  * Comprehensive 31-phase checklist formatted as Markdown tables
+  * Each phase has 5–10 sub-items with Status (✅ Done / 🛠️ Prepared / ⬜ Pending / ⚠️ Partial) + Evidence columns
+  * Phases 0–31 cover: version freeze → code audit → security audit → dependencies → config → SMS → payment → maps → DB → Redis → server → DNS → reverse proxy → hardening → health/readiness → observability → monitoring → alerting → performance → UX QA → Persian content → staging security test → staging E2E → failure testing → backup/restore → rollback → RC → Go/No-Go → deploy → smoke test → public launch → 24h post-launch
+  * Summary table at bottom: 44 ✅ / 35 🛠️ / 54 ⬜ / 4 ⚠️ across 6 phase groups
+  * Reads gate: "Phases 0–14 are largely ✅/🛠️. Phases 15–31 require a real production server or external services. All code and scripts needed to flip ⬜ items to ✅ are committed to this repo."
+
+- Task 2 — Created `/home/z/my-project/src/app/api/ready/route.ts` (~50 lines):
+  * GET /api/ready — readiness check (different from liveness)
+  * Two critical checks: (1) `db.$queryRaw\`SELECT 1\`` for DB connectivity, (2) `_prisma_migrations` table count > 0 for migration status
+  * Returns HTTP 200 if both checks pass; 503 if either fails
+  * Documented the liveness vs readiness distinction: /api/health = restart container if down; /api/ready = remove from load balancer if not ready
+  * Catches both failure modes (DB unreachable, _prisma_migrations table missing — common in SQLite dev with db push)
+
+- Task 3 — Rewrote `/home/z/my-project/scripts/backup-db.sh` (was 26 lines SQLite-only, now ~80 lines hybrid):
+  * Auto-detects database type from DATABASE_URL scheme: `postgresql://` → pg_dump | gzip; `file:` → sqlite3 .dump | gzip (or binary cp fallback if sqlite3 not installed)
+  * Backward compatible: still writes to `$REPO_DIR/backups/` by default so `mini-services/backup-scheduler` `/backups` listing endpoint continues to work
+  * 30-day retention (configurable via `BACKUP_RETENTION_DAYS` env var)
+  * Cleans up old `mekanix_*.sql.gz` AND legacy `mekanix_db_*.db` backups
+  * Verifies backup is non-empty before exiting (fails fast on empty/partial backups)
+  * Tested: ran `bash scripts/backup-db.sh` against the SQLite dev DB → produced `/home/z/my-project/backups/mekanix_20260925_102137.sql.gz` (45K)
+- Created `/home/z/my-project/scripts/restore-db.sh` (~80 lines):
+  * Auto-detects DB type (PostgreSQL → psql, SQLite → sqlite3 .read or binary copy)
+  * Requires `RESTORE` typed confirmation before proceeding (prevents accidental nukes)
+  * Post-restore verification: counts rows in `_prisma_migrations` + `User` tables
+  * Both scripts chmod +x'd
+
+- Task 4 — Created `/home/z/my-project/src/lib/payment-provider.ts` (~225 lines):
+  * Pluggable payment abstraction mirroring sms-provider.ts pattern
+  * Three providers + simulator (default):
+    - `simulator` — dev mode, returns immediate success + fake authority
+    - `zarinpal` — calls `api.zarinpal.com/pg/v4/payment/request.json` + `verify.json`; reads `data.authority` + `data.ref_id`
+    - `idpay` — calls `api.idpay.ir/v1.3/payment` + `verify`; reads `data.link` + `data.track_id` with `status === 100` for success
+    - `nextpay` — stub (logs warning, falls back to simulator until real API contract is verified)
+  * All real provider calls use `AbortSignal.timeout(15000)` for 15s timeouts
+  * `initPaymentProvider()` — idempotent, logs provider selection on first call
+  * `createPayment(req)` + `verifyPayment(authority, amount)` — public API for callers
+  * `getPaymentProviderStatus()` — health-check helper returns `{ configured, provider }` (matches sms-provider's `getSmsProviderStatus()` shape)
+  * Exports: `PaymentRequest`, `PaymentResult`, `PaymentVerifyResult`, `CreatePaymentFn`, `VerifyPaymentFn`, `initPaymentProvider`, `createPayment`, `verifyPayment`, `getPaymentProviderStatus`
+  * NOTE: Existing `/api/gateway/initiate` + `/api/gateway/verify` routes were NOT modified (they have a stable Shaparak-simulator contract that the UI depends on). The new payment-provider.ts is ready to wire in once the existing simulator flow is migrated to use the abstraction in a follow-up task.
+
+- Task 5 — Created `/home/z/my-project/Caddyfile.production` (~70 lines):
+  * Three site blocks: `mekanix.ir` (main app), `www.mekanix.ir` (301 redirect to non-www), `api.mekanix.ir` (optional API subdomain)
+  * Security headers: HSTS (1 year + preload), nosniff, X-Frame-Options DENY, XSS-Protection, Referrer-Policy, Permissions-Policy (camera/mic off, geolocation self only), strict CSP (default-src 'self', script-src 'self' 'unsafe-inline' 'unsafe-eval', style-src 'self' 'unsafe-inline', img-src 'self' data: https:, font-src 'self' data:, connect-src 'self' wss: https:, frame-ancestors 'none')
+  * Compression: gzip + zstd (modern browsers prefer zstd)
+  * Structured JSON logs to `/var/log/caddy/mekanix.log` for log aggregation
+  * Static asset caching: `/_next/static/*` gets `Cache-Control: public, max-age=31536000, immutable` (content-hashed by Next.js)
+  * Public assets (`/public/*`, `logo.*`, `/onboarding/*`) get 24h cache
+  * Rate-limit block commented out (needs `caddy-ratelimit` plugin built into Caddy)
+  * Commented example for protecting the backup-scheduler mini-service (port 3005) with IP allowlist
+  * Existing dev `Caddyfile` (port 81 + XTransformPort dynamic routing) left untouched — production file is a separate artifact
+
+- Task 6 — Created `/home/z/my-project/scripts/security-audit.sh` (~180 lines, 12 checks):
+  1. Secrets in tracked files (regex scan with .env.example exclusion)
+  2. `.env` is not tracked by git
+  3. Debug endpoint checks (NODE_ENV guards)
+  4. console.log with sensitive data (password, token, secret, api_key, otp, jwt, bearer)
+  5. Cookie `secure:` flag presence
+  6. Zod input validation coverage (validateBody / z.object / safeParse counts)
+  7. BOLA protection (requireBookingParticipant / requireAssignedTechnician / requireBookingOwner / requireVehicleOwner / requireJobParticipant / requireSession counts)
+  8. Rate limiting coverage (rateLimit / rateLimitAsync counts)
+  9. SQL injection audit ($queryRaw / $executeRaw — confirms all use tagged templates, flags string-form)
+  10. Dependency vulnerabilities (`bun audit`)
+  11. Required env vars documented in .env.example (DATABASE_URL, JWT_SECRET)
+  12. TypeScript compilation (`bunx tsc --noEmit`)
+  * Each check is non-fatal (`set -e` is OFF) — runs all checks and reports summary at end
+  * Exit codes: 0 = all critical checks passed, 1 = issues found
+  * Distinguishes "❌ Issues" (must fix before deploy) vs "⚠️ Warnings" (review but not blocking)
+  * Tested: ran `bash scripts/security-audit.sh` → 0 issues, 2 warnings (Browserslist CVE in transitive dep + NODE_ENV debug guard in /api/health which is by design)
+  * chmod +x'd
+
+- Task 7 — Created `/home/z/my-project/docs/ROLLBACK.md` (~180 lines):
+  * "When to Rollback" decision matrix (critical bug, data corruption, security, payment/SMS failures, etc.)
+  * "Rule of thumb": if hotfixable in <5 min, patch forward; otherwise rollback
+  * 7-step rollback procedure: identify → decide (code vs DB) → stop → rollback code → rollback DB (if needed) → verify → notify
+  * Decision table: which rollback path based on symptom (app crash → code only, migration corrupted data → DB too, bad env var → no rollback, dependency CVE → code + forward)
+  * 4 common scenarios with exact commands:
+    - Scenario A: New migration fails to apply (delete from _prisma_migrations, restart app)
+    - Scenario B: Bad env var pushed (fix .env, force-recreate container)
+    - Scenario C: Database disk full (delete old backups, VACUUM FULL ANALYZE)
+    - Scenario D: SMS provider outage (switch SMS_PROVIDER env var, recreate app container)
+  * Migration rollback section: explicit warning that Prisma migrations are forward-only, no `prisma migrate reset` in prod, write a new reverse migration
+  * Rollback checklist (8 items) for declaring rollback complete
+  * Emergency contacts table with [TODO: fill before launch] placeholders for DB admin / DevOps / payment provider / SMS provider / domain registrar / hosting
+  * Frequency section: quarterly rollback drill, monthly backup restore drill, doc review after every rollback
+
+- Verification — All checks pass:
+  * `bun run lint` → 0 errors, 0 warnings (exit 0)
+  * `bunx tsc --noEmit` → 0 errors (exit 0)
+  * `bun run test` → 10 test files, 216 tests passed (0 failures, exit 0)
+  * `bash scripts/security-audit.sh` → 0 issues, 2 warnings (exit 0)
+  * `bash scripts/check-hygiene.sh` → "✅ Repository hygiene is clean."
+  * `bash scripts/backup-db.sh` → tested with SQLite dev DB, produced valid 45K .sql.gz backup
+  * Existing functionality preserved: all 216 tests still pass, no UI/route changes, no schema changes, no breaking response-shape changes
+
+Stage Summary:
+- Files created (7): docs/PRODUCTION_READINESS.md, docs/ROLLBACK.md, scripts/restore-db.sh, scripts/security-audit.sh, src/app/api/ready/route.ts, src/lib/payment-provider.ts, Caddyfile.production
+- Files modified (1): scripts/backup-db.sh (rewrote SQLite-only → hybrid SQLite+PostgreSQL, 26→80 lines, backward compatible with mini-services/backup-scheduler)
+- Lint: 0 errors. TypeScript: 0 errors. Tests: 216/216 passed. Security audit: 0 issues. Hygiene: clean.
+- All 7 tasks completed:
+  1. ✅ docs/PRODUCTION_READINESS.md — 31-phase checklist with status/evidence for every sub-item
+  2. ✅ /api/ready endpoint — readiness probe (DB + migrations); differentiates from liveness (/api/health)
+  3. ✅ backup-db.sh + restore-db.sh — PostgreSQL production + SQLite dev hybrid, 30-day retention, RESTORE confirmation prompt
+  4. ✅ payment-provider.ts — Zarinpal + IDPay + NextPay (stub) + simulator (dev); env-driven via PAYMENT_PROVIDER
+  5. ✅ Caddyfile.production — mekanix.ir + www redirect + api subdomain; HSTS, CSP, nosniff, DENY frame, gzip+zstd, JSON logs, static asset caching
+  6. ✅ security-audit.sh — 12 automated checks (secrets, BOLA, rate limit, Zod, raw SQL, deps, tsc, env vars); exit 1 on issues
+  7. ✅ docs/ROLLBACK.md — 7-step procedure + 4 scenarios + decision matrix + emergency contacts
+- Existing functionality preserved: backup-scheduler mini-service still works (BACKUP_DIR default unchanged), /api/health unchanged, all tests pass

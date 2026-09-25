@@ -1,0 +1,89 @@
+# MEKANIX — Production Caddyfile
+#
+# Reverse proxy + TLS termination + security headers for the production deployment.
+#
+# Replace `mekanix.ir` with your actual domain (in 3 places below).
+# Caddy automatically provisions + renews HTTPS certificates via Let's Encrypt.
+#
+# Usage:
+#   1. Install Caddy on the VPS:  https://caddyserver.com/docs/install
+#   2. Copy this file to /etc/caddy/Caddyfile:  sudo cp Caddyfile.production /etc/caddy/Caddyfile
+#   3. Reload Caddy:  sudo systemctl reload caddy
+#
+# Prerequisites:
+#   - DNS A record for mekanix.ir + www.mekanix.ir → VPS public IP
+#   - Ports 80 + 443 open in firewall (ufw allow 80,443/tcp)
+#   - Next.js app running on localhost:3000 (e.g. via docker-compose)
+
+mekanix.ir {
+	# Reverse proxy to Next.js app
+	reverse_proxy localhost:3000
+
+	# Security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'"
+	}
+
+	# Compression
+	encode gzip zstd
+
+	# Logging (JSON for structured log aggregation)
+	log {
+		output file /var/log/caddy/mekanix.log
+		format json
+	}
+
+	# Rate limiting (optional — requires caddy-ratelimit plugin built into Caddy)
+	# rate_limit {
+	#     zone static_ip {
+	#         key {remote_host}
+	#         events 100
+	#         window 1m
+	#     }
+	# }
+
+	# Static asset caching (Next.js /_next/static/* is content-hashed → immutable)
+	@nextStatic path /_next/static/*
+	header @nextStatic Cache-Control "public, max-age=31536000, immutable"
+
+	# Public assets (logo, onboarding images)
+	@publicAssets path /public/* /logo.* /onboarding/*
+	header @publicAssets Cache-Control "public, max-age=86400"
+}
+
+# Redirect www → non-www (canonical domain)
+www.mekanix.ir {
+	redir https://mekanix.ir{uri} permanent
+}
+
+# API subdomain (optional — separate from main app if you want to split traffic)
+api.mekanix.ir {
+	reverse_proxy localhost:3000
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+	encode gzip zstd
+	log {
+		output file /var/log/caddy/mekanix-api.log
+		format json
+	}
+}
+
+# Backup scheduler mini-service (optional — protect with IP allowlist)
+# mekanix.ir:3005 {
+#     @allowed remote_ip 10.0.0.0/8 192.168.0.0/16
+#     handle @allowed {
+#         reverse_proxy localhost:3005
+#     }
+#     handle {
+#         respond 403
+#     }
+# }
