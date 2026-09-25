@@ -40,21 +40,24 @@ export async function GET() {
   }
 
   // ─── 2. Redis ───
+  // Redis is optional — in-memory fallback works. Don't fail health check
+  // if Redis is unreachable, just warn.
   try {
     const redisOk = await isRedisAvailable();
     if (process.env.REDIS_URL) {
-      health.services.redis = redisOk ? "healthy" : "unhealthy";
-      if (!redisOk) {
-        health.ok = false;
-        health.warnings.push("Redis: configured but not reachable");
+      if (redisOk) {
+        health.services.redis = "healthy";
+      } else {
+        health.services.redis = "unhealthy (using in-memory fallback)";
+        health.warnings.push("Redis: configured but not reachable — using in-memory fallback");
       }
     } else {
       health.services.redis = "not-configured";
       health.warnings.push("Redis: not configured (rate limiting is in-memory)");
     }
   } catch (e) {
-    health.services.redis = "unhealthy";
-    health.warnings.push(`Redis: ${(e as Error).message}`);
+    health.services.redis = "unhealthy (using in-memory fallback)";
+    health.warnings.push(`Redis: ${(e as Error).message} — using in-memory fallback`);
   }
 
   // ─── 3. SMS Provider ───
@@ -67,7 +70,6 @@ export async function GET() {
       health.services.sms = `healthy (${smsStatus.provider})`;
     } else {
       health.services.sms = `misconfigured (${smsStatus.provider})`;
-      health.ok = false;
       health.warnings.push(`SMS: ${smsStatus.warnings.join(", ")}`);
     }
   } catch (e) {
