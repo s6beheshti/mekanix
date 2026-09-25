@@ -10,6 +10,7 @@ jobs:
   check:
     name: Lint + TypeCheck + Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
       - uses: actions/checkout@v4
@@ -22,41 +23,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       
+      - name: Generate Prisma Client
+        run: bunx prisma generate
+      
       - name: Check for forbidden artifacts
-        run: |
-          echo "Checking for forbidden files..."
-          FORBIDDEN=false
-          
-          # Check for database files
-          if find . -name "*.db" -not -path "./node_modules/*" | grep -q .; then
-            echo "❌ Database files found:"
-            find . -name "*.db" -not -path "./node_modules/*"
-            FORBIDDEN=true
-          fi
-          
-          # Check for .env files (not .env.example)
-          if find . -name ".env" -not -path "./node_modules/*" | grep -q .; then
-            echo "❌ .env files found:"
-            find . -name ".env" -not -path "./node_modules/*"
-            FORBIDDEN=true
-          fi
-          
-          # Check for upload/download/tool-results/backups directories
-          for dir in upload download tool-results backups agent-ctx .zscripts; do
-            if [ -d "$dir" ] && git ls-files --error-unmatch "$dir" 2>/dev/null; then
-              echo "❌ Forbidden directory tracked: $dir"
-              FORBIDDEN=true
-            fi
-          done
-          
-          if [ "$FORBIDDEN" = true ]; then
-            echo ""
-            echo "Forbidden artifacts found. Remove them with:"
-            echo "  git rm --cached <file>"
-            exit 1
-          fi
-          
-          echo "✅ No forbidden artifacts found."
+        run: bash scripts/check-hygiene.sh
       
       - name: Run ESLint
         run: bun run lint
