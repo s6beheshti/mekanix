@@ -3,7 +3,7 @@
 #
 # Builds and deploys MEKANIX via Docker Compose with PostgreSQL 16 + Redis 7.
 # Does NOT mutate the developer's working tree — all PostgreSQL migration
-# swapping happens inside a temporary build context via .dockerignore.
+# swapping happens inside a temporary build context.
 #
 # Usage:
 #   bash scripts/deploy.sh
@@ -11,15 +11,9 @@
 # Required env vars:
 #   DB_PASSWORD     — PostgreSQL password
 #   JWT_SECRET      — JWT signing secret
-#
-# Optional env vars:
-#   SMS_PROVIDER, KAVENEGAR_API_KEY, MELIPAYAMAK_USERNAME, MELIPAYAMAK_PASSWORD,
-#   FARAPAYAMAK_USERNAME, FARAPAYAMAK_PASSWORD,
-#   NESHAN_API_KEY, GOOGLE_MAPS_API_KEY, OSRM_API_URL
 
 set -euo pipefail
 
-# Path-relative (not hard-coded)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
@@ -47,14 +41,10 @@ if [ "$MISSING" = "1" ]; then
 fi
 
 # ─── Create temporary build context with PostgreSQL config ───
-# This approach does NOT modify the developer's working tree.
-# We create a temporary directory, copy the PostgreSQL migrations into it,
-# and Docker uses that as the build context.
 BUILD_CTX="$(mktemp -d /tmp/mekanix-build.XXXXXX)"
 trap 'rm -rf "$BUILD_CTX"' EXIT
 
 echo "📦 Preparing build context (PostgreSQL migrations)..."
-# Copy the entire repo to build context
 rsync -a --exclude='node_modules' --exclude='.next' --exclude='.git' \
   --exclude='db/*.db' --exclude='*.log' \
   "$REPO_DIR/" "$BUILD_CTX/"
@@ -77,10 +67,8 @@ echo ""
 
 # ─── Build and deploy ───
 echo "🏗️  Building and deploying with docker compose..."
-# Use the build context directory
-DOCKER_BUILDKIT=1 docker compose -f "$REPO_DIR/docker-compose.yml" \
-  --project-directory "$BUILD_CTX" \
-  up -d --build
+cd "$BUILD_CTX"
+docker compose up -d --build
 
 # ─── Wait for health ───
 echo "⏳ Waiting for app to be healthy..."
@@ -100,7 +88,7 @@ print(f'  Redis: {d[\"services\"][\"redis\"]}')
   fi
   if [ "$i" = "60" ]; then
     echo "❌ App did not become healthy within 120s"
-    echo "   Check logs: docker compose logs app"
+    echo "   Check logs: docker compose logs"
     exit 1
   fi
   echo "   Waiting... ($i/60)"

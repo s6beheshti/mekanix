@@ -1,22 +1,28 @@
-
 services:
+  # Migration runner — runs once before app starts
+  migrate:
+    build: 
+      context: .
+      target: migrator
+    environment:
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   app:
     build: .
     ports:
       - "3000:3000"
     environment:
-      # Database
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - NODE_ENV=production
-      # Auth
       - JWT_SECRET=${JWT_SECRET}
-      # Admin bootstrap
       - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:-}
       - ADMIN_BOOTSTRAP_USERNAME=${ADMIN_BOOTSTRAP_USERNAME:-admin}
       - ADMIN_BOOTSTRAP_EMAIL=${ADMIN_BOOTSTRAP_EMAIL:-admin@mekanix.ir}
-      # Redis
       - REDIS_URL=redis://redis:6379
-      # SMS Provider (all variants passed through)
       - SMS_PROVIDER=${SMS_PROVIDER:-console}
       - KAVENEGAR_API_KEY=${KAVENEGAR_API_KEY:-}
       - KAVENEGAR_TEMPLATE=${KAVENEGAR_TEMPLATE:-}
@@ -26,13 +32,12 @@ services:
       - FARAPAYAMAK_USERNAME=${FARAPAYAMAK_USERNAME:-}
       - FARAPAYAMAK_PASSWORD=${FARAPAYAMAK_PASSWORD:-}
       - FARAPAYAMAK_SENDER=${FARAPAYAMAK_SENDER:-}
-      # ETA Provider (all variants passed through)
       - NESHAN_API_KEY=${NESHAN_API_KEY:-}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
       - OSRM_API_URL=${OSRM_API_URL:-}
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_started
     restart: unless-stopped
@@ -41,7 +46,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 15s
 
   db:
     image: postgres:16-alpine

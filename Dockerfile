@@ -4,32 +4,29 @@
 # ─── Stage 1: Install dependencies ───
 FROM node:20-slim AS deps
 WORKDIR /app
-
-# Install bun
 RUN npm install -g bun
-
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ─── Stage 2: Build application ───
 FROM node:20-slim AS builder
 WORKDIR /app
-
 RUN npm install -g bun
-
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Generate Prisma Client
 RUN bunx prisma generate
-
-# Disable telemetry
 ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build Next.js
 RUN bun run build
 
-# ─── Stage 3: Production runner ───
+# ─── Stage 3: Migration runner (runs prisma migrate deploy) ───
+FROM node:20-slim AS migrator
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/prisma ./prisma
+# Run migration and exit
+CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+
+# ─── Stage 4: Production runner ───
 FROM node:20-slim AS runner
 WORKDIR /app
 
@@ -44,11 +41,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Copy Prisma files for migration
-COPY --from=builder /app/prisma ./prisma
+# Copy Prisma client (for runtime queries)
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 USER nextjs
 
@@ -57,6 +52,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Run migration then start server
-# Use direct path to prisma CLI (npx not available in standalone build)
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
+# App starts directly — migrations run separately via migrator stage
+CMD ["node", "server.js"]

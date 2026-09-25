@@ -38,40 +38,34 @@ jobs:
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
             /tmp/mekanix-build/prisma/schema.prisma
           
-          cp docker-compose.yml /tmp/mekanix-build/
-          cp Dockerfile /tmp/mekanix-build/
-          
           echo "✅ Build context prepared with PostgreSQL config"
       
-      - name: Build Docker image
+      - name: Build and start Docker Compose stack
         run: |
           cd /tmp/mekanix-build
-          docker build -t mekanix-test .
-      
-      - name: Start Docker Compose stack
-        run: |
-          cd /tmp/mekanix-build
-          docker compose up -d
-          # Show running containers
+          docker compose up -d --build
           docker compose ps
       
       - name: Wait for health check
         run: |
           echo "Waiting for app to be healthy..."
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             HEALTH=$(curl -s http://localhost:3000/api/health 2>/dev/null || echo '{}')
             if echo "$HEALTH" | grep -q '"ok":true'; then
               echo "✅ App is healthy!"
               echo "$HEALTH" | python3 -m json.tool
               exit 0
             fi
-            # Check if app container is still running
+            # Check if app container is running
             if ! docker compose -f /tmp/mekanix-build/docker-compose.yml ps app | grep -q "Up\|running"; then
-              echo "❌ App container stopped!"
+              echo "❌ App container not running!"
+              echo "=== App logs ==="
               docker compose -f /tmp/mekanix-build/docker-compose.yml logs app
+              echo "=== Migrate logs ==="
+              docker compose -f /tmp/mekanix-build/docker-compose.yml logs migrate
               exit 1
             fi
-            echo "  Waiting... ($i/60)"
+            echo "  Waiting... ($i/90)"
             sleep 2
           done
           echo "❌ App did not become healthy"
