@@ -64,7 +64,7 @@ function normalize(value: number, min: number, max: number): number {
 // Contract: takes the pickup + technician coordinates and returns estimated
 // travel time in MINUTES.
 
-export type EtaProvider = (lat1: number, lng1: number, lat2: number, lng2: number) => number;
+export type EtaProvider = (lat1: number, lng1: number, lat2: number, lng2: number) => number | Promise<number>;
 
 // Default: simple 40 km/h estimate (matches the legacy `estimateEta(distanceKm)`).
 // Good enough for the v1 demo; replace via `setEtaProvider()` for production.
@@ -176,7 +176,7 @@ export async function findBestTechnicians(input: DispatchInput, limit = 5): Prom
       name: tech.user.name ?? "Unknown",
       score: Math.round(score * 100) / 100,
       distance: Math.round(distance * 10) / 10,
-      etaMins: currentEtaProvider(input.lat, input.lng, techLat, techLng),
+      etaMins: await Promise.resolve(currentEtaProvider(input.lat, input.lng, techLat, techLng)),
       skillsMatched,
       skillsTotal,
       rating: Number(tech.rating ?? 0),

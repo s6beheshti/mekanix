@@ -1,11 +1,19 @@
 // MEKANIX — On-Demand Mobile Repair & Maintenance Platform
-// Prisma schema (SQLite). Designed to scale to multi-region / multi-currency later.
+// Prisma schema. Supports SQLite (dev) and PostgreSQL (production).
+// 
+// To switch to PostgreSQL:
+// 1. Change provider to "postgresql" below
+// 2. Set DATABASE_URL to your PostgreSQL connection string
+// 3. Run: bun run prisma migrate deploy
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
+  // Dev: "sqlite" | Production: "postgresql"
+  // NOTE: Prisma does not support env() for the provider field.
+  // Change this manually when migrating to PostgreSQL.
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
