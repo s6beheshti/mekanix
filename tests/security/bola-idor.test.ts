@@ -539,16 +539,21 @@ describe("BOLA / IDOR Security Tests", () => {
 
   // ── OTP Security ─────────────────────────────────────────────────────
   describe("OTP Security", () => {
-    it("should use CSPRNG for OTP generation (no collisions across 1000 codes)", () => {
-      const codes = new Set<string>();
-      for (let i = 0; i < 1000; i++) {
-        codes.add(generateOtpCode());
+    it("should use CSPRNG for OTP generation (uniform distribution)", () => {
+      // With 6-digit codes (1M possible values), birthday-paradox makes
+      // collisions likely at ~1250 draws. We test 100 draws (collision
+      // probability ~0.4%) and verify uniqueness + uniform distribution.
+      const codes: string[] = [];
+      for (let i = 0; i < 100; i++) {
+        codes.push(generateOtpCode());
       }
-      // CSPRNG should produce unique codes (collision probability is negligible).
-      // NOTE: with 10^6 possible values and 1000 draws, the birthday-paradox
-      // collision probability is ~5×10^-4 — we accept up to 1 collision as
-      // a tolerance for spurious test failures on noisy CI runners.
-      expect(codes.size).toBeGreaterThanOrEqual(999);
+      const unique = new Set(codes);
+      // Should be at least 99 unique out of 100 (allowing 1 collision)
+      expect(unique.size).toBeGreaterThanOrEqual(99);
+
+      // Verify distribution: last digit should not be all the same
+      const lastDigits = new Set(codes.map(c => c[5]));
+      expect(lastDigits.size).toBeGreaterThanOrEqual(5);
     });
 
     it("should always produce a 6-digit code", () => {
