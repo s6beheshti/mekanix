@@ -4,6 +4,7 @@ import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
 import { generateOtpCode, hashOtpCode } from "@/lib/otp-crypto";
+import { sendOtp } from "@/lib/sms-provider";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
@@ -75,20 +76,42 @@ export async function POST(req: Request) {
   await db.otpCode.updateMany({ where: { phone, consumed: false }, data: { consumed: true } });
   await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
 
-  // TODO(production): Integrate an SMS provider here (e.g. Kavenegar, MeliPayamak, Farapayamak)
-  // and send the plaintext `code` to `phone`. The SMS provider must receive
-  // the plaintext (the user needs to read it), but the DB only stores the
-  // hash. Until SMS is wired up, the code is only visible in development
-  // responses for testing. Example:
-  //   if (process.env.NODE_ENV === "production") {
-  //     await smsProvider.send(phone, `کد تأیید MEKANIX: ${code}`);
-  //   }
+  // Deliver the OTP via the configured SMS provider.
+  //
+  // `sendOtp()` is env-driven (see `src/lib/sms-provider.ts`):
+  //   - SMS_PROVIDER=kavenegar    + KAVENEGAR_API_KEY    → Kavenegar verify/lookup
+  //   - SMS_PROVIDER=melipayamak  + MELIPAYAMAK_USERNAME  → MeliPayamak SendSMS
+  //   - SMS_PROVIDER=farapayamak  + FARAPAYAMAK_USERNAME  → Farapayamak SimpleSMS
+  //   - default                                          → console.log (dev mode)
+  //
+  // In production the plaintext `code` is sent to the user's phone; in dev
+  // mode it is logged to stdout AND returned in the response body so the
+  // splash UI can display it for manual testing.
+  //
+  // Send failure is logged but does NOT abort the request — the hashed code
+  // is already persisted, so the user can still verify via a retry / fallback
+  // channel. We surface the error in the response body in dev so a misconfigured
+  // SMS provider is visible during integration testing.
+  const smsResult = await sendOtp(phone, code);
+  if (!smsResult.success) {
+    console.warn(`⚠️  SMS delivery failed for ${phone}: ${smsResult.error}`);
+  }
 
   const isProduction = process.env.NODE_ENV === "production";
-  const response: { ok: true; expiresAt: Date; code?: string } = { ok: true, expiresAt };
+  const response: {
+    ok: true;
+    expiresAt: Date;
+    code?: string;
+    sms?: { success: boolean; error?: string };
+  } = { ok: true, expiresAt };
   if (!isProduction) {
     // Dev only — the splash UI displays this so a human tester can read the code.
     response.code = code;
+    // Surface SMS delivery status in dev so a misconfigured provider is visible.
+    response.sms = {
+      success: smsResult.success,
+      error: smsResult.error,
+    };
   }
   return NextResponse.json(response);
 }
