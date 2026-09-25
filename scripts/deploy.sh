@@ -78,7 +78,7 @@ echo ""
 # ─── Build and deploy ───
 echo "🏗️  Building and deploying with docker compose..."
 # Use the build context directory
-DOCKER_BUILDKIT=1 docker compose -f "$REPO_DIR/docker compose.yml" \
+DOCKER_BUILDKIT=1 docker compose -f "$REPO_DIR/docker-compose.yml" \
   --project-directory "$BUILD_CTX" \
   up -d --build
 

@@ -38,8 +38,8 @@ jobs:
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
             /tmp/mekanix-build/prisma/schema.prisma
           
-          # Copy docker compose.yml to build context
-          cp docker compose.yml /tmp/mekanix-build/
+          # Copy docker-compose.yml to build context
+          cp docker-compose.yml /tmp/mekanix-build/
           cp Dockerfile /tmp/mekanix-build/
           
           echo "✅ Build context prepared with PostgreSQL config"
