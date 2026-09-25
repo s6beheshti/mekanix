@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
-import { checkRateLimit } from "@/lib/api-helpers";
-import { RATE_LIMITS } from "@/lib/rate-limit";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 
 // POST /api/payments
 // Records a payment against an invoice.
@@ -13,9 +12,20 @@ export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  // Tighter rate limit on payments
-  const limited = checkRateLimit(req, "payment", RATE_LIMITS.PAYMENT.max, RATE_LIMITS.PAYMENT.windowMs);
-  if (limited) return limited;
+  // Tighter rate limit on payments — uses Redis-backed `rateLimitAsync()`
+  // so the budget is shared across instances when REDIS_URL is set.
+  const clientId = getClientId(req);
+  const rl = await rateLimitAsync(
+    `payment:${clientId}`,
+    RATE_LIMITS.PAYMENT.max,
+    RATE_LIMITS.PAYMENT.windowMs
+  );
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "درخواست‌های پرداخت بیش از حد، بعداً دوباره تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } }
+    );
+  }
 
   let body: any;
   try {

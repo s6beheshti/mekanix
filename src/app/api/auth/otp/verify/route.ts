@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth";
-import { checkRateLimit, validateBody } from "@/lib/api-helpers";
-import { RATE_LIMITS } from "@/lib/rate-limit";
+import { validateBody } from "@/lib/api-helpers";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpVerifySchema } from "@/lib/schemas";
 import { hashOtpCode } from "@/lib/otp-crypto";
 
@@ -13,8 +13,21 @@ const TECHNICIAN_INCLUDE = {
 } as const;
 
 export async function POST(req: Request) {
-  const limited = checkRateLimit(req, "otp-verify", RATE_LIMITS.OTP_VERIFY.max, RATE_LIMITS.OTP_VERIFY.windowMs);
-  if (limited) return limited;
+  // Rate limit by client IP (5 verify attempts per minute) — uses the
+  // Redis-backed `rateLimitAsync()` so the budget is shared across instances
+  // when REDIS_URL is set. Falls back to in-memory in dev mode.
+  const clientId = getClientId(req);
+  const limited = await rateLimitAsync(
+    `otp-verify:${clientId}`,
+    RATE_LIMITS.OTP_VERIFY.max,
+    RATE_LIMITS.OTP_VERIFY.windowMs
+  );
+  if (!limited.success) {
+    return NextResponse.json(
+      { error: "تعداد تلاش‌ها بیش از حد است، بعداً تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limited.resetMs / 1000)) } }
+    );
+  }
 
   // Validate request body with Zod — phone + 6-digit code are required.
   // `name` is optional and only used on first-time signup. The schema enforces

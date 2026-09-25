@@ -69,8 +69,12 @@ vi.mock("@/lib/db", () => ({
 }));
 
 // Mock rate-limit so we don't accumulate in-memory counts across tests.
+// `rateLimitAsync` is the Redis-backed version — mocked to always succeed so
+// the OTP send/verify routes (which now call `await rateLimitAsync(...)`)
+// don't trip across tests.
 vi.mock("@/lib/rate-limit", () => ({
   rateLimit: vi.fn(() => ({ success: true, resetMs: 60_000 })),
+  rateLimitAsync: vi.fn().mockResolvedValue({ success: true, resetMs: 60_000 }),
   checkRateLimit: vi.fn(() => null),
   getClientId: vi.fn(() => "127.0.0.1"),
   RATE_LIMITS: {

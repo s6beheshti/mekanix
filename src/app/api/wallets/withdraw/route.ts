@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth, checkRateLimit } from "@/lib/api-helpers";
+import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
-import { RATE_LIMITS } from "@/lib/rate-limit";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -12,9 +12,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "فقط مکانیک‌ها می‌توانند برداشت کنند" }, { status: 403 });
   }
 
-  // Rate limit: 3 per hour
-  const limited = checkRateLimit(req, "withdraw", RATE_LIMITS.WITHDRAW.max, RATE_LIMITS.WITHDRAW.windowMs);
-  if (limited) return limited;
+  // Rate limit: 3 per hour — uses Redis-backed `rateLimitAsync()` so the
+  // withdrawal budget is shared across instances when REDIS_URL is set.
+  const clientId = getClientId(req);
+  const rl = await rateLimitAsync(
+    `withdraw:${clientId}`,
+    RATE_LIMITS.WITHDRAW.max,
+    RATE_LIMITS.WITHDRAW.windowMs
+  );
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "درخواست‌های برداشت بیش از حد، بعداً دوباره تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } }
+    );
+  }
 
   const body = await req.json();
   const { amount, method, cardNumber, bankName, shebaNumber } = body;

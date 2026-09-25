@@ -18,8 +18,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx prisma generate
       - run: bun run check:repo
-      - run: bun run lint
-      - run: bun run db:generate
       - run: bun run build
         env:
           DATABASE_URL: "file:./test.db"

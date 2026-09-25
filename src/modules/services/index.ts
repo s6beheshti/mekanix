@@ -52,3 +52,14 @@ export {
   type UnifiedService,
   type ServiceStatus,
 } from "@/lib/service-unified";
+
+// ── Unified Service facade (write-side: create + status transition) ──
+// ADDITIVE: existing /api/jobs/[id]/status and /api/care/bookings routes
+// continue to work unchanged. New callers can use these functions to write
+// to either model through a single API.
+export {
+  createService,
+  transitionServiceStatus,
+  type CreateServiceInput,
+  type CreateServiceResult,
+} from "@/lib/service-write";

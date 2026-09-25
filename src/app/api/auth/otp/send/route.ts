@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { checkRateLimit, validateBody } from "@/lib/api-helpers";
-import { rateLimit, getClientId } from "@/lib/rate-limit";
+import { validateBody } from "@/lib/api-helpers";
+import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
 import { generateOtpCode, hashOtpCode } from "@/lib/otp-crypto";
 
@@ -35,7 +35,9 @@ export async function POST(req: Request) {
   }
 
   // Rate limit by phone (5 per 10 min) — protects a single user from OTP spam.
-  const phoneLimited = rateLimit(`otp-send:phone:${phone}`, 5, 10 * 60 * 1000);
+  // Uses Redis-backed rateLimitAsync when REDIS_URL is set (distributed across
+  // instances); falls back to in-memory in dev mode. See `src/lib/rate-limit.ts`.
+  const phoneLimited = await rateLimitAsync(`otp-send:phone:${phone}`, 5, 10 * 60 * 1000);
   if (!phoneLimited.success) {
     return NextResponse.json(
       { error: "تعداد درخواست‌های کد تأیید برای این شماره بیش از حد است" },
@@ -46,7 +48,7 @@ export async function POST(req: Request) {
   // Rate limit by client IP (20 per hour) — protects against enumeration / abuse
   // across many phone numbers from a single attacker.
   const clientId = getClientId(req);
-  const ipLimited = rateLimit(`otp-send:ip:${clientId}`, 20, 60 * 60 * 1000);
+  const ipLimited = await rateLimitAsync(`otp-send:ip:${clientId}`, 20, 60 * 60 * 1000);
   if (!ipLimited.success) {
     return NextResponse.json(
       { error: "تعداد درخواست‌ها از این آدرس بیش از حد است" },

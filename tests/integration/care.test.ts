@@ -62,6 +62,7 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/rate-limit", () => ({
   rateLimit: vi.fn(() => ({ success: true, resetMs: 60_000 })),
+  rateLimitAsync: vi.fn().mockResolvedValue({ success: true, resetMs: 60_000 }),
   checkRateLimit: vi.fn(() => null),
   getClientId: vi.fn(() => "127.0.0.1"),
   RATE_LIMITS: {

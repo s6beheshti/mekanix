@@ -1,13 +1,17 @@
 // MEKANIX — API Helpers for auth + rate limiting + validation
 import { NextResponse } from "next/server";
 import { getSessionFromRequest, type Session } from "./auth";
-import { rateLimit, getClientId } from "./rate-limit";
+import { rateLimit, rateLimitAsync, getClientId } from "./rate-limit";
 
 // Helper: extract + verify session from request. Returns 401 if not authenticated.
+//
+// Applies the default API rate limit (60 req/min per client) via the Redis-backed
+// `rateLimitAsync()` — this is distributed across instances when REDIS_URL is set,
+// so a deployed fleet enforces the same per-client budget as a single instance.
+// Falls back to in-memory in dev (no REDIS_URL).
 export async function requireAuth(req: Request): Promise<Session | NextResponse> {
-  // Apply default API rate limit
   const clientId = getClientId(req);
-  const rl = rateLimit(`api:${clientId}`, 60, 60_000); // 60 req/min
+  const rl = await rateLimitAsync(`api:${clientId}`, 60, 60_000); // 60 req/min
   if (!rl.success) {
     return NextResponse.json(
       { error: "درخواست‌های بیش از حد — لطفاً کمی صبر کنید" },
@@ -23,6 +27,12 @@ export async function requireAuth(req: Request): Promise<Session | NextResponse>
 }
 
 // Helper: rate limit by phone (for OTP endpoints). Returns 429 if exceeded.
+//
+// DEPRECATED: This synchronous helper wraps the in-memory `rateLimit()` and
+// does NOT use Redis. New endpoints (OTP send/verify, payments, withdraw) now
+// call `rateLimitAsync()` directly so the rate-limit budget is shared across
+// instances in production. This is kept for backward compatibility with any
+// external callers, but no internal route uses it anymore.
 export function checkRateLimit(req: Request, key: string, max: number, windowMs: number): NextResponse | null {
   const clientId = getClientId(req);
   const rl = rateLimit(`${key}:${clientId}`, max, windowMs);

@@ -1,0 +1,19 @@
+provider = "sqlite"
+
+# MEKANIX — Prisma migration provider lock
+#
+# This file pins which database provider the migrations under
+# prisma/migrations/ target. Prisma refuses to run migrations if the
+# lock disagrees with the datasource in schema.prisma.
+#
+# Dev (current)            → "sqlite"
+# Production (future)      → "postgresql"
+#
+# When migrating to PostgreSQL:
+#   1. Change `provider` here to "postgresql"
+#   2. Change `provider = "sqlite"` → `provider = "postgresql"` in
+#      prisma/schema.prisma (datasource block)
+#   3. Set DATABASE_URL to a postgres connection string
+#   4. Regenerate the client:  bunx prisma generate
+#   5. Reset + apply:           bunx prisma migrate reset
+#      (or `prisma migrate deploy` on a fresh prod DB)

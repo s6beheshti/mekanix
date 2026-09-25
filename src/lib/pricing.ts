@@ -3,8 +3,20 @@
 // FinalPrice = Labor + Parts + Travel + Emergency - Discount
 //
 // All amounts are in IRR (Iranian Rial) minor units (toman × 10).
-// For now, we keep Float for backward compat with the existing schema
-// (PricingSnapshot.laborPrice, .total, etc. are Float columns).
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// Decimal-safe money math (v2.1)
+// ─────────────────────────────────────────────────────────────────────────────
+// Floating-point `number` arithmetic silently loses precision on money values
+// (e.g. `0.1 + 0.2 === 0.30000000000000004`). For a financial system that's a
+// bug waiting to happen — especially once percentages, taxes, and emergency
+// surcharges compose. So as of pricingVersion "2.1", every money-math
+// operation routes through `decimal.js` Decimal. We still convert to
+// `number` at the boundary (return type is `number`) so existing callers —
+// which expect `number` and persist into Prisma `Decimal` columns — don't
+// need to change. The rounding to integer IRR (no fractional unit) is done
+// via `Decimal.round()` BEFORE the `toNumber()` cast, so no precision is
+// lost in the conversion.
 //
 // Schema mapping (PricingSnapshot Prisma model):
 //   servicePrice  ← labor                (the package-derived service fee)
@@ -14,10 +26,11 @@
 //   discount      ← discount             (VIP or promo)
 //   taxRate       ← taxRate              (0.09 = 9% VAT)
 //   taxTotal      ← taxTotal
-//   total         ← total                (subtotal + taxTotal)
+//   total         ← total                (subtotal after discount + taxTotal)
 //   currency      ← currency             ("IRR")
-//   pricingVersion← pricingVersion      ("2.0")
+//   pricingVersion← pricingVersion      ("2.1" — bumped for Decimal-safe)
 
+import Decimal from "decimal.js";
 import { db } from "./db";
 
 export interface PricingInput {
@@ -37,6 +50,7 @@ export interface PricingBreakdown {
   travel: number;
   emergency: number;
   discount: number;
+  /** Subtotal BEFORE discount (= labor + parts + travel + emergency). */
   subtotal: number;
   taxRate: number;
   taxTotal: number;
@@ -54,8 +68,10 @@ export interface PricingBreakdown {
 }
 
 const DEFAULT_TAX_RATE = 0.09; // 9% VAT
+const EMERGENCY_MULTIPLIER = 1.5;
 
-// Region multipliers (Tehran = 1.0 base)
+// Region multipliers (Tehran = 1.0 base). Reserved for future region-based
+// pricing — currently not applied (see `void REGION_MULTIPLIERS` below).
 const REGION_MULTIPLIERS: Record<string, number> = {
   tehran: 1.0,
   karaj: 0.95,
@@ -66,7 +82,7 @@ const REGION_MULTIPLIERS: Record<string, number> = {
   other: 0.85,
 };
 
-// Vehicle type multipliers (heavy machinery costs more)
+// Vehicle type multipliers (heavy machinery costs more).
 const VEHICLE_TYPE_MULTIPLIERS: Record<string, number> = {
   CAR: 1.0,
   TRUCK: 1.5,
@@ -80,7 +96,12 @@ const VEHICLE_TYPE_MULTIPLIERS: Record<string, number> = {
   OTHER: 1.3,
 };
 
-const EMERGENCY_MULTIPLIER = 1.5;
+// IRR has no minor units — all money values are integers. Decimal.round()
+// yields a Decimal that exactly represents the rounded integer; toNumber()
+// then converts without precision loss.
+function round(dec: Decimal): number {
+  return dec.round().toNumber();
+}
 
 export async function calculatePrice(input: PricingInput): Promise<PricingBreakdown> {
   // Get package base price if provided. Today the package base price is
@@ -88,42 +109,63 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   // parts + travel. Phase 5 will fold it into the calculation (e.g. as a
   // pre-paid service credit) once the package redemption flow lands. Keeping
   // the fetch preserves the async contract callers will depend on.
-  let packageBasePrice = 0;
+  let packageBasePrice = new Decimal(0);
   if (input.packageId) {
     const pkg = await db.servicePackage.findUnique({ where: { id: input.packageId } });
-    packageBasePrice = pkg?.basePrice != null ? Number(pkg.basePrice) : 0;
+    if (pkg?.basePrice != null) {
+      packageBasePrice = new Decimal(pkg.basePrice.toString());
+    }
   }
 
-  // Labor rate depends on vehicle type
+  // ── Labor ───────────────────────────────────────────────────────────────
+  // Labor rate depends on vehicle type (heavy machinery = higher rate).
+  //   baseLaborRate = 50,000 IRR/hour
+  //   laborRate    = baseLaborRate × vehicleMultiplier
+  //   labor        = laborRate × laborHours
   const vehicleMultiplier = VEHICLE_TYPE_MULTIPLIERS[input.vehicleType] ?? 1.3;
-  const baseLaborRate = 50000; // 50,000 IRR/hour base
-  const laborRate = baseLaborRate * vehicleMultiplier;
-  const labor = laborRate * input.laborHours;
+  const baseLaborRate = new Decimal(50000);
+  const laborRate = baseLaborRate.mul(vehicleMultiplier);
+  const labor = laborRate.mul(input.laborHours);
 
-  // Parts cost (from input)
-  const parts = input.partsCost;
+  // ── Parts ───────────────────────────────────────────────────────────────
+  const parts = new Decimal(input.partsCost);
 
-  // Travel fee: base + per-km
-  const baseTravelFee = 15000;
-  const perKmRate = 2000;
-  const travel = baseTravelFee + input.travelDistanceKm * perKmRate;
+  // ── Travel ─────────────────────────────────────────────────────────────
+  //   baseTravelFee = 15,000 IRR (on-site visit fee)
+  //   perKmRate     = 2,000 IRR/km
+  //   travel        = baseTravelFee + perKmRate × travelDistanceKm
+  const baseTravelFee = new Decimal(15000);
+  const perKmRate = new Decimal(2000);
+  const travel = baseTravelFee.add(perKmRate.mul(input.travelDistanceKm));
 
-  // Emergency surcharge
-  const emergency = input.isEmergency ? (labor + parts + travel) * (EMERGENCY_MULTIPLIER - 1) : 0;
+  // ── Emergency surcharge ─────────────────────────────────────────────────
+  //   emergency = (labor + parts + travel) × (EMERGENCY_MULTIPLIER − 1)
+  //            = preDiscount × 0.5   (when isEmergency=true)
+  const preDiscount = labor.add(parts).add(travel);
+  const emergency = input.isEmergency
+    ? preDiscount.mul(EMERGENCY_MULTIPLIER - 1)
+    : new Decimal(0);
 
-  // VIP discount
+  // ── Subtotal (before discount) ──────────────────────────────────────────
+  //   subtotal = preDiscount + emergency
+  // Note: `subtotal` in the returned object is the PRE-DISCOUNT subtotal.
+  // The post-discount subtotal (= subtotal − discount) is implicit in
+  // `total − taxTotal`.
+  const subtotal = preDiscount.add(emergency);
+
+  // ── Discount (VIP or promo) ─────────────────────────────────────────────
+  //   discount = subtotal × vipPercent / 100
   const vipPercent = input.vipDiscountPercent ?? 0;
-  const preDiscount = labor + parts + travel + emergency;
-  const discount = preDiscount * (vipPercent / 100);
+  const discount = subtotal.mul(vipPercent).div(100);
 
-  // Subtotal
-  const subtotal = preDiscount - discount;
+  // ── After-discount subtotal ─────────────────────────────────────────────
+  const afterDiscount = subtotal.sub(discount);
 
-  // Tax
-  const taxTotal = subtotal * DEFAULT_TAX_RATE;
+  // ── Tax (9% VAT on the after-discount subtotal) ────────────────────────
+  const taxTotal = afterDiscount.mul(DEFAULT_TAX_RATE);
 
-  // Total
-  const total = subtotal + taxTotal;
+  // ── Total = afterDiscount + taxTotal ────────────────────────────────────
+  const total = afterDiscount.add(taxTotal);
 
   // Region multiplier is reserved for future region-based pricing — keep it
   // in the input contract so callers don't need to change shape when we
@@ -134,21 +176,21 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   void input.region;
 
   return {
-    labor: Math.round(labor),
-    parts: Math.round(parts),
-    travel: Math.round(travel),
-    emergency: Math.round(emergency),
-    discount: Math.round(discount),
-    subtotal: Math.round(subtotal),
+    labor: round(labor),
+    parts: round(parts),
+    travel: round(travel),
+    emergency: round(emergency),
+    discount: round(discount),
+    subtotal: round(subtotal),
     taxRate: DEFAULT_TAX_RATE,
-    taxTotal: Math.round(taxTotal),
-    total: Math.round(total),
+    taxTotal: round(taxTotal),
+    total: round(total),
     currency: "IRR",
-    pricingVersion: "2.0",
+    pricingVersion: "2.1", // Bumped for Decimal-safe arithmetic
     breakdown: {
-      laborRate,
+      laborRate: laborRate.toNumber(),
       laborHours: input.laborHours,
-      travelRate: perKmRate,
+      travelRate: perKmRate.toNumber(),
       travelDistanceKm: input.travelDistanceKm,
       emergencyMultiplier: input.isEmergency ? EMERGENCY_MULTIPLIER : 1,
       vipDiscountPercent: vipPercent,
@@ -156,8 +198,17 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   };
 }
 
-// Create a pricing snapshot (frozen at booking time)
-export async function createPricingSnapshot(bookingId: string, pricing: PricingBreakdown): Promise<string> {
+// Create a pricing snapshot (frozen at booking time).
+//
+// The snapshot persists the breakdown as immutable `Decimal` columns on
+// PricingSnapshot (see prisma/schema.prisma §PricingSnapshot). Prisma accepts
+// either a `number`, a `string`, or a `Decimal` for Decimal columns — we pass
+// `number` here for simplicity, since calculatePrice has already rounded to
+// integer IRR.
+export async function createPricingSnapshot(
+  bookingId: string,
+  pricing: PricingBreakdown
+): Promise<string> {
   const snapshot = await db.pricingSnapshot.create({
     data: {
       bookingId,
