@@ -37,7 +37,7 @@ export const options = {
 };
 
 // Test scenario
-export default function () {
+export default function loadTest() {
   // 1. Test home page
   const homeRes = http.get(`${BASE_URL}/`);
   check(homeRes, { "home 200": (r) => r.status === 200 });
