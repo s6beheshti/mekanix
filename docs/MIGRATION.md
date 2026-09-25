@@ -9,7 +9,7 @@ This document covers the remaining architectural items for production deployment
 ### Current State
 - **Dev**: `prisma/schema.prisma` uses `provider = "sqlite"`
 - **Dev migrations**: `prisma/migrations/` (SQLite DDL)
-- **Production migrations**: `prisma/migrations/postgresql/` (PostgreSQL DDL)
+- **Production migrations**: `prisma/migrations-postgresql/` (PostgreSQL DDL)
 - **CI**: Tests against BOTH SQLite (ci.yml) AND PostgreSQL (postgresql-ci.yml)
 
 ### Switch to PostgreSQL
@@ -21,8 +21,8 @@ bash scripts/db-switch-provider.sh postgresql
 export DATABASE_URL=postgresql://user:pass@host:5432/mekanix
 
 # 3. Copy PostgreSQL migrations to the active directory
-cp prisma/migrations/postgresql/migration_lock.toml prisma/migrations/migration_lock.toml
-cp prisma/migrations/postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/migration.sql
+cp prisma/migrations-postgresql/migration_lock.toml prisma/migrations/migration_lock.toml
+cp prisma/migrations-postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/migration.sql
 
 # 4. Deploy migrations
 bun run db:migrate   # prisma migrate deploy

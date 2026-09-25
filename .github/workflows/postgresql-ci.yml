@@ -41,20 +41,16 @@ jobs:
       - name: Switch schema to PostgreSQL
         run: |
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
-          echo "Schema provider:"
-          grep "provider = " prisma/schema.prisma
       
       - name: Replace migrations with PostgreSQL versions
         run: |
-          # Remove SQLite migration directory
-          rm -rf prisma/migrations/20260925000000_init
-          # Copy PostgreSQL migration
+          rm -rf prisma/migrations
           mkdir -p prisma/migrations/20260925000000_init
-          cp prisma/migrations/postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/migration.sql
-          # Replace lock file
-          cp prisma/migrations/postgresql/migration_lock.toml prisma/migrations/migration_lock.toml
-          echo "Migration files:"
-          ls -la prisma/migrations/20260925000000_init/
+          cp prisma/migrations-postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/migration.sql
+          cp prisma/migrations-postgresql/migration_lock.toml prisma/migrations/migration_lock.toml
+          echo "Migrations structure:"
+          find prisma/migrations -type f
+          echo ""
           echo "Lock file:"
           cat prisma/migrations/migration_lock.toml
       
