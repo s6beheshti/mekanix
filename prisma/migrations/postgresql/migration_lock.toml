@@ -1,0 +1,4 @@
+# PostgreSQL migration lock
+# This migration history is for PostgreSQL only.
+# Do NOT use with SQLite — use prisma/migrations/ for SQLite.
+provider = "postgresql"
