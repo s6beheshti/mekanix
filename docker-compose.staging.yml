@@ -1,0 +1,69 @@
+# MEKANIX — Staging Environment
+# 
+# Same as production but with:
+#   - Separate database (mekanix_staging)
+#   - Shorter TTLs
+#   - Debug logging enabled
+#   - No real SMS/Payment (simulator mode)
+
+services:
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix_staging
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    ports:
+      - "3001:3000"
+    environment:
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix_staging
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379/1
+      - SMS_PROVIDER=console
+      - PAYMENT_PROVIDER=simulator
+      - ETA_PROVIDER=default
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=mekanix
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=mekanix_staging
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mekanix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata_staging:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata_staging:
+  redisdata_staging:

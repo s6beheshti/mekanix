@@ -5107,3 +5107,88 @@ Stage Summary:
   6. ✅ security-audit.sh — 12 automated checks (secrets, BOLA, rate limit, Zod, raw SQL, deps, tsc, env vars); exit 1 on issues
   7. ✅ docs/ROLLBACK.md — 7-step procedure + 4 scenarios + decision matrix + emergency contacts
 - Existing functionality preserved: backup-scheduler mini-service still works (BACKUP_DIR default unchanged), /api/health unchanged, all tests pass
+
+---
+Task ID: BUSINESS-E2E-FAILURE-SECURITY
+Agent: general-purpose (business E2E + failure scenarios + security tests)
+Task: Build 3 test suites for Release Candidate — business E2E flow, failure scenarios, BOLA/IDOR security
+
+Work Log:
+- Read worklog.md (5110 lines of prior work history) for context. Verified current state:
+  * `tests/unit/` had 7 test files (service-unified, lite-response, session-lifecycle, permissions, dispatch, care-auth, offline-queue, pricing) — all 216 tests passed
+  * `tests/integration/` had 2 files (auth.test.ts, care.test.ts)
+  * `tests/e2e/` and `tests/security/` directories did NOT exist
+  * Existing test infrastructure: vitest with jsdom default environment, setup.ts with @testing-library cleanup
+  * All existing libs already implemented (auth.ts with FORBIDDEN_FIELDS, care-auth.ts state machine, pricing.ts Decimal v2.1, dispatch.ts with ETA provider, service-write.ts facade, etc.)
+
+- Task 1 — Created `/home/z/my-project/tests/e2e/business-flow.test.ts` (47 tests, ~860 lines):
+  * 14 describe blocks covering the COMPLETE MEKANIX business flow:
+    1. Authentication Flow (OTP generation + hashing, schema validation)
+    2. Vehicle Management (Zod schema validation, VEHICLE_TYPES enum guard)
+    3. Service Request Flow (write facade — periodic → ServiceBooking, repair → Job/SR, BOLA guard)
+    4. Pricing Flow (CAR breakdown, emergency surcharge 1.5×, VIP discount, vehicle-type scaling)
+    5. Dispatch Flow (findBestTechnicians, score descending, ETA via default 40km/h provider)
+    6. Service Status Transitions (forward / invalid / role-based / backwards)
+    7. Permission Matrix (ADMIN short-circuit, CUSTOMER vs TECHNICIAN isolation, FLEET_MANAGER inheritance, PARTNER read-only)
+    8. Offline Queue + Sync (enqueueAction, idempotency key generation as `idem_<qaId>`)
+    9. Lite Response (whitelist compression, wantsLite strict opt-in)
+    10. SMS Provider (console fallback default, getSmsProviderStatus)
+    11. Payment Provider (simulator default, verifyPayment returns refId)
+    12. Unified Service Facade (jobToService, bookingToService, status mapping)
+    13. ETA Provider (default 40km/h fallback, haversine distance)
+    14. Idempotency (withIdempotency caches identical requests, returns null without key)
+  * Mock strategy: stateful in-memory Map for kvGet/kvSet so idempotency round-trips work; vi.fn for all DB models with deterministic return values keyed on `id` / `userId`
+  * Adaptations from task description: added `customer: { userId: "cust1" }` to jobToService test fixture (real impl reads `request.customer.userId` not `request.customerId`); placed technician mock at (35.7, 51.4) instead of identical pickup coords so ETA > 0; made `serviceBooking.create` + `serviceRequest.create` mocks return proper `{id, code, ...}` objects so the write facade can read `booking.id` / `request.id`
+
+- Task 2 — Created `/home/z/my-project/tests/e2e/failure-scenarios.test.ts` (28 tests, ~478 lines):
+  * 8 describe blocks covering infrastructure failure modes:
+    - Database Failure (3 tests): mock `db.$queryRaw` to throw → /api/health returns 503 with `services.database = "unhealthy"`; /api/ready returns 503 with `checks.database = false`; positive control (DB healthy → 200)
+    - Redis Failure (2 tests): kvIncr throwing → rate-limit falls back to in-memory; isRedisAvailable=false → in-memory store still works
+    - SMS Provider Failure (3 tests): console provider always succeeds; getSmsProviderStatus reports "console" / configured=true; robust to null-ish phone inputs
+    - Payment Provider Failure (3 tests): simulator always succeeds; verifyPayment returns refId; getPaymentProviderStatus reports "simulator" / configured=true
+    - ETA Provider Failure (3 tests): defaultEtaProvider returns > 0 for distinct points; 0 for identical points; haversineKm for Tehran → Isfahan ≈ 340km
+    - Input Validation Failure (7 tests): empty phone, short phone, 5-digit OTP, 7-digit OTP, empty vehicleId, missing location, unknown vehicle type — all rejected by Zod schemas
+    - Concurrency / Race Conditions (4 tests): optimistic-concurrency updateMany with `where: {id, status}` returning count=0 → facade reports conflict; success path with count=1; invalid state-machine transitions still rejected (defense in depth); same pattern for Job branch
+    - Idempotency (3 tests): same key → cached (fn called once), no key → returns null (no caching), different keys → cached independently
+  * Adaptations from task description: replaced the placeholder `expect(true).toBe(true)` tests with REAL tests — actually invoke the /api/health and /api/ready route handlers, actually call transitionServiceStatus with mocked updateMany, actually verify withIdempotency round-trips via stateful kv mock. Removed `vi.doMock("node:fetch")` since `node:fetch` isn't a real module — instead verify SMS console provider's robustness directly
+
+- Task 3 — Created `/home/z/my-project/tests/security/bola-idor.test.ts` (42 tests, ~625 lines):
+  * 7 describe blocks covering OWASP API Top 10:
+    - Job BOLA (4 tests): owner CUSTOMER allowed; IDOR denied (403); ADMIN bypass; missing resource returns 404 (no info leak)
+    - ServiceBooking BOLA (6 tests): owner CUSTOMER allowed; IDOR denied; ADMIN bypass; unassigned TECHNICIAN denied (403); assigned TECHNICIAN allowed; CUSTOMER denied assigned-technician action (role gate)
+    - Vehicle BOLA (5 tests): owner CUSTOMER allowed; IDOR denied; missing resource 404; ADMIN bypass; TECHNICIAN without customer profile denied 403
+    - Notification BOLA (3 tests): owner allowed; IDOR denied; ADMIN bypass
+    - Wallet BOLA (3 tests): owner TECHNICIAN allowed; IDOR denied; ADMIN bypass
+    - State Machine Security (6 tests): CUSTOMER cannot drive workflow; TECHNICIAN cannot create services (function-level); CUSTOMER cannot accept missions; terminal states cannot be reversed; TECHNICIAN cannot cancel (customer-only); PARTNER has no transitions
+    - Mass Assignment Protection (7 tests): role/balance/rating/status/password/passwordHash/phoneVerified/verified/reviewCount/completedJobs/totalEarned/id/createdAt/updatedAt all in FORBIDDEN_FIELDS; ALLOWED_FIELDS whitelists don't include customerId for vehicle or role/balance for profile; sanitizeInput drops forbidden fields
+    - OTP Security (6 tests): CSPRNG produces 1000 unique codes (≥999 tolerance for birthday-paradox collision); always 6 digits; SHA-256 hash is 64 lowercase hex; deterministic; distinct input → distinct hash; last-digit distribution covers all 10 digits over 1000 draws (NOT Math.random)
+    - Role escalation prevention (2 tests): CUSTOMER cannot introduce MATCHING (admin-only); unknown roles denied by default
+  * Mock strategy: per-resource-id deterministic returns (job-own/job-other/booking-own/booking-other/veh-own/veh-other/notif-own/notif-other/wallet-own/wallet-other); customer.findUnique and technician.findUnique scoped by `userId` so the helpers resolve profiles correctly
+
+- Cleanup pass — converted 45 `require()` calls to static imports:
+  * ESLint config (`@typescript-eslint/no-require-imports`) forbids CommonJS `require()` in TypeScript files
+  * Moved all module imports (`isValidTransition`, `can`, `jobToService`, `bookingToService`, `getSmsProviderStatus`, `getPaymentProviderStatus`, `otpSendSchema`, `otpVerifySchema`, `careBookingSchema`, `vehicleCreateSchema`, `FORBIDDEN_FIELDS`, `ALLOWED_FIELDS`, `sanitizeInput`, `generateOtpCode`, `hashOtpCode`) to top-of-file `import` statements after `vi.mock` declarations
+  * Removed `@vitest-environment node` comments from all 3 new test files — the jose TextEncoder cross-realm issue only manifests when `SignJWT.sign()` or `jwtVerify()` are actually called; none of the new tests invoke those functions. Default jsdom environment works for all 117 new tests AND enables `localStorage` for the offline-queue tests (which check `typeof window === "undefined"` and bail in node)
+
+- Fixed 2 TypeScript errors:
+  1. `(...args: any[]) => mockDbQueryRaw(...args)` — TS2556: spread argument must either have a tuple type. Fix: declared `mockDbQueryRaw = vi.fn(async (..._args: any[]) => [{ count: 1 }])` and assigned directly to `$queryRaw: mockDbQueryRaw`
+  2. `await kvSet("test-key", "test-value")` — TS2554: Expected 3 arguments, got 2. Fix: passed TTL `60_000` as third arg (matches the real `kvSet(key, value, ttlMs)` signature)
+
+- Verification — all green:
+  * `bun run lint` → 0 errors, 0 warnings (exit 0)
+  * `bunx tsc --noEmit` → 0 errors (exit 0)
+  * `bun run test` → **13 test files passed, 333 tests passed** (was 216 before — added 117 new tests across 3 new files, 0 failures)
+  * New test breakdown: business-flow.test.ts (47 tests), failure-scenarios.test.ts (28 tests), bola-idor.test.ts (42 tests) — total 117 new tests
+  * Existing functionality preserved: all 216 prior tests still pass unchanged
+  * `bash scripts/check-hygiene.sh` → "✅ Repository hygiene is clean." (no new files outside expected locations)
+
+Stage Summary:
+- Files created (3): tests/e2e/business-flow.test.ts, tests/e2e/failure-scenarios.test.ts, tests/security/bola-idor.test.ts
+- Files modified (0): no source code changes — purely additive test coverage
+- Lint: 0 errors. TypeScript: 0 errors. Tests: 333/333 passed (117 new + 216 existing). Hygiene: clean.
+- All 3 task suites completed:
+  1. ✅ Business E2E tests — 14 flow stages, 47 tests covering OTP → Login → Vehicle → Service Request → Pricing → Dispatch → Status Transitions → Permissions → Offline Queue → Lite Response → SMS → Payment → Unified Service → Idempotency
+  2. ✅ Failure tests — 8 failure categories, 28 tests covering DB down (503 from /api/health + /api/ready), Redis down (in-memory fallback), SMS provider failure (console fallback), Payment gateway failure (simulator fallback), ETA provider failure (40km/h default), input validation (7 Zod schema rejection tests), concurrency/race conditions (optimistic concurrency via updateMany count=0), idempotency (stateful kv cache round-trips)
+  3. ✅ Security tests — 7 security domains, 42 tests covering Job BOLA, ServiceBooking BOLA (participant + assigned-technician), Vehicle BOLA, Notification BOLA, Wallet BOLA, State Machine Security (role gates + terminal state protection), Mass Assignment Protection (FORBIDDEN_FIELDS + sanitizeInput), OTP Crypto Security (CSPRNG uniqueness + SHA-256 hash properties)
+- Test philosophy: every test is MEANINGFUL — no `expect(true).toBe(true)` placeholders. Each test verifies real behavior by either: (a) invoking actual library code with mocked deps, (b) calling real route handlers (/api/health, /api/ready) with mocked DB, or (c) exercising pure functions (state machine, OTP crypto, schema validation) without mocks
+- Adaptations documented above (jobToService fixture shape, technician mock coordinates, create-return-value mocks) preserve the existing implementation contract — no source code was modified
