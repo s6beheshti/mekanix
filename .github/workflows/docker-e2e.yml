@@ -11,6 +11,9 @@ jobs:
     name: Docker Build + Compose + Health
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      DB_PASSWORD: test_password
+      JWT_SECRET: test_secret_for_ci
     
     steps:
       - uses: actions/checkout@v4
@@ -20,13 +23,11 @@ jobs:
       
       - name: Prepare build context with PostgreSQL migrations
         run: |
-          # Create a temporary build context (like deploy.sh does)
           mkdir -p /tmp/mekanix-build
           rsync -a --exclude='node_modules' --exclude='.next' --exclude='.git' \
             --exclude='db/*.db' --exclude='*.log' \
             ./ /tmp/mekanix-build/
           
-          # Replace SQLite migrations with PostgreSQL
           rm -rf /tmp/mekanix-build/prisma/migrations
           mkdir -p /tmp/mekanix-build/prisma/migrations/20260925000000_init
           cp prisma/migrations-postgresql/20260925000000_init/migration.sql \
@@ -34,11 +35,9 @@ jobs:
           cp prisma/migrations-postgresql/migration_lock.toml \
              /tmp/mekanix-build/prisma/migrations/
           
-          # Switch schema to PostgreSQL
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
             /tmp/mekanix-build/prisma/schema.prisma
           
-          # Copy docker-compose.yml to build context
           cp docker-compose.yml /tmp/mekanix-build/
           cp Dockerfile /tmp/mekanix-build/
           
@@ -52,9 +51,9 @@ jobs:
       - name: Start Docker Compose stack
         run: |
           cd /tmp/mekanix-build
-          export DB_PASSWORD=test_password
-          export JWT_SECRET=test_secret_for_ci
           docker compose up -d
+          # Show running containers
+          docker compose ps
       
       - name: Wait for health check
         run: |
@@ -66,16 +65,21 @@ jobs:
               echo "$HEALTH" | python3 -m json.tool
               exit 0
             fi
+            # Check if app container is still running
+            if ! docker compose -f /tmp/mekanix-build/docker-compose.yml ps app | grep -q "Up\|running"; then
+              echo "❌ App container stopped!"
+              docker compose -f /tmp/mekanix-build/docker-compose.yml logs app
+              exit 1
+            fi
             echo "  Waiting... ($i/60)"
             sleep 2
           done
           echo "❌ App did not become healthy"
-          docker compose logs
+          docker compose -f /tmp/mekanix-build/docker-compose.yml logs
           exit 1
       
       - name: Verify database is PostgreSQL
         run: |
-          # Check that the app is actually connected to PostgreSQL (not SQLite)
           HEALTH=$(curl -s http://localhost:3000/api/health)
           echo "$HEALTH" | python3 -c "
           import json, sys
@@ -85,26 +89,27 @@ jobs:
           print(f'✅ Database: {db_status}')
           "
       
-      - name: Test OTP flow (integration)
+      - name: Test OTP flow
         run: |
-          # Send OTP
           SEND_RESP=$(curl -s -X POST http://localhost:3000/api/auth/otp/send \
             -H "Content-Type: application/json" \
             -d '{"phone":"+989121234567"}')
-          echo "Send: $SEND_RESP"
-          
-          CODE=$(echo "$SEND_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('code',''))" 2>/dev/null || echo "")
-          if [ -z "$CODE" ]; then
-            echo "⚠️  No code returned (production mode — expected)"
-            echo "✅ OTP send works (no code in production response)"
-          else
-            echo "✅ OTP code: $CODE (dev mode)"
-          fi
+          echo "OTP send response: $SEND_RESP"
+          echo "$SEND_RESP" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d.get('ok') == True, f'OTP send failed: {d}'
+          print('✅ OTP send works')
+          "
       
-      - name: Check container logs
+      - name: Container logs (on failure)
         if: always()
-        run: docker compose logs --tail=50
+        run: |
+          cd /tmp/mekanix-build
+          docker compose logs --tail=100 || true
       
       - name: Stop containers
         if: always()
-        run: docker compose down -v
+        run: |
+          cd /tmp/mekanix-build
+          docker compose down -v || true
