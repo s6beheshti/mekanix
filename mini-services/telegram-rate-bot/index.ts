@@ -78,7 +78,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
     if (
       quote &&
       Number.isSafeInteger(quote.rate) &&
-      quote.rate >= 100_000 &&
+      quote.rate >= 1_000_000 &&
       quote.rate <= 100_000_000
     ) {
       const quotedAt = quote.postedAt;
