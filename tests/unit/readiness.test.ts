@@ -60,6 +60,27 @@ describe("production readiness URL and deployment mode", () => {
     expect(body.checks.paymentCallbackUrl).toBe(true);
   });
 
+  it("rejects weak PostgreSQL credentials in production", async () => {
+    vi.stubEnv("DATABASE_URL", "postgresql://mekanix:short@localhost:5432/mekanix");
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.databaseProvider).toBe(false);
+  });
+
+  it("rejects a weak Redis password even when Redis responds", async () => {
+    vi.stubEnv("REDIS_URL", "redis://:short@localhost:6379/0");
+    redisAvailable.mockResolvedValue(true);
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.redis).toBe(false);
+  });
+
   it("requires live Redis in staging instead of accepting in-memory fallback", async () => {
     vi.stubEnv("DEPLOYMENT_ENV", "staging");
     redisAvailable.mockResolvedValue(false);
