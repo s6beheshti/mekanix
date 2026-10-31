@@ -66,7 +66,7 @@ docker compose -f docker-compose.staging.yml up -d --build
 
 echo "⏳ Waiting for staging readiness..."
 for i in $(seq 1 90); do
-  READY_JSON="$(curl -fsS http://localhost:3001/api/ready 2>/dev/null || echo '{}')"
+  READY_JSON="$(curl -sS http://localhost:3001/api/ready 2>/dev/null || echo '{}')"
   if echo "$READY_JSON" | grep -q '"ok":true'; then
     echo "✅ Staging is ready!"
     echo ""
