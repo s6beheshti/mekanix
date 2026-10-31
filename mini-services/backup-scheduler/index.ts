@@ -76,11 +76,12 @@ async function runBackup(reason: "startup" | "scheduled" | "manual") {
       cwd: "/app",
       env: process.env,
     });
+    const output = typeof stdout === "string" ? stdout : stdout.toString("utf8");
     lastBackupAt = new Date().toISOString();
     lastBackupOk = true;
     lastBackupError = null;
-    console.log(`[${lastBackupAt}] Backup ${reason} succeeded: ${stdout.trim()}`);
-    return stdout.trim();
+    console.log(`[${lastBackupAt}] Backup ${reason} succeeded: ${output.trim()}`);
+    return output.trim();
   } catch (error) {
     lastBackupAt = new Date().toISOString();
     lastBackupOk = false;
