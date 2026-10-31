@@ -275,7 +275,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
         const heavy = machineType !== "CAR";
         const inspectionFee = heavy ? (job.technician as any).inspectionFeeHeavy ?? 20 : (job.technician as any).inspectionFee ?? 7;
         const travelFee = (job.technician as any).travelFeeBase ?? 3;
-        const total = inspectionFee + travelFee;
+        const total = Math.round((inspectionFee + travelFee) * 100) / 100;
         return (
           <PaymentGatewayDialog
             open={prepayOpen}
