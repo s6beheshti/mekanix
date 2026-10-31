@@ -4,6 +4,7 @@ import { parseTelegramUsdIrrRate } from "../../src/lib/rate-parser";
 
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
+const rateUnit = process.env.TELEGRAM_RATE_UNIT === "rial" ? "rial" : "toman";
 const port = Number(process.env.PORT || 3004);
 const pollIntervalMs = Math.max(30_000, Number(process.env.POLL_INTERVAL_MS || 60_000));
 
@@ -11,7 +12,7 @@ const server = Bun.serve({
   port,
   async fetch(req) {
     const url = new URL(req.url);
-    if (url.pathname === "/health") return Response.json({ ok: true, channel, port });
+    if (url.pathname === "/health") return Response.json({ ok: true, channel, rateUnit, port });
     if (url.pathname === "/ready") {
       const [rateSetting, sourceSetting] = await Promise.all([
         db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } }),
@@ -35,7 +36,7 @@ const server = Bun.serve({
     }
     if (url.pathname === "/fetch-now") {
       const rate = await fetchAndStoreRate();
-      return Response.json({ rate, channel, fetchedAt: new Date().toISOString() });
+      return Response.json({ rate, channel, rateUnit, fetchedAt: new Date().toISOString() });
     }
     if (url.pathname === "/latest") {
       const setting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } });
@@ -64,7 +65,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
       return await fetchFallbackApi();
     }
     const html = await res.text();
-    const rate = parseTelegramUsdIrrRate(html);
+    const rate = parseTelegramUsdIrrRate(html, rateUnit);
     if (rate && Number.isSafeInteger(rate) && rate >= 1_000_000 && rate <= 100_000_000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
