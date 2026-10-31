@@ -38,6 +38,29 @@ function listBackups() {
     .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
 }
 
+async function sendBackupFailureAlert(message: string, timestamp: string) {
+  const webhook = process.env.BACKUP_ALERT_WEBHOOK_URL;
+  if (!webhook) return;
+  try {
+    const target = new URL(webhook);
+    if (target.protocol !== "https:") throw new Error("Backup alert webhook must use HTTPS");
+    const response = await fetch(target, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        service: "mekanix-backup-scheduler",
+        status: "failed",
+        timestamp,
+        text: message,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`Alert webhook returned HTTP ${response.status}`);
+  } catch (error) {
+    console.error("Backup failure alert could not be delivered:", error);
+  }
+}
+
 function runBackup(reason: "startup" | "scheduled" | "manual") {
   if (!existsSync(BACKUP_SCRIPT)) throw new Error(`Backup script not found: ${BACKUP_SCRIPT}`);
   try {
@@ -57,6 +80,7 @@ function runBackup(reason: "startup" | "scheduled" | "manual") {
     lastBackupOk = false;
     lastBackupError = error instanceof Error ? error.message : String(error);
     console.error(`[${lastBackupAt}] Backup ${reason} failed: ${lastBackupError}`);
+    void sendBackupFailureAlert(lastBackupError, lastBackupAt);
     throw error;
   }
 }
