@@ -12,6 +12,7 @@ import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { parseMedia } from "@/lib/format";
+import { PaymentGatewayDialog } from "@/components/mek/shared/payment-gateway";
 
 export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
@@ -20,6 +21,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [gatewayOpen, setGatewayOpen] = useState(false);
 
   useEffect(() => {
     if (!params.jobId) return;
@@ -34,15 +36,13 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
     if (!invoice) return;
     setPaying(true);
     try {
-      // approve first (if waiting)
+      // Approve the completed work first, then ask the customer to confirm
+      // the server-calculated IRR amount in the hosted payment dialog.
       if (job && !job.customerApproved && job.status === "WAITING_APPROVAL") {
         const updated = await api.updateJobStatus(job.id, job.status, { customerApproved: true });
         setJob(updated);
       }
-      const pay = await api.payInvoice(invoice.id);
-      if (!pay.paymentUrl) throw new Error(t("pay.failed"));
-      toast.message(isFa ? "در حال انتقال به درگاه بانکی..." : "Redirecting to the bank gateway...");
-      window.location.assign(pay.paymentUrl);
+      setGatewayOpen(true);
     } catch (e: any) {
       toast.error(e.message ?? t("pay.failed"));
     } finally {
@@ -180,6 +180,17 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
             {t("pay.approveAndPay")} {money(Number(invoice.total))}
           </Button>
         </div>
+      )}
+
+      {invoice && (
+        <PaymentGatewayDialog
+          open={gatewayOpen}
+          onOpenChange={setGatewayOpen}
+          amount={Number(invoice.total)}
+          purpose="invoice"
+          invoiceId={invoice.id}
+          description={t("invoice.total")}
+        />
       )}
 
       {invoice?.status === "PAID" && (
