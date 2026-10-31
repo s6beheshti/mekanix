@@ -83,6 +83,8 @@ jobs:
           assert d.get('ok') is True, f'Application is not ready: {d}'
           assert d['checks']['database'] is True
           assert d['checks']['migrationsApplied'] is True
+          assert d['checks']['redis'] is True
+          assert d['checks']['jwtSecret'] is True
           assert d['checks']['paymentCallbackUrl'] is True
           print('✅ Application readiness checks passed')
           "
