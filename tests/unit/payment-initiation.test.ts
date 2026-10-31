@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   rateLimitAsync: vi.fn(),
   getClientId: vi.fn(),
   getPaymentProviderStatus: vi.fn(),
+  getUsdIrrRateSnapshot: vi.fn(),
   createPayment: vi.fn(),
   db: {
     user: { findUnique: vi.fn() },
@@ -27,6 +28,9 @@ vi.mock("@/lib/payment-provider", () => ({
   getPaymentProviderStatus: mocks.getPaymentProviderStatus,
   createPayment: mocks.createPayment,
 }));
+vi.mock("@/lib/exchange-rate", () => ({
+  getUsdIrrRateSnapshot: mocks.getUsdIrrRateSnapshot,
+}));
 
 describe("payment initiation server-side authority", () => {
   beforeEach(() => {
@@ -39,11 +43,21 @@ describe("payment initiation server-side authority", () => {
     mocks.rateLimitAsync.mockResolvedValue({ success: true, resetMs: 60_000 });
     mocks.getClientId.mockReturnValue("127.0.0.1");
     mocks.getPaymentProviderStatus.mockReturnValue({ configured: true, provider: "simulator" });
+    mocks.getUsdIrrRateSnapshot.mockResolvedValue({
+      rate: 12_000_000,
+      baseRate: 12_000_000,
+      multiplier: 1,
+      source: "telegram",
+      fetchedAt: Date.now(),
+      rateUpdatedAt: Date.now(),
+      ageMs: 0,
+      trustedForPayments: true,
+    });
     mocks.db.user.findUnique.mockResolvedValue({ id: "customer-1", phone: "09120000000" });
     mocks.db.vipPlan.findFirst.mockResolvedValue({
       id: "plan-1",
       active: true,
-      priceUsd: 125_000,
+      priceUsd: 9,
       durationDays: 365,
       name: "سالانه",
     });
@@ -87,17 +101,17 @@ describe("payment initiation server-side authority", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.amount).toBe(125_000);
+    expect(body.amount).toBe(108_000_000);
     expect(mocks.db.payment.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "customer-1",
-        amount: 125_000,
+        amount: 9,
         status: "PENDING",
         method: "gateway_pending",
       }),
     });
     expect(mocks.createPayment).toHaveBeenCalledWith(expect.objectContaining({
-      amount: 125_000,
+      amount: 108_000_000,
       orderId: body.code,
       mobile: "09120000000",
     }));
@@ -106,10 +120,32 @@ describe("payment initiation server-side authority", () => {
         userId: "customer-1",
         purpose: "vip",
         status: "INITIATED",
-        amount: 125_000,
+        amount: 108_000_000,
         paymentId: "payment-1",
       }),
     });
+  });
+
+  it("fails closed in production when the exchange-rate snapshot is stale", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://mekanix.ir");
+    mocks.getUsdIrrRateSnapshot.mockResolvedValue({
+      rate: 12_000_000,
+      baseRate: 12_000_000,
+      multiplier: 1,
+      source: "telegram",
+      fetchedAt: Date.now(),
+      rateUpdatedAt: Date.now() - 60 * 60 * 1000,
+      ageMs: 60 * 60 * 1000,
+      trustedForPayments: false,
+    });
+
+    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+
+    expect(response.status).toBe(503);
+    expect(mocks.db.userVipSubscription.create).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 
   it("refuses production payment initiation when APP_URL is private", async () => {
@@ -203,9 +239,9 @@ describe("payment initiation server-side authority", () => {
         vehicle: { type: "EXCAVATOR" },
       },
       technician: {
-        inspectionFeeHeavy: 25_000,
-        inspectionFee: 7_000,
-        travelFeeBase: 5_000,
+        inspectionFeeHeavy: 25,
+        inspectionFee: 7,
+        travelFeeBase: 5,
       },
     });
 
@@ -219,12 +255,12 @@ describe("payment initiation server-side authority", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.amount).toBe(30_000);
-    expect(mocks.createPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 30_000 }));
+    expect(body.amount).toBe(360_000_000);
+    expect(mocks.createPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 360_000_000 }));
     expect(mocks.db.paymentGatewayLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         purpose: "prepay",
-        amount: 30_000,
+        amount: 360_000_000,
         description: expect.stringContaining('"jobId":"job-1"'),
       }),
     });
@@ -248,12 +284,12 @@ describe("payment initiation server-side authority", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.amount).toBe(150_000);
+    expect(body.amount).toBe(1_800_000_000);
     expect(mocks.db.payment.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         invoiceId: "invoice-1",
         userId: "customer-1",
-        amount: 150_000,
+        amount: 150,
       }),
     });
   });
