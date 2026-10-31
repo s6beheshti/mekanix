@@ -103,3 +103,6 @@
 - Load test execution (k6 script ready)
 - Playwright browser E2E
 - OWASP ZAP scan
+
+- Added production GPG-encrypted backup streaming, encrypted restore support, a private daily backup-scheduler service, and optional HTTPS failure alerts.
+- Enabled Redis AOF persistence in production/staging Compose, added configurable container memory/CPU ceilings, and propagated request IDs through the Next.js 16 proxy.
