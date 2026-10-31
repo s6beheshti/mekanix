@@ -1,5 +1,4 @@
 "use client";
-import { authFetch } from "@/lib/fetch-with-auth";
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -30,7 +29,6 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [prepayOpen, setPrepayOpen] = useState(false);
-  const [prepayBusy, setPrepayBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!params.jobId) return;
@@ -284,26 +282,8 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
             onOpenChange={(v) => { setPrepayOpen(v); if (!v) load(); }}
             amount={total}
             purpose="prepay"
+            jobId={job.id}
             description={t("fees.prepayTitle")}
-            onSuccess={async (_paymentId) => {
-              setPrepayBusy(true);
-              try {
-                const res = await authFetch("/api/prepay", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ jobId: job.id, method: "card" }),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error);
-                setJob(data.job);
-                toast.success(t("fees.prepayPaid"));
-                setPrepayOpen(false);
-              } catch (e: any) {
-                toast.error(e.message ?? t("pay.gateway.failed"));
-              } finally {
-                setPrepayBusy(false);
-              }
-            }}
           />
         );
       })()}
