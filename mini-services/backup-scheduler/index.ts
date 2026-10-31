@@ -11,6 +11,13 @@ const BACKUP_SCRIPT = process.env.BACKUP_SCRIPT ?? "/app/scripts/backup-db.sh";
 const BACKUP_DIR = process.env.BACKUP_DIR ?? "/backups";
 const BACKUP_ADMIN_TOKEN = process.env.BACKUP_ADMIN_TOKEN ?? "";
 
+if (!Number.isSafeInteger(PORT) || PORT < 1 || PORT > 65_535) {
+  throw new Error("PORT must be an integer between 1 and 65535");
+}
+if (!Number.isSafeInteger(BACKUP_INTERVAL_MS) || BACKUP_INTERVAL_MS < 60_000) {
+  throw new Error("BACKUP_INTERVAL_MS must be an integer of at least 60000");
+}
+
 let lastBackupAt: string | null = null;
 let lastBackupOk: boolean | null = null;
 let lastBackupError: string | null = null;
