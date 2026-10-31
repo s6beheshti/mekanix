@@ -6,7 +6,7 @@ import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider"
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 
 type PaymentMetadata =
-  | { kind: "vip"; subscriptionId: string; planId: string }
+  | { kind: "vip"; subscriptionId: string; planId: string; durationDays: number; planName: string }
   | { kind: "invoice"; invoiceId: string }
   | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean };
 
@@ -68,7 +68,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       data: { userId: user.id, planId: plan.id, status: "PENDING_PAYMENT" },
     });
     pendingSubscriptionId = subscription.id;
-    metadata = { kind: "vip", subscriptionId: subscription.id, planId: plan.id };
+    metadata = { kind: "vip", subscriptionId: subscription.id, planId: plan.id, durationDays: plan.durationDays, planName: plan.name };
   } else if (body.purpose === "invoice" && typeof body.invoiceId === "string" && body.invoiceId.trim()) {
     const invoice = await db.invoice.findUnique({
       where: { id: body.invoiceId },
