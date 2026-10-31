@@ -33,6 +33,13 @@ export function PaymentGatewayDialog({
   const { t, isFa, money } = useT();
   const [processing, setProcessing] = useState(false);
   const [rateRevision, setRateRevision] = useState(0);
+  const [serverAmountUsd, setServerAmountUsd] = useState<number | null>(null);
+  const amountToDisplay = serverAmountUsd ?? amount;
+
+  const handleOpenChange = (value: boolean) => {
+    if (!value) setServerAmountUsd(null);
+    onOpenChange(value);
+  };
 
   const initiate = async () => {
     const reference =
@@ -50,11 +57,14 @@ export function PaymentGatewayDialog({
       const res = await authFetch("/api/gateway/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ purpose, ...reference, expectedAmountIrr: Math.round(amount * getUsdToIrrRate()) }),
+        body: JSON.stringify({ purpose, ...reference, expectedAmountIrr: Math.round(amountToDisplay * getUsdToIrrRate()) }),
       });
       const data = await res.json();
       if (data.code === "AMOUNT_CHANGED" && Number.isSafeInteger(data.exchangeRate)) {
         setUsdToIrrRate(data.exchangeRate);
+        if (typeof data.amountUsd === "number" && Number.isFinite(data.amountUsd) && data.amountUsd > 0) {
+          setServerAmountUsd(data.amountUsd);
+        }
         setRateRevision((current) => current + 1);
         toast.info(
           isFa
@@ -80,7 +90,7 @@ export function PaymentGatewayDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md" dir={isFa ? "rtl" : "ltr"}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
@@ -94,7 +104,7 @@ export function PaymentGatewayDialog({
 
         <div className="rounded-lg border border-amber/20 bg-amber/5 p-4">
           <p className="text-[11px] text-muted-foreground">{description ?? t("pay.gateway.title")}</p>
-          <p key={rateRevision} className="mt-1 font-display text-2xl font-bold text-amber">{money(amount)}</p>
+          <p key={rateRevision} className="mt-1 font-display text-2xl font-bold text-amber">{money(amountToDisplay)}</p>
         </div>
 
         <div className="flex items-start gap-2 rounded-lg border border-border p-3 text-xs text-muted-foreground">
@@ -108,7 +118,7 @@ export function PaymentGatewayDialog({
 
         <Button onClick={initiate} disabled={processing} className="w-full bg-amber text-black hover:bg-amber/90" size="lg">
           {processing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Lock className="mr-2 size-4" />}
-          {processing ? t("pay.gateway.processing") : t("pay.gateway.pay").replace("{amount}", money(amount))}
+          {processing ? t("pay.gateway.processing") : t("pay.gateway.pay").replace("{amount}", money(amountToDisplay))}
         </Button>
       </DialogContent>
     </Dialog>
