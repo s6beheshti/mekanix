@@ -1,16 +1,11 @@
-FROM node:20-slim
+FROM postgres:16-bookworm
 
-# Match the PostgreSQL 16 server version used by the production Compose stack.
+# Reuse the matching PostgreSQL 16 client from the base image; Bun runs the
+# scheduler while GPG encrypts backup streams before they reach the volume.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl gnupg bash gzip coreutils findutils \
-  && install -d /usr/share/keyrings \
-  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
-  && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client-16 \
+  && apt-get install -y --no-install-recommends npm gnupg bash gzip ca-certificates \
+  && npm install -g bun@1.4.4 \
   && rm -rf /var/lib/apt/lists/*
-
-RUN npm install -g bun@1.4.4
 
 WORKDIR /app
 
@@ -18,14 +13,14 @@ COPY mini-services/backup-scheduler/package.json ./package.json
 COPY mini-services/backup-scheduler/index.ts ./index.ts
 COPY scripts/backup-db.sh ./scripts/backup-db.sh
 
-RUN mkdir -p /backups && chown -R node:node /app /backups
+RUN mkdir -p /backups && chown -R postgres:postgres /app /backups
 
 ENV NODE_ENV=production
 ENV PORT=3005
 ENV BACKUP_DIR=/backups
 ENV BACKUP_SCRIPT=/app/scripts/backup-db.sh
 
-USER node
+USER postgres
 
 EXPOSE 3005
 
