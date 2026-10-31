@@ -438,6 +438,15 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 ---
 
+## Currency contract and payment-rate safety
+
+- VIP plan prices use `priceUsd`; technician rates/fees, invoice totals, wallet balances and `Payment.amount` are stored as USD base values for stable pricing.
+- Persian UI amounts are displayed in IRR using the exchange-rate snapshot returned by `/api/exchange-rate`.
+- `PaymentGatewayLog.amount` is the integer IRR amount sent to the bank and verified in the callback; `Payment.amount` remains the USD base amount used by the UI.
+- Payment initiation snapshots the rate, records the snapshot in gateway metadata, and compares the client-visible `expectedAmountIrr` with the server calculation. A mismatch returns HTTP 409 before payment reservation or bank redirect.
+- Live production payments require a fresh Telegram-sourced USD/IRR quote updated within 15 minutes, a valid multiplier (0.5–2), and a normalized Rial rate within the configured safety bounds. The internal display fallback is never accepted for real-money collection.
+- The Telegram collector normalizes Toman quotes to Rial, writes the source and timestamp to PostgreSQL, and exposes `/health` and `/ready`; production deployment readiness independently checks the same trusted-rate contract.
+
 ## Summary
 
 | Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial |
