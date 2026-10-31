@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider";
+import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 
 type PaymentMetadata =
   | { kind: "vip"; subscriptionId: string; planId: string }
@@ -20,6 +21,21 @@ export async function POST(req: Request) {
   if (session instanceof NextResponse) return session;
   if (session.role !== "CUSTOMER") {
     return NextResponse.json({ error: "فقط حساب مشتری امکان پرداخت دارد" }, { status: 403 });
+  }
+
+  const userLimit = await rateLimitAsync("payment:initiate:user:" + session.userId, 5, 60_000);
+  if (!userLimit.success) {
+    return NextResponse.json({ error: "تعداد درخواست‌های پرداخت بیش از حد مجاز است" }, {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(userLimit.resetMs / 1000)) },
+    });
+  }
+  const ipLimit = await rateLimitAsync("payment:initiate:ip:" + getClientId(req), 20, 60_000);
+  if (!ipLimit.success) {
+    return NextResponse.json({ error: "تعداد درخواست‌ها از این آدرس بیش از حد مجاز است" }, {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(ipLimit.resetMs / 1000)) },
+    });
   }
 
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
