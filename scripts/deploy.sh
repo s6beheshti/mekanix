@@ -46,6 +46,14 @@ if [ -n "${REDIS_PASSWORD:-}" ] && [ ${#REDIS_PASSWORD} -lt 24 ]; then
   echo "❌ REDIS_PASSWORD must contain at least 24 characters"
   MISSING=1
 fi
+if [ -n "${DB_PASSWORD:-}" ] && [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "❌ DB_PASSWORD must use URL-safe characters only (A-Z, a-z, 0-9, _ and -)"
+  MISSING=1
+fi
+if [ -n "${REDIS_PASSWORD:-}" ] && [[ ! "$REDIS_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "❌ REDIS_PASSWORD must use URL-safe characters only (A-Z, a-z, 0-9, _ and -)"
+  MISSING=1
+fi
 if [ -n "${APP_URL:-}" ] && [[ "$APP_URL" != https://* ]]; then
   echo "❌ APP_URL must start with https://"
   MISSING=1
