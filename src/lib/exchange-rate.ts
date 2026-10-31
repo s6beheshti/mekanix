@@ -22,7 +22,7 @@ interface CachedRate {
 
 const FALLBACK_RATE = 6_000_000;
 const MIN_RATE = 100_000;
-const MAX_RATE = 20_000_000;
+const MAX_RATE = 100_000_000;
 const MIN_MULTIPLIER = 0.5;
 const MAX_MULTIPLIER = 2;
 const MAX_RATE_AGE_MS = 15 * 60 * 1000;
