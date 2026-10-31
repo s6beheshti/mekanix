@@ -38,6 +38,30 @@ describe("parseTelegramUsdIrrRate", () => {
     expect(parseTelegramUsdIrrRate("دلار ١٢,٠٠٠,٠٠٠ ریال")).toBe(12_000_000);
   });
 
+  it("binds a fresh sell quote to its own Telegram post timestamp", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const postedAt = new Date(now - 5 * 60_000).toISOString();
+    const html = `<div class="tgme_widget_message_wrap js-widget_message_wrap">
+      <div class="tgme_widget_message_text">دلار تهران: 270,390 فروش</div>
+      <time datetime="${postedAt}">11:55</time>
+    </div>`;
+
+    const quote = parseTelegramUsdIrrQuote(html, "toman", now);
+    expect(quote?.rate).toBe(2_703_900);
+    expect(quote?.quoteType).toBe("sell");
+    expect(quote?.postedAt.toISOString()).toBe(postedAt);
+  });
+
+  it("rejects stale or untimestamped Telegram posts", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const staleAt = new Date(now - 16 * 60_000).toISOString();
+    const staleHtml = `<div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">دلار تهران: 270,390 فروش</div><time datetime="${staleAt}"></time></div>`;
+    const noTimeHtml = `<div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">دلار تهران: 270,390 فروش</div></div>`;
+
+    expect(parseTelegramUsdIrrQuote(staleHtml, "toman", now)).toBeNull();
+    expect(parseTelegramUsdIrrQuote(noTimeHtml, "toman", now)).toBeNull();
+  });
+
   it("rejects implausible or missing rates", () => {
     expect(parseTelegramUsdIrrRate("دلار ۶,۰۰۰ تومان")).toBeNull();
     expect(parseTelegramUsdIrrRate("No exchange quote available")).toBeNull();
