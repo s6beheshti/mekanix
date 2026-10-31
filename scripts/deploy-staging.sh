@@ -33,13 +33,10 @@ rsync -a --exclude='node_modules' --exclude='.next' --exclude='.git' \
   --exclude='db/*.db' --exclude='*.log' \
   "$REPO_DIR/" "$BUILD_CTX/"
 
-# PostgreSQL migrations
+# Copy the complete PostgreSQL migration history, including future migrations.
 rm -rf "$BUILD_CTX/prisma/migrations"
-mkdir -p "$BUILD_CTX/prisma/migrations/20260925000000_init"
-cp "$REPO_DIR/prisma/migrations-postgresql/20260925000000_init/migration.sql" \
-   "$BUILD_CTX/prisma/migrations/20260925000000_init/"
-cp "$REPO_DIR/prisma/migrations-postgresql/migration_lock.toml" \
-   "$BUILD_CTX/prisma/migrations/"
+mkdir -p "$BUILD_CTX/prisma/migrations"
+cp -a "$REPO_DIR/prisma/migrations-postgresql/." "$BUILD_CTX/prisma/migrations/"
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' "$BUILD_CTX/prisma/schema.prisma"
 
 cd "$BUILD_CTX"
