@@ -41,6 +41,20 @@ export async function POST(req: Request) {
   const code = body.data.code;
   const name = body.data.name;
 
+  // A per-phone budget prevents distributed attackers from rotating IPs to
+  // brute-force the six-digit code for one account.
+  const phoneLimited = await rateLimitAsync(
+    `otp-verify:phone:${phone}`,
+    RATE_LIMITS.OTP_VERIFY.max,
+    RATE_LIMITS.OTP_VERIFY.windowMs,
+  );
+  if (!phoneLimited.success) {
+    return NextResponse.json(
+      { error: "تعداد تلاش‌ها برای این شماره بیش از حد است، بعداً تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(phoneLimited.resetMs / 1000)) } },
+    );
+  }
+
   // Hash the user-supplied code with the same SHA-256 used at send time so we
   // can match against the stored digest. The DB only ever holds the hash —
   // see `src/lib/otp-crypto.ts`. Note: this also means any OTP rows created
@@ -54,12 +68,23 @@ export async function POST(req: Request) {
     orderBy: { createdAt: "desc" },
   });
 
-  if (!otp) return NextResponse.json({ error: "Invalid code" }, { status: 400 });
-  if (otp.expiresAt.getTime() < Date.now()) {
-    return NextResponse.json({ error: "Code expired" }, { status: 400 });
+  if (!otp) return NextResponse.json({ error: "کد تأیید نامعتبر است" }, { status: 400 });
+  if (otp.expiresAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: "کد تأیید منقضی شده است" }, { status: 400 });
   }
 
-  await db.otpCode.update({ where: { id: otp.id }, data: { consumed: true } });
+  // Atomically claim the OTP. Two concurrent requests may both read the row,
+  // but only one can change consumed=false to consumed=true before expiry.
+  const claimed = await db.otpCode.updateMany({
+    where: { id: otp.id, consumed: false, expiresAt: { gt: new Date() } },
+    data: { consumed: true },
+  });
+  if (claimed.count !== 1) {
+    return NextResponse.json(
+      { error: "این کد قبلاً استفاده شده یا منقضی شده است" },
+      { status: 400 },
+    );
+  }
 
   // Try to find user by normalized phone first, then by phone digits only.
   // This handles legacy users whose phones were stored with dashes/spaces

@@ -92,12 +92,33 @@ export async function POST(req: Request) {
   // is already persisted, so the user can still verify via a retry / fallback
   // channel. We surface the error in the response body in dev so a misconfigured
   // SMS provider is visible during integration testing.
-  const smsResult = await sendOtp(phone, code);
-  if (!smsResult.success) {
-    console.warn(`⚠️  SMS delivery failed for ${phone}: ${smsResult.error}`);
+  const isProduction = process.env.NODE_ENV === "production";
+  let smsResult: Awaited<ReturnType<typeof sendOtp>>;
+  try {
+    smsResult = await sendOtp(phone, code);
+  } catch (error) {
+    smsResult = { success: false, error: (error as Error).message };
   }
 
-  const isProduction = process.env.NODE_ENV === "production";
+  if (!smsResult.success) {
+    console.warn("[otp] SMS delivery failed for phone ending", phone.slice(-4), smsResult.error);
+    if (isProduction) {
+      // Never report success for an OTP that was not delivered. Invalidate
+      // the pending hash so a delayed provider delivery cannot authenticate.
+      try {
+        await db.otpCode.updateMany({
+          where: { phone, code: codeHash, consumed: false },
+          data: { consumed: true },
+        });
+      } catch (error) {
+        console.error("[otp] Failed to invalidate undelivered OTP", error);
+      }
+      return NextResponse.json(
+        { error: "ارسال کد تأیید انجام نشد؛ لطفاً چند لحظه دیگر دوباره تلاش کنید" },
+        { status: 502 },
+      );
+    }
+  }
   const response: {
     ok: true;
     expiresAt: Date;
