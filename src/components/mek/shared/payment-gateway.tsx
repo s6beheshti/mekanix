@@ -6,6 +6,7 @@ import { authFetch } from "@/lib/fetch-with-auth";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useT } from "@/lib/use-t";
+import { getUsdToIrrRate, setUsdToIrrRate } from "@/lib/format";
 import { toast } from "sonner";
 
 type PaymentPurpose = "vip" | "prepay" | "invoice";
@@ -31,6 +32,7 @@ export function PaymentGatewayDialog({
 }) {
   const { t, isFa, money } = useT();
   const [processing, setProcessing] = useState(false);
+  const [rateRevision, setRateRevision] = useState(0);
 
   const initiate = async () => {
     const reference =
@@ -48,9 +50,20 @@ export function PaymentGatewayDialog({
       const res = await authFetch("/api/gateway/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ purpose, ...reference }),
+        body: JSON.stringify({ purpose, ...reference, expectedAmountIrr: Math.round(amount * getUsdToIrrRate()) }),
       });
       const data = await res.json();
+      if (data.code === "AMOUNT_CHANGED" && Number.isSafeInteger(data.exchangeRate)) {
+        setUsdToIrrRate(data.exchangeRate);
+        setRateRevision((current) => current + 1);
+        toast.info(
+          isFa
+            ? "نرخ تبدیل به‌روز شد؛ مبلغ جدید را بررسی و دوباره پرداخت را تأیید کنید."
+            : "The exchange rate was refreshed. Review the updated amount and confirm again.",
+        );
+        setProcessing(false);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || "Payment initiation failed");
       if (typeof data.paymentUrl !== "string") {
         throw new Error(isFa ? "نشانی درگاه پرداخت معتبر نیست" : "The gateway URL is invalid");
@@ -81,7 +94,7 @@ export function PaymentGatewayDialog({
 
         <div className="rounded-lg border border-amber/20 bg-amber/5 p-4">
           <p className="text-[11px] text-muted-foreground">{description ?? t("pay.gateway.title")}</p>
-          <p className="mt-1 font-display text-2xl font-bold text-amber">{money(amount)}</p>
+          <p key={rateRevision} className="mt-1 font-display text-2xl font-bold text-amber">{money(amount)}</p>
         </div>
 
         <div className="flex items-start gap-2 rounded-lg border border-border p-3 text-xs text-muted-foreground">
