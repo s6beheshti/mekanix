@@ -1,5 +1,8 @@
 # Changelog
 
+- OTP codes are stored as keyed HMAC-SHA256 digests; verification claims them atomically, rate-limits per phone, and fails closed when production session persistence or SMS delivery fails.
+- Redis rate-limit increments now validate both `INCR` and `PEXPIRE` transaction results so Redis command errors cannot silently bypass limits.
+
 ## [Unreleased]
 
 ### Payments & Security
