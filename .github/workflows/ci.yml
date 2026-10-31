@@ -65,3 +65,30 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  dependency-remediation-preview:
+    name: Generate patched dependency lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Refresh lockfile and apply compatible security fixes
+        run: |
+          bun install
+          bun audit fix || true
+          bun audit > dependency-audit-after-fix.txt 2>&1 || true
+      - name: Upload dependency remediation result
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-preview
+          path: |
+            package.json
+            bun.lock
+            dependency-audit-after-fix.txt
+          if-no-files-found: error
+          retention-days: 7
