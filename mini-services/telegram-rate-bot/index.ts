@@ -23,7 +23,7 @@ const server = Bun.serve({
       const ok =
         sourceSetting?.value === "telegram" &&
         Number.isSafeInteger(rate) &&
-        rate >= 100_000 &&
+        rate >= 1_000_000 &&
         rate <= 100_000_000 &&
         ageMs !== null &&
         ageMs >= 0 &&
@@ -65,7 +65,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
     }
     const html = await res.text();
     const rate = parseTelegramUsdIrrRate(html);
-    if (rate && Number.isSafeInteger(rate) && rate >= 100_000 && rate <= 100_000_000) {
+    if (rate && Number.isSafeInteger(rate) && rate >= 1_000_000 && rate <= 100_000_000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
         update: { value: String(rate), description: `@${channel}`, updatedAt: new Date() },
@@ -92,7 +92,7 @@ async function fetchFallbackApi(): Promise<number | null> {
     const res = await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(10000) });
     const data = await res.json();
     const rate = data?.rates?.IRR;
-    if (rate && rate > 100000) {
+    if (rate && rate > 1_000_000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
         update: { value: String(rate), description: "open.er-api.com", updatedAt: new Date() },
