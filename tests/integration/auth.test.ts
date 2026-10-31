@@ -326,7 +326,7 @@ describe("integration — POST /api/auth/otp/verify", () => {
       consumed: false,
       expiresAt,
     });
-    mockOtpUpdate.mockResolvedValueOnce({});
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 1 });
     // First user lookup: not found
     mockUserFindUnique
       .mockResolvedValueOnce(null) // initial lookup by phone
