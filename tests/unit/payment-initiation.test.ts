@@ -148,6 +148,35 @@ describe("payment initiation server-side authority", () => {
     expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 
+  it("stops before creating a payment when the displayed Rial amount is stale", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://mekanix.ir");
+    mocks.getUsdIrrRateSnapshot.mockResolvedValue({
+      rate: 13_000_000,
+      baseRate: 13_000_000,
+      multiplier: 1,
+      source: "telegram",
+      fetchedAt: Date.now(),
+      rateUpdatedAt: Date.now(),
+      ageMs: 0,
+      trustedForPayments: true,
+    });
+
+    const response = await postPayment({
+      purpose: "vip",
+      planId: "plan-1",
+      expectedAmountIrr: 108_000_000,
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("AMOUNT_CHANGED");
+    expect(body.gatewayAmountIrr).toBe(117_000_000);
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+    expect(mocks.db.payment.create).not.toHaveBeenCalled();
+  });
+
   it("refuses production payment initiation when APP_URL is private", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DEPLOYMENT_ENV", "production");
