@@ -11,7 +11,11 @@ describe("parseTelegramUsdIrrRate", () => {
   });
 
   it("parses ASCII USD quotes as Rial when no unit is provided", () => {
-    expect(parseTelegramUsdIrrRate("USD 12,000,000")).toBe(12_000_000);
+    expect(parseTelegramUsdIrrRate("USD 1,200,000")).toBe(12_000_000);
+  });
+
+  it("treats unitless Tehran channel quotes as Toman", () => {
+    expect(parseTelegramUsdIrrRate("دلار تهران⛳️: 270,380 خرید")).toBe(2_703_800);
   });
 
   it("supports Arabic-Indic digits", () => {
