@@ -36,6 +36,7 @@ describe("parseTelegramUsdIrrRate", () => {
 
   it("rejects implausible or missing rates", () => {
     expect(parseTelegramUsdIrrRate("دلار ۶,۰۰۰ تومان")).toBeNull();
+    expect(parseTelegramUsdIrrRate("دلار تهران: 270,380", "rial")).toBeNull();
     expect(parseTelegramUsdIrrRate("No exchange quote available")).toBeNull();
   });
 });
