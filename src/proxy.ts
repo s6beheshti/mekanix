@@ -30,15 +30,16 @@ export function proxy(req: NextRequest) {
     res.headers.set("X-Frame-Options", "SAMEORIGIN");
   }
   // In dev: allow all frame ancestors so preview panel works
+  const isProduction = process.env.NODE_ENV === "production";
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.socket.io",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
-    "img-src 'self' data: blob: https: http:",
-    "connect-src 'self' ws: wss: https: http:",
+    isProduction ? "img-src 'self' data: blob: https:" : "img-src 'self' data: blob: https: http:",
+    isProduction ? "connect-src 'self' wss: https:" : "connect-src 'self' ws: wss: https: http:",
     "worker-src 'self' blob:",
-    process.env.NODE_ENV === "production" ? "frame-ancestors 'self'" : "frame-ancestors *",
+    isProduction ? "frame-ancestors 'self'" : "frame-ancestors *",
   ].join("; ");
   res.headers.set("Content-Security-Policy", csp);
 
