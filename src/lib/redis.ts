@@ -48,22 +48,33 @@ async function getRedisClient(): Promise<any | null> {
     return null;
   }
 
+  let candidate: any = null;
   try {
-    // Dynamic import so the dependency is optional
+    // Dynamic import so the dependency is optional.
     const { Redis } = await import("ioredis");
-    redisClient = new Redis(redisUrl, {
+    candidate = new Redis(redisUrl, {
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
+      connectTimeout: 5000,
     });
-    
-    // Test connection
-    await redisClient.ping();
+
+    // Cache only a client that has completed a successful health check.
+    await candidate.ping();
+    redisClient = candidate;
     redisAvailable = true;
     console.log("✅ Redis connected for distributed state");
     return redisClient;
   } catch (e) {
-    console.warn("⚠️  Redis unavailable, falling back to in-memory:", (e as Error).message);
+    // Do not retain a failed client: the next request must be able to retry
+    // after Redis recovers, rather than remaining on the in-memory fallback.
+    try {
+      candidate?.disconnect();
+    } catch {
+      // Ignore cleanup errors; Redis is already unavailable.
+    }
+    redisClient = null;
     redisAvailable = false;
+    console.warn("⚠️  Redis unavailable, falling back to in-memory:", (e as Error).message);
     return null;
   }
 }
