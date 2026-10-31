@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider";
+import { getUsdIrrRateSnapshot } from "@/lib/exchange-rate";
 import { isPublicHttpsOrigin } from "@/lib/url-validation";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 
@@ -15,10 +16,16 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
-type PaymentMetadata =
+type PaymentMetadata = {
+  amountUsd: number;
+  exchangeRate: number;
+  exchangeRateSource: string;
+  exchangeRateUpdatedAt: number | null;
+} & (
   | { kind: "vip"; subscriptionId: string; planId: string; durationDays: number; planName: string }
   | { kind: "invoice"; invoiceId: string }
-  | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean };
+  | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean }
+);
 
 function gatewayType(provider: string): "ZARINPAL" | "IDPAY" | "SHAPARAK_SIM" {
   if (provider === "zarinpal") return "ZARINPAL";
@@ -64,7 +71,24 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   });
   if (!user) return NextResponse.json({ error: "حساب کاربری یافت نشد" }, { status: 404 });
 
+  const rateSnapshot = await getUsdIrrRateSnapshot({ forceRefresh: true });
+  const isLiveProduction = process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging";
+  if (
+    !Number.isSafeInteger(rateSnapshot.rate) ||
+    rateSnapshot.rate <= 0 ||
+    (isLiveProduction && !rateSnapshot.trustedForPayments)
+  ) {
+    return NextResponse.json(
+      { error: "نرخ تبدیل دلار به ریال برای پرداخت معتبر یا به‌روز نیست؛ لطفاً بعداً دوباره تلاش کنید" },
+      { status: 503 }
+    );
+  }
+  const exchangeRate = rateSnapshot.rate;
+  const exchangeRateSource = rateSnapshot.source;
+  const exchangeRateUpdatedAt = rateSnapshot.rateUpdatedAt;
+
   let amount = 0;
+  let amountUsd = 0;
   let title = "";
   let metadata: PaymentMetadata;
   let pendingSubscriptionId: string | null = null;
@@ -78,13 +102,24 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (pendingVip) {
       return NextResponse.json({ error: "یک درخواست اشتراک در حال پرداخت دارید؛ ابتدا همان تراکنش را تعیین تکلیف کنید" }, { status: 409 });
     }
-    amount = Math.round(Number(plan.priceUsd));
+    amountUsd = Math.round(Number(plan.priceUsd) * 100) / 100;
+    amount = Math.round(amountUsd * exchangeRate);
     title = `اشتراک MEKANIX ${plan.name}`;
     const subscription = await db.userVipSubscription.create({
       data: { userId: user.id, planId: plan.id, status: "PENDING_PAYMENT" },
     });
     pendingSubscriptionId = subscription.id;
-    metadata = { kind: "vip", subscriptionId: subscription.id, planId: plan.id, durationDays: plan.durationDays, planName: plan.name };
+    metadata = {
+      kind: "vip",
+      subscriptionId: subscription.id,
+      planId: plan.id,
+      durationDays: plan.durationDays,
+      planName: plan.name,
+      amountUsd,
+      exchangeRate,
+      exchangeRateSource,
+      exchangeRateUpdatedAt,
+    };
   } else if (body.purpose === "invoice" && typeof body.invoiceId === "string" && body.invoiceId.trim()) {
     const invoice = await db.invoice.findUnique({
       where: { id: body.invoiceId },
@@ -97,9 +132,17 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (invoice.status === "PAID" || invoice.status === "DRAFT") {
       return NextResponse.json({ error: "این صورتحساب در وضعیت قابل پرداخت نیست" }, { status: 409 });
     }
-    amount = Math.round(Number(invoice.total));
+    amountUsd = Math.round(Number(invoice.total) * 100) / 100;
+    amount = Math.round(amountUsd * exchangeRate);
     title = `پرداخت صورتحساب ${invoice.code}`;
-    metadata = { kind: "invoice", invoiceId: invoice.id };
+    metadata = {
+      kind: "invoice",
+      invoiceId: invoice.id,
+      amountUsd,
+      exchangeRate,
+      exchangeRateSource,
+      exchangeRateUpdatedAt,
+    };
   } else if (body.purpose === "prepay" && typeof body.jobId === "string" && body.jobId.trim()) {
     const job = await db.job.findUnique({
       where: { id: body.jobId },
@@ -128,14 +171,30 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     const heavy = job.request.vehicle.type !== "CAR";
     const inspectionFee = Number((heavy ? job.technician.inspectionFeeHeavy : job.technician.inspectionFee) ?? (heavy ? 20 : 7));
     const travelFee = Number(job.technician.travelFeeBase ?? 3);
-    amount = Math.round(inspectionFee + travelFee);
+    amountUsd = Math.round((inspectionFee + travelFee) * 100) / 100;
+    amount = Math.round(amountUsd * exchangeRate);
     title = `پیش‌پرداخت سفارش ${job.code}`;
-    metadata = { kind: "prepay", jobId: job.id, inspectionFee, travelFee, heavy };
+    metadata = {
+      kind: "prepay",
+      jobId: job.id,
+      inspectionFee,
+      travelFee,
+      heavy,
+      amountUsd,
+      exchangeRate,
+      exchangeRateSource,
+      exchangeRateUpdatedAt,
+    };
   } else {
     return NextResponse.json({ error: "نوع پرداخت یا شناسه مرجع معتبر نیست" }, { status: 400 });
   }
 
-  if (!Number.isSafeInteger(amount) || amount <= 0) {
+  if (
+    !Number.isFinite(amountUsd) ||
+    amountUsd <= 0 ||
+    !Number.isSafeInteger(amount) ||
+    amount <= 0
+  ) {
     if (pendingSubscriptionId) {
       await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
     }
@@ -185,16 +244,16 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
         }
         pendingPayment = await db.payment.update({
           where: { id: existingPayment.id },
-          data: { code: `PAY-${randomUUID()}`, userId: user.id, amount, currency: "IRR", method: "gateway_pending", status: "PENDING" },
+          data: { code: `PAY-${randomUUID()}`, userId: user.id, amount: amountUsd, currency: "IRR", method: "gateway_pending", status: "PENDING" },
         });
       } else {
         pendingPayment = await db.payment.create({
-          data: { code: `PAY-${randomUUID()}`, invoiceId: metadata.invoiceId, userId: user.id, amount, currency: "IRR", method: "gateway_pending", status: "PENDING" },
+          data: { code: `PAY-${randomUUID()}`, invoiceId: metadata.invoiceId, userId: user.id, amount: amountUsd, currency: "IRR", method: "gateway_pending", status: "PENDING" },
         });
       }
     } else {
       pendingPayment = await db.payment.create({
-        data: { code: `PAY-${randomUUID()}`, invoiceId: null, userId: user.id, amount, currency: "IRR", method: "gateway_pending", status: "PENDING" },
+        data: { code: `PAY-${randomUUID()}`, invoiceId: null, userId: user.id, amount: amountUsd, currency: "IRR", method: "gateway_pending", status: "PENDING" },
       });
     }
   } catch (error) {
