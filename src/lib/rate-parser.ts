@@ -1,4 +1,6 @@
 const PERSIAN_AND_ARABIC_DIGITS = "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩";
+const MAX_POST_AGE_MS = 15 * 60 * 1000;
+const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 function normalizeDigits(value: string): string {
   return value.replace(/[۰-۹٠-٩]/g, (digit) =>
@@ -6,10 +8,6 @@ function normalizeDigits(value: string): string {
   );
 }
 
-/**
- * Parse a USD quote from the configured Tehran Telegram channel.
- * The platform stores and charges in Rial, so Toman quotes are multiplied by 10.
- */
 function htmlToText(html: string): string {
   return html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
@@ -23,13 +21,18 @@ function htmlToText(html: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCharCode(Number.parseInt(code, 16)));
 }
 
-/**
- * Parse the Tehran Telegram market quote. The channel publishes unitless
- * quotes in Toman by default; explicit Rial/Toman labels always take priority.
- * The most recent sell quote is preferred because it is the customer's buy rate.
- */
-export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "toman" = "toman"): number | null {
-  const text = htmlToText(html).replace(/\r/g, "");
+type QuoteType = "sell" | "trade" | "buy" | "unknown";
+
+interface ParsedRate {
+  rate: number;
+  quoteType: QuoteType;
+}
+
+export interface TelegramUsdIrrQuote extends ParsedRate {
+  postedAt: Date;
+}
+
+function parseQuoteFromText(text: string, defaultUnit: "rial" | "toman"): ParsedRate | null {
   const patterns: Array<{ regex: RegExp; unitGroup?: number }> = [
     { regex: /دلار[^0-9۰-۹٠-٩\n]{0,50}([\d,٬۰-۹٠-٩]+)\s*(ریال|تومان)?[^\n]{0,20}/gi, unitGroup: 2 },
     { regex: /USD[^0-9۰-۹٠-٩\n]{0,30}([\d,٬۰-۹٠-٩]+)[^\n]{0,20}/gi },
@@ -39,6 +42,7 @@ export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "tom
   for (const pattern of patterns) {
     const matches = [...text.matchAll(pattern.regex)];
     if (!matches.length) continue;
+
     const match =
       matches.find((item) => /فروش/.test(item[0])) ||
       matches.find((item) => /معامله/.test(item[0])) ||
@@ -54,52 +58,61 @@ export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "tom
       rate *= 10;
     }
 
-    if (rate >= 1_000_000 && rate <= 100_000_000) {
-      return rate;
-    }
+    if (rate < 100_000 || rate > 100_000_000) continue;
+
+    const quoteType: QuoteType = /فروش/.test(match[0])
+      ? "sell"
+      : /معامله/.test(match[0])
+        ? "trade"
+        : /خرید/.test(match[0])
+          ? "buy"
+          : "unknown";
+    return { rate, quoteType };
   }
 
   return null;
 }
 
-export type TelegramUsdIrrQuote = {
-  rate: number;
-  quotedAt: number;
-};
+/**
+ * Parse a USD quote from plain text or Telegram HTML.
+ * Unitless NerkhDollarIRT quotes default to Toman; explicit labels override it.
+ */
+export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "toman" = "toman"): number | null {
+  return parseQuoteFromText(htmlToText(html), defaultUnit)?.rate ?? null;
+}
 
 /**
- * Return only a quote attached to a Telegram message timestamp that is still
- * within the payment freshness window. Fetch time alone must never make an old
- * channel post look current.
+ * Parse a quote from the same Telegram message block as its timestamp.
+ * Only posts newer than 15 minutes (with 5 minutes of future clock skew) are accepted.
+ * Telegram's public channel page is newest-first; prefer a fresh sell quote, then trade.
  */
-export function parseFreshTelegramUsdIrrQuote(
+export function parseTelegramUsdIrrQuote(
   html: string,
   defaultUnit: "rial" | "toman" = "toman",
   now = Date.now(),
-  maxAgeMs = 15 * 60 * 1000,
 ): TelegramUsdIrrQuote | null {
-  const blockPattern =
-    /<div\b[^>]*class=["'][^"']*\btgme_widget_message_wrap\b[^"']*["'][\s\S]*?(?=<div\b[^>]*class=["'][^"']*\btgme_widget_message_wrap\b|$)/gi;
-  const blocks = Array.from(html.matchAll(blockPattern), (match) => match[0]);
+  const blocks = [
+    ...html.matchAll(/<div class="tgme_widget_message_wrap\b[\s\S]*?(?=<div class="tgme_widget_message_wrap\b|$)/gi),
+  ].map((match) => match[0]);
 
-  const quotes: TelegramUsdIrrQuote[] = [];
+  const candidates: TelegramUsdIrrQuote[] = [];
   for (const block of blocks) {
-    const timeMatch = block.match(/<time\b[^>]*datetime=["']([^"']+)["'][^>]*>/i);
+    const timeMatch = block.match(/<time[^>]*datetime=["']([^"']+)["']/i);
     if (!timeMatch?.[1]) continue;
 
-    const quotedAt = Date.parse(timeMatch[1]);
-    if (
-      !Number.isFinite(quotedAt) ||
-      quotedAt > now ||
-      now - quotedAt > maxAgeMs
-    ) {
-      continue;
-    }
+    const postedAtMs = Date.parse(timeMatch[1]);
+    if (!Number.isFinite(postedAtMs)) continue;
+    const ageMs = now - postedAtMs;
+    if (ageMs < -MAX_FUTURE_SKEW_MS || ageMs > MAX_POST_AGE_MS) continue;
 
-    const rate = parseTelegramUsdIrrRate(block, defaultUnit);
-    if (rate !== null) quotes.push({ rate, quotedAt });
+    const parsed = parseQuoteFromText(htmlToText(block), defaultUnit);
+    if (parsed) candidates.push({ ...parsed, postedAt: new Date(postedAtMs) });
   }
 
-  quotes.sort((a, b) => b.quotedAt - a.quotedAt);
-  return quotes[0] ?? null;
+  return (
+    candidates.find((candidate) => candidate.quoteType === "sell") ||
+    candidates.find((candidate) => candidate.quoteType === "trade") ||
+    candidates[0] ||
+    null
+  );
 }
