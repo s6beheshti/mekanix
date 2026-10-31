@@ -446,6 +446,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 - Payment initiation snapshots the rate, records the snapshot in gateway metadata, and compares the client-visible `expectedAmountIrr` with the server calculation. A mismatch returns HTTP 409 before payment reservation or bank redirect.
 - Live production payments require a Telegram-sourced USD/IRR quote whose original post timestamp is no more than 15 minutes old, a valid multiplier (0.5–2), and a normalized Rial rate within the configured safety bounds. Collector fetch time cannot make an old post look fresh; internal/API fallbacks are never accepted for real-money collection.
 - The Telegram collector treats unitless `NerkhDollarIRT` quotes as Toman by default (configurable with `TELEGRAM_RATE_UNIT`), prefers the sell quote, normalizes to Rial, persists the original message timestamp, and exposes `/health` and `/ready`; production deployment readiness independently checks the same trusted-rate contract.
+- Pending hosted redirects are reused for the same customer/resource for up to 24 hours; abandoned `INITIATED` reservations expire after five minutes, and expired linked Payment/VIP records are released safely for retry.
 
 ## Summary
 
