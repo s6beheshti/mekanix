@@ -36,10 +36,16 @@ export async function GET(req: NextRequest) {
     (log.gateway === "SHAPARAK_SIM" && callbackStatus !== "OK");
 
   if (isCancelled) {
-    await db.paymentGatewayLog.updateMany({
+    const cancelled = await db.paymentGatewayLog.updateMany({
       where: { id: log.id, status: "REDIRECTED" },
       data: { status: "CANCELLED", callbackPayload: JSON.stringify(payload) },
     });
+    if (cancelled.count === 1 && log.paymentId) {
+      await db.payment.updateMany({
+        where: { id: log.paymentId, status: "PENDING" },
+        data: { status: "FAILED" },
+      });
+    }
     return resultRedirect(req, "failed", code);
   }
 
