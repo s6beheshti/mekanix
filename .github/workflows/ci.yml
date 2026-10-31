@@ -25,6 +25,11 @@ jobs:
       
       - name: Generate Prisma Client
         run: bunx prisma generate
+
+      - name: Apply SQLite migrations for tests
+        run: bunx prisma migrate deploy
+        env:
+          DATABASE_URL: "file:./test.db"
       
       - name: Check for forbidden artifacts
         run: bash scripts/check-hygiene.sh
@@ -45,11 +50,6 @@ jobs:
       
       - name: Run tests
         run: bun run test
-        env:
-          DATABASE_URL: "file:./test.db"
-
-      - name: Prepare SQLite database for browser tests
-        run: bunx prisma db push --accept-data-loss
         env:
           DATABASE_URL: "file:./test.db"
 
