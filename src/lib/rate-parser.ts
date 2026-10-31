@@ -1,6 +1,6 @@
 const PERSIAN_AND_ARABIC_DIGITS = "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩";
-const MAX_POST_AGE_MS = 15 * 60 * 1000;
-const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+export const TELEGRAM_RATE_MAX_AGE_MS = 15 * 60 * 1000;
+export const TELEGRAM_RATE_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 function normalizeDigits(value: string): string {
   return value.replace(/[۰-۹٠-٩]/g, (digit) =>
@@ -103,16 +103,19 @@ export function parseTelegramUsdIrrQuote(
     const postedAtMs = Date.parse(timeMatch[1]);
     if (!Number.isFinite(postedAtMs)) continue;
     const ageMs = now - postedAtMs;
-    if (ageMs < -MAX_FUTURE_SKEW_MS || ageMs > MAX_POST_AGE_MS) continue;
+    if (ageMs < -TELEGRAM_RATE_MAX_FUTURE_SKEW_MS || ageMs > TELEGRAM_RATE_MAX_AGE_MS) continue;
 
     const parsed = parseQuoteFromText(htmlToText(block), defaultUnit);
     if (parsed) candidates.push({ ...parsed, postedAt: new Date(postedAtMs) });
   }
 
-  return (
-    candidates.find((candidate) => candidate.quoteType === "sell") ||
-    candidates.find((candidate) => candidate.quoteType === "trade") ||
-    candidates[0] ||
-    null
+  const priority = (candidate: TelegramUsdIrrQuote) =>
+    candidate.quoteType === "sell" ? 0 : candidate.quoteType === "trade" ? 1 : 2;
+
+  candidates.sort(
+    (left, right) =>
+      priority(left) - priority(right) ||
+      right.postedAt.getTime() - left.postedAt.getTime(),
   );
+  return candidates[0] ?? null;
 }
