@@ -21,6 +21,8 @@ services:
 
   # Trusted USD/IRR market-rate collector — app startup waits for a fresh Telegram rate.
   rate-bot:
+    mem_limit: ${RATE_BOT_MEM_LIMIT:-256m}
+    cpus: ${RATE_BOT_CPUS:-0.5}
     build:
       context: .
       dockerfile: Dockerfile.rate-bot
@@ -44,6 +46,8 @@ services:
       start_period: 60s
 
   backup-scheduler:
+    mem_limit: ${BACKUP_MEM_LIMIT:-512m}
+    cpus: ${BACKUP_CPUS:-0.5}
     build:
       context: .
       dockerfile: Dockerfile.backup-scheduler
@@ -74,6 +78,8 @@ services:
       start_period: 30s
 
   app:
+    mem_limit: ${APP_MEM_LIMIT:-1536m}
+    cpus: ${APP_CPUS:-2.0}
     build: .
     ports:
       - "127.0.0.1:3000:3000"
@@ -116,6 +122,8 @@ services:
       start_period: 15s
 
   db:
+    mem_limit: ${DB_MEM_LIMIT:-1g}
+    cpus: ${DB_CPUS:-1.0}
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=mekanix
@@ -132,6 +140,8 @@ services:
     # No ports: — PostgreSQL is NOT exposed to host
 
   redis:
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    cpus: ${REDIS_CPUS:-0.5}
     image: redis:7-alpine
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes", "--appendfsync", "everysec"]
     environment:
