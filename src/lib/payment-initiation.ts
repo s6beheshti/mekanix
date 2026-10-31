@@ -201,6 +201,27 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     return NextResponse.json({ error: "مبلغ سفارش معتبر نیست" }, { status: 400 });
   }
 
+  const expectedAmountIrr =
+    typeof body.expectedAmountIrr === "number" ? body.expectedAmountIrr : null;
+  if (
+    (isLiveProduction && expectedAmountIrr === null) ||
+    (expectedAmountIrr !== null &&
+      (!Number.isSafeInteger(expectedAmountIrr) || expectedAmountIrr !== amount))
+  ) {
+    if (pendingSubscriptionId) {
+      await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+    }
+    return NextResponse.json(
+      {
+        error: "نرخ تبدیل به‌روزرسانی شده است؛ مبلغ جدید را بررسی و دوباره تأیید کنید",
+        code: "AMOUNT_CHANGED",
+        gatewayAmountIrr: amount,
+        exchangeRate,
+      },
+      { status: 409 },
+    );
+  }
+
   const appUrl = process.env.APP_URL?.trim() || (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" ? "" : new URL(req.url).origin);
   if (!appUrl) {
     if (pendingSubscriptionId) {
