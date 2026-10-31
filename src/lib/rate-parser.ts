@@ -32,7 +32,48 @@ export interface TelegramUsdIrrQuote extends ParsedRate {
   postedAt: Date;
 }
 
+function parseLabeledQuote(
+  text: string,
+  label: "sell" | "trade",
+  defaultUnit: "rial" | "toman",
+): ParsedRate | null {
+  const labelPattern = label === "sell" ? /(?:فروش|sell)/i : /(?:معامله|trade)/i;
+  for (const line of text.split(/\\r?\\n/)) {
+    const labelMatch = labelPattern.exec(line);
+    if (!labelMatch) continue;
+
+    const before = line.slice(0, labelMatch.index);
+    const after = line.slice(labelMatch.index + labelMatch[0].length);
+    const numberPattern = /([\\d,٬۰-۹٠-٩]+)\\s*(ریال|تومان)?/g;
+    const beforeMatches = [...before.matchAll(numberPattern)];
+    const beforeMatch = beforeMatches[beforeMatches.length - 1];
+    const afterMatch = after.match(numberPattern);
+    const beforeDistance = beforeMatch
+      ? before.length - ((beforeMatch.index ?? 0) + beforeMatch[0].length)
+      : Number.POSITIVE_INFINITY;
+    const afterDistance = afterMatch?.index ?? Number.POSITIVE_INFINITY;
+    const match = afterDistance < beforeDistance ? afterMatch : beforeMatch;
+    if (!match?.[1]) continue;
+
+    const raw = normalizeDigits(match[1]).replace(/[٬,‌\\s]/g, "");
+    let rate = Number.parseInt(raw, 10);
+    if (!Number.isFinite(rate)) continue;
+
+    const unit = match[2];
+    if (unit === "تومان" || (!unit && defaultUnit === "toman")) rate *= 10;
+    if (rate < 1_000_000 || rate > 100_000_000) continue;
+
+    return { rate, quoteType: label };
+  }
+  return null;
+}
+
 function parseQuoteFromText(text: string, defaultUnit: "rial" | "toman"): ParsedRate | null {
+  const labelledSell = parseLabeledQuote(text, "sell", defaultUnit);
+  if (labelledSell) return labelledSell;
+  const labelledTrade = parseLabeledQuote(text, "trade", defaultUnit);
+  if (labelledTrade) return labelledTrade;
+
   const patterns: Array<{ regex: RegExp; unitGroup?: number }> = [
     { regex: /دلار[^0-9۰-۹٠-٩\n]{0,50}([\d,٬۰-۹٠-٩]+)\s*(ریال|تومان)?[^\n]{0,20}/gi, unitGroup: 2 },
     { regex: /USD[^0-9۰-۹٠-٩\n]{0,30}([\d,٬۰-۹٠-٩]+)[^\n]{0,20}/gi },
