@@ -35,6 +35,10 @@ if [ -f "$REPO_DIR/.env" ]; then
   set -u
 fi
 
+# The build context is temporary; pin Compose's project name so deployments
+# reuse the same containers and persistent volumes on every release.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mekanix}"
+
 echo "🚀 MEKANIX Production Deployment"
 echo "   Repo: $REPO_DIR"
 echo ""
