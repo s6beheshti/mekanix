@@ -10,11 +10,11 @@ import { isRedisAvailable } from "@/lib/redis";
 // /api/ready = is the app ready to serve production traffic?
 //
 // Production safety gates:
-//   - Database must be reachable (PostgreSQL, not SQLite in production)
-//   - Migrations must be applied
-//   - SMS provider must NOT be "console" in production
-//   - Payment provider must NOT be "simulator" in production
-//   - DATABASE_URL must start with "postgresql://" in production
+//   - Database reachable and migrations applied
+//   - Redis reachable (no in-memory fallback in production/staging)
+//   - JWT_SECRET contains at least 32 characters in production/staging
+//   - Production uses PostgreSQL, real SMS/payment providers and a public HTTPS APP_URL
+//   - Local simulator providers are allowed only in explicit staging mode
 //
 // Returns 200 if ready, 503 if not ready.
 
