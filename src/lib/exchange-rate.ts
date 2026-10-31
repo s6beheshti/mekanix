@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { TELEGRAM_RATE_MAX_AGE_MS, TELEGRAM_RATE_MAX_FUTURE_SKEW_MS } from "@/lib/rate-parser";
 
 export interface UsdIrrRateSnapshot {
   rate: number;
@@ -25,7 +26,6 @@ const MIN_RATE = 1_000_000;
 const MAX_RATE = 100_000_000;
 const MIN_MULTIPLIER = 0.5;
 const MAX_MULTIPLIER = 2;
-const MAX_RATE_AGE_MS = 15 * 60 * 1000;
 const CACHE_TTL_MS = 30 * 1000;
 
 let cachedRate: CachedRate | null = null;
@@ -100,8 +100,8 @@ function toSnapshot(rate: CachedRate, now: number): UsdIrrRateSnapshot {
     rate.source === "telegram" &&
     rate.multiplierValid &&
     ageMs !== null &&
-    ageMs >= 0 &&
-    ageMs <= MAX_RATE_AGE_MS &&
+    ageMs >= -TELEGRAM_RATE_MAX_FUTURE_SKEW_MS &&
+    ageMs <= TELEGRAM_RATE_MAX_AGE_MS &&
     finalRate >= MIN_RATE &&
     finalRate <= MAX_RATE;
 
