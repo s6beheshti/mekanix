@@ -1,6 +1,6 @@
 // Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
 import { PrismaClient } from "@prisma/client";
-import { parseTelegramUsdIrrQuote, TELEGRAM_RATE_MAX_AGE_MS } from "../../src/lib/rate-parser";
+import { parseTelegramUsdIrrQuote, TELEGRAM_RATE_MAX_AGE_MS, TELEGRAM_RATE_MAX_FUTURE_SKEW_MS } from "../../src/lib/rate-parser";
 
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
@@ -30,10 +30,10 @@ const server = Bun.serve({
       const ok =
         sourceSetting?.value === "telegram" &&
         Number.isSafeInteger(rate) &&
-        rate >= 100_000 &&
+        rate >= 1_000_000 &&
         rate <= 100_000_000 &&
         ageMs !== null &&
-        ageMs >= 0 &&
+        ageMs >= -TELEGRAM_RATE_MAX_FUTURE_SKEW_MS &&
         ageMs <= TELEGRAM_RATE_MAX_AGE_MS;
       return Response.json(
         { ok, rate: Number.isFinite(rate) ? rate : null, source: sourceSetting?.value ?? "unknown", ageMs },
