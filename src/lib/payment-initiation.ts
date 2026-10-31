@@ -62,6 +62,12 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   if (body.purpose === "vip" && typeof body.planId === "string" && body.planId.trim()) {
     const plan = await db.vipPlan.findFirst({ where: { id: body.planId, active: true } });
     if (!plan) return NextResponse.json({ error: "طرح اشتراک معتبر نیست" }, { status: 404 });
+    const pendingVip = await db.userVipSubscription.findFirst({
+      where: { userId: user.id, status: "PENDING_PAYMENT" },
+    });
+    if (pendingVip) {
+      return NextResponse.json({ error: "یک درخواست اشتراک در حال پرداخت دارید؛ ابتدا همان تراکنش را تعیین تکلیف کنید" }, { status: 409 });
+    }
     amount = Math.round(Number(plan.priceIrr));
     title = `اشتراک MEKANIX ${plan.name}`;
     const subscription = await db.userVipSubscription.create({
@@ -97,6 +103,17 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       return NextResponse.json({ error: "دسترسی به این سفارش مجاز نیست" }, { status: 403 });
     }
     if (job.prepayPaid) return NextResponse.json({ error: "پیش‌پرداخت این سفارش قبلاً انجام شده است" }, { status: 409 });
+    const pendingPrepayment = await db.paymentGatewayLog.findFirst({
+      where: {
+        userId: user.id,
+        purpose: "prepay",
+        status: { in: ["INITIATED", "REDIRECTED"] },
+        description: { contains: job.id },
+      },
+    });
+    if (pendingPrepayment) {
+      return NextResponse.json({ error: "برای این سفارش یک پرداخت در حال انجام وجود دارد" }, { status: 409 });
+    }
     if (!job.technician) return NextResponse.json({ error: "مکانیک برای این سفارش تعیین نشده است" }, { status: 409 });
     const heavy = job.request.vehicle.type !== "CAR";
     const inspectionFee = Number((heavy ? job.technician.inspectionFeeHeavy : job.technician.inspectionFee) ?? (heavy ? 20 : 7));
