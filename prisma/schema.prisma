@@ -831,6 +831,7 @@ model PaymentGatewayLog {
   status          GatewayStatus @default(INITIATED)
   purpose         String // vip | prepay | invoice | wallet_topup
   referenceId     String? // external gateway reference
+  paymentUrl      String? // validated hosted bank redirect URL
   cardNumber      String? // masked card used
   mobile          String?
   description     String?
