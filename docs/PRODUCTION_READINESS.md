@@ -122,14 +122,14 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 8.1 | Prisma schema provider-agnostic | ✅ | `scripts/db-switch-provider.sh` flips between SQLite (dev) and PostgreSQL (prod) |
-| 8.2 | PostgreSQL migrations committed | 🛠️ | Initial migration plus `20261031140000_unique_pending_gateway_intents`; deploy, staging, Docker E2E and PostgreSQL CI now copy the full migration history |
+| 8.2 | PostgreSQL migrations committed | 🛠️ | Full PostgreSQL migration history includes pending-intent indexes, USD VIP plan price migration, and `20261031170000_gateway_payment_url`; deploy, staging, Docker E2E and PostgreSQL CI copy the full history |
 | 8.3 | `migrate deploy` runs on container start | ✅ | `Dockerfile` CMD: `prisma migrate deploy && node server.js` |
 | 8.4 | Connection pooling | ⬜ | Use PgBouncer in prod; not configured yet |
 | 8.5 | Read replica | ⬜ | Optional; not yet needed at expected scale |
 | 8.6 | Daily backup script | ✅ | `scripts/backup-db.sh` (pg_dump + gzip + 30-day retention) |
 | 8.7 | Restore script | ✅ | `scripts/restore-db.sh` (with `RESTORE` confirmation prompt) |
 | 8.8 | Backup-scheduler mini-service | ✅ | `mini-services/backup-scheduler/index.ts` triggers backups every 24 h |
-| 8.9 | Backup encryption at rest | ⬜ | gpg encryption pending; script ready to extend |
+| 8.9 | Backup encryption at rest | 🛠️ | `scripts/backup-db.sh` streams backups through GPG AES-256 without writing plaintext dumps; production deploy requires a 32+ character passphrase and `restore-db.sh` supports encrypted backups |
 | 8.10 | Point-in-time recovery (PITR) | ⬜ | Configure via cloud provider (RDS/Cloud SQL) in production |
 
 ---
@@ -142,7 +142,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 9.2 | Redis in docker-compose | ✅ | `docker-compose.yml` `redis:7-alpine` with `redisdata` volume |
 | 9.3 | Rate limiting uses Redis when available | ✅ | `rateLimitAsync` falls back to in-memory LRU when `REDIS_URL` not set |
 | 9.4 | Health check reports Redis status | ✅ | `/api/health` returns `services.redis` ("healthy" / "not-configured" / "unhealthy (using in-memory fallback)") |
-| 9.5 | Redis persistence (AOF) | ⬜ | Configure `--appendonly yes` in production compose override |
+| 9.5 | Redis persistence (AOF) | 🛠️ | Production and staging Compose enable `--appendonly yes --appendfsync everysec` with persistent `/data` volumes |
 | 9.6 | Redis password | 🛠️ | Production/staging deploy scripts and `/api/ready` require a 24+ character non-placeholder Redis password; set the real secret at provisioning |
 
 ---
@@ -153,7 +153,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 10.1 | Dockerfile (multi-stage, non-root) | ✅ | `Dockerfile` — node:20-slim, OpenSSL for Prisma, non-root `nextjs` runtime; the separate migration service runs `prisma migrate deploy`, then the app runs the standalone Next.js server |
 | 10.2 | docker-compose for app + db + redis | ✅ | `docker-compose.yml` (3 services with healthcheck + volumes) |
-| 10.3 | Deploy script | 🛠️ | `scripts/deploy.sh` requires DB/Redis/JWT, public HTTPS APP_URL and real SMS/payment providers; waits for `/api/ready` rather than liveness only |
+| 10.3 | Deploy script | 🛠️ | `scripts/deploy.sh` requires DB/Redis/JWT, public HTTPS APP_URL, real SMS/payment providers and backup encryption passphrase; waits for `/api/ready` rather than liveness only |
 | 10.4 | Provision VPS | ⬜ | Needs real server (Hetzner / ArvanCloud / ParsPack) |
 | 10.5 | Install Docker + Caddy on VPS | ⬜ | Post-provision step on real server |
 | 10.6 | Configure firewall (ufw: allow 80, 443, 22) | ⬜ | Post-provision step on real server |
@@ -193,7 +193,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 13.1 | Non-root container user | ✅ | `Dockerfile` creates + runs as `nextjs:nodejs` (uid 1001) |
 | 13.2 | Container runs as read-only FS where possible | ⬜ | Needs tmpfs mounts for `.next/cache` — production override |
-| 13.3 | Resource limits in docker-compose | ⬜ | Add `mem_limit` / `cpus` in production compose override |
+| 13.3 | Resource limits in docker-compose | 🛠️ | Production Compose defines configurable memory/CPU ceilings for app, PostgreSQL, Redis, rate collector and backup scheduler |
 | 13.4 | Fail2ban on SSH | ⬜ | Server-side hardening (post-provision) |
 | 13.5 | Disable root SSH login | ⬜ | `/etc/ssh/sshd_config` on real server |
 | 13.6 | HSTS preload | 🛠️ | Header set in `Caddyfile.production`; submit to hstspreload.org after launch |
@@ -221,7 +221,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 15.1 | Structured logs (JSON via Caddy) | ✅ | `Caddyfile.production` `log { format json }` |
 | 15.2 | App-level console logs for provider init | ✅ | `initSmsProvider`, `initEtaProvider`, `initPaymentProvider` log provider selection |
-| 15.3 | Request ID propagation | ⬜ | Add `next-reqid` middleware; not yet configured |
+| 15.3 | Request ID propagation | 🛠️ | Next.js 16 `src/proxy.ts` creates a UUID request ID, forwards `x-request-id` to handlers and returns `X-Request-ID` to clients |
 | 15.4 | Error tracking (Sentry) | ⬜ | Needs `SENTRY_DSN` env var + `@sentry/nextjs` integration |
 | 15.5 | Log aggregation (Loki / ELK) | ⬜ | Server-side deployment pending |
 | 15.6 | Distributed tracing (OpenTelemetry) | ⬜ | Future work |
@@ -247,7 +247,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 17.1 | Alert on `/api/health` 503 | ⬜ | Needs external monitoring (UptimeRobot webhook → Slack/Telegram) |
 | 17.2 | Alert on disk space (>80%) | ⬜ | Server-side `node_exporter` + alertmanager rule |
-| 17.3 | Alert on backup failure | 🛠️ | `mini-services/backup-scheduler` runs every 24 h; logs failure — wire to alert channel |
+| 17.3 | Alert on backup failure | 🛠️ | `mini-services/backup-scheduler` logs failures, marks `/ready` unhealthy and can send an optional HTTPS webhook via `BACKUP_ALERT_WEBHOOK_URL` |
 | 17.4 | Alert on payment failure rate | ⬜ | Needs metrics aggregation |
 | 17.5 | Alert on SMS provider error spike | ⬜ | Needs log-based alerts |
 | 17.6 | Telegram bot for alerts | ⚠️ | `mini-services/telegram-rate-bot/` exists; needs wiring to alert source |
