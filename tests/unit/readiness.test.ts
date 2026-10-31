@@ -33,7 +33,8 @@ describe("production readiness URL and deployment mode", () => {
     vi.resetModules();
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DEPLOYMENT_ENV", "production");
-    vi.stubEnv("DATABASE_URL", "postgresql://mekanix:test@localhost:5432/mekanix");
+    vi.stubEnv("DATABASE_URL", "postgresql://mekanix:test-database-password-long-enough@localhost:5432/mekanix");
+    vi.stubEnv("REDIS_URL", "redis://:test-redis-password-long-enough-for-ci@localhost:6379/0");
     vi.stubEnv("JWT_SECRET", "unit-test-secret-with-at-least-32-characters");
     vi.stubEnv("APP_URL", "https://mekanix.ir");
     queryRaw.mockResolvedValue([{ count: 1 }]);
