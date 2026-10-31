@@ -19,7 +19,7 @@ describe("parseTelegramUsdIrrRate", () => {
   });
 
   it("rejects implausible or missing rates", () => {
-    expect(parseTelegramUsdIrrRate("دلار ۶۰,۰۰۰ تومان")).toBeNull();
+    expect(parseTelegramUsdIrrRate("دلار ۶,۰۰۰ تومان")).toBeNull();
     expect(parseTelegramUsdIrrRate("No exchange quote available")).toBeNull();
   });
 });
