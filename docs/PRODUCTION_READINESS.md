@@ -445,7 +445,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 - `PaymentGatewayLog.amount` is the integer IRR amount sent to the bank and verified in the callback; `Payment.amount` remains the USD base amount used by the UI.
 - Payment initiation snapshots the rate, records the snapshot in gateway metadata, and compares the client-visible `expectedAmountIrr` with the server calculation. A mismatch returns HTTP 409 before payment reservation or bank redirect.
 - Live production payments require a fresh Telegram-sourced USD/IRR quote updated within 15 minutes, a valid multiplier (0.5–2), and a normalized Rial rate within the configured safety bounds. The internal display fallback is never accepted for real-money collection.
-- The Telegram collector normalizes Toman quotes to Rial, writes the source and timestamp to PostgreSQL, and exposes `/health` and `/ready`; production deployment readiness independently checks the same trusted-rate contract.
+- The Telegram collector treats unitless `NerkhDollarIRT` quotes as Toman by default (configurable with `TELEGRAM_RATE_UNIT`), prefers the sell quote, normalizes to Rial, writes the source and timestamp to PostgreSQL, and exposes `/health` and `/ready`; production deployment readiness independently checks the same trusted-rate contract.
 
 ## Summary
 
