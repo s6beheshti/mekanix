@@ -52,10 +52,14 @@ export function PaymentGatewayDialog({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Payment initiation failed");
-      if (typeof data.paymentUrl !== "string" || !data.paymentUrl.startsWith("https://")) {
+      if (typeof data.paymentUrl !== "string") {
         throw new Error(isFa ? "نشانی درگاه پرداخت معتبر نیست" : "The gateway URL is invalid");
       }
-      window.location.assign(data.paymentUrl);
+      const paymentUrl = new URL(data.paymentUrl);
+      if (process.env.NODE_ENV === "production" && paymentUrl.protocol !== "https:") {
+        throw new Error(isFa ? "نشانی درگاه پرداخت امن نیست" : "The gateway URL must use HTTPS");
+      }
+      window.location.assign(paymentUrl.toString());
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("pay.gateway.failed"));
       setProcessing(false);
