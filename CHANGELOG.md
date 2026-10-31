@@ -9,6 +9,15 @@
 - Added idempotent payment settlement, pending payment reservations, callback handling, and post-payment VIP/invoice/wallet fulfillment.
 - Legacy `/api/payments`, `/api/prepay`, and `/api/vip/subscribe` endpoints now delegate to the gateway flow instead of simulating success.
 - Live bank acceptance testing remains pending until gateway credentials and public HTTPS `APP_URL` are configured.
+- Added SQLite/PostgreSQL partial unique indexes to prevent concurrent pending VIP/prepayment intents per customer.
+- Production payment redirects are restricted to official Zarinpal/IDPay hosts; callback origins must be public HTTPS origins.
+- Staging is explicitly isolated and may use the simulator; production cannot.
+- Production/staging readiness requires live Redis, PostgreSQL, a 24+ character Redis password, a 16+ character database password, and a 32+ character JWT secret.
+- Redis failures now fail closed for distributed rate limiting/idempotency instead of silently switching to per-instance memory; connection recovery is retried.
+- Production health/readiness responses hide internal diagnostics; detailed failures remain in server logs.
+- Deployment and backup/restore scripts now validate secrets, use the readiness gate, copy all migrations, and refuse unsafe restore targets.
+- Added payment, callback-origin, Redis recovery, rate-limit, and database-index tests; Playwright browser E2E is wired into CI.
+- Dependency versions and transitive overrides were updated; final lockfile regeneration and clean audit are pending GitHub workflow approval.
 
 ## [1.0.0] - 2026-09-25
 
