@@ -68,7 +68,7 @@ export async function fulfillVerifiedPayment(
       invoiceId = invoice.id;
     }
 
-    let payment;
+    let payment: { id: string };
     if (log.paymentId) {
       const pendingPayment = await tx.payment.findUnique({ where: { id: log.paymentId } });
       if (
