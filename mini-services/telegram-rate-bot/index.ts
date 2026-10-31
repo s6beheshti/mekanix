@@ -112,3 +112,15 @@ async function fetchFallbackApi(): Promise<number | null> {
 
 fetchAndStoreRate();
 setInterval(fetchAndStoreRate, POLL_INTERVAL_MS);
+
+
+async function shutdown(signal: string) {
+  console.log(`[rate-bot] ${signal} received; shutting down`);
+  clearInterval(pollTimer);
+  server.stop();
+  await db.$disconnect();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
