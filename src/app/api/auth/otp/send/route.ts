@@ -92,7 +92,7 @@ export async function POST(req: Request) {
   // is already persisted, so the user can still verify via a retry / fallback
   // channel. We surface the error in the response body in dev so a misconfigured
   // SMS provider is visible during integration testing.
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging";
   let smsResult: Awaited<ReturnType<typeof sendOtp>>;
   try {
     smsResult = await sendOtp(phone, code);

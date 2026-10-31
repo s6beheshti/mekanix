@@ -169,6 +169,7 @@ describe("integration — POST /api/auth/otp/send", () => {
 
   it("returns 502 and invalidates an undelivered OTP when SMS fails in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
     vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
     mockSendOtp.mockResolvedValueOnce({ success: false, error: "provider unavailable" });
     mockOtpUpdateMany
@@ -185,6 +186,22 @@ describe("integration — POST /api/auth/otp/send", () => {
     expect(body.code).toBeUndefined();
     expect(body.error).toContain("ارسال کد");
     expect(mockOtpUpdateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the OTP in explicit staging when console SMS is enabled", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "staging");
+    vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
+
+    const req = jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+989121234567",
+    });
+    const res = await otpSendPOST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.code).toMatch(/^\\d{6}$/);
+    expect(body.sms).toBe(true);
   });
 
   it("accepts a phone with spaces / dashes (schema allows those, route strips them)", async () => {
