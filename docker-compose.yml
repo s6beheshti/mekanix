@@ -60,6 +60,9 @@ services:
       dockerfile: Dockerfile.backup-scheduler
     environment:
       - NODE_ENV=production
+      - HOME=/tmp
+      - GNUPGHOME=/tmp/gnupg
+      - BUN_INSTALL_CACHE_DIR=/tmp/bun-cache
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - BACKUP_DIR=/backups
       - BACKUP_SCRIPT=/app/scripts/backup-db.sh
