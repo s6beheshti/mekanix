@@ -30,10 +30,17 @@ describe("verified payment fulfillment", () => {
     status: "REDIRECTED",
     paymentId: "payment-1",
     userId: "customer-1",
-    amount: 10_000,
+    amount: 120_000_000,
     gateway: "ZARINPAL",
     referenceId: "bank-authority-1",
-    description: JSON.stringify({ kind: "invoice", invoiceId: "invoice-1" }),
+    description: JSON.stringify({
+      kind: "invoice",
+      invoiceId: "invoice-1",
+      amountUsd: 10,
+      exchangeRate: 12_000_000,
+      exchangeRateSource: "telegram",
+      exchangeRateUpdatedAt: Date.now(),
+    }),
   };
 
   beforeEach(() => {
@@ -49,7 +56,7 @@ describe("verified payment fulfillment", () => {
       id: "payment-1",
       status: "PENDING",
       userId: "customer-1",
-      amount: 10_000,
+      amount: 10,
       invoiceId: "invoice-1",
     });
     mocks.tx.payment.update.mockResolvedValue({ id: "payment-1" });
@@ -57,7 +64,7 @@ describe("verified payment fulfillment", () => {
       id: "invoice-1",
       code: "INV-1",
       status: "SENT",
-      total: 10_000,
+      total: 10,
       jobId: "job-1",
       job: { technician: null },
     });
@@ -72,7 +79,7 @@ describe("verified payment fulfillment", () => {
     mocks.tx.wallet.update.mockResolvedValue({});
     mocks.tx.walletTransaction.create.mockResolvedValue({});
     mocks.tx.message.create.mockResolvedValue({});
-    mocks.verifyPayment.mockResolvedValue({ success: true, refId: "bank-ref-1", amount: 10_000 });
+    mocks.verifyPayment.mockResolvedValue({ success: true, refId: "bank-ref-1", amount: 120_000_000 });
   });
 
   afterEach(() => {
@@ -89,11 +96,11 @@ describe("verified payment fulfillment", () => {
       { Status: "OK" },
     );
 
-    expect(mocks.verifyPayment).toHaveBeenCalledWith("bank-authority-1", 10_000, "PG-invoice-1");
+    expect(mocks.verifyPayment).toHaveBeenCalledWith("bank-authority-1", 120_000_000, "PG-invoice-1");
     expect(result).toEqual({ paymentId: "payment-1", alreadyProcessed: false });
     expect(mocks.tx.payment.update).toHaveBeenCalledWith({
       where: { id: "payment-1" },
-      data: expect.objectContaining({ status: "SUCCEEDED" }),
+      data: expect.objectContaining({ status: "SUCCEEDED", amount: 10, currency: "IRR" }),
     });
     expect(mocks.tx.invoice.update).toHaveBeenCalledWith({
       where: { id: "invoice-1" },
@@ -121,7 +128,7 @@ describe("verified payment fulfillment", () => {
   });
 
   it("rejects a provider-verified amount that differs from the reserved order", async () => {
-    mocks.verifyPayment.mockResolvedValue({ success: true, refId: "bank-ref-1", amount: 9_999 });
+    mocks.verifyPayment.mockResolvedValue({ success: true, refId: "bank-ref-1", amount: 119_999_999 });
     const { verifyAndFulfillGatewayCallback } = await import("@/lib/payment-fulfillment");
 
     await expect(
