@@ -29,7 +29,7 @@ export function parseTelegramUsdIrrRate(html: string): number | null {
       rate *= 10;
     }
 
-    if (rate >= 100_000 && rate <= 100_000_000) {
+    if (rate >= 1_000_000 && rate <= 100_000_000) {
       return rate;
     }
   }
