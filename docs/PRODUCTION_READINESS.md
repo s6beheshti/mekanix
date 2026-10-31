@@ -17,7 +17,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` version pinned at `0.2.1`; release tag pending `git tag v1.0.0` |
 | 0.2 | Update `CHANGELOG.md` | ⬜ | Not yet authored — track in release tag |
 | 0.3 | Lock all dependency versions | ✅ | `bun.lock` checked in; all deps pinned to exact semver |
-| 0.4 | Freeze Prisma schema | ✅ | `prisma/schema.prisma` is stable; migration `20260925000000_init` committed for both SQLite and PostgreSQL |
+| 0.4 | Freeze Prisma schema | 🛠️ | Schema remains stable; `20261031140000_unique_pending_gateway_intents` adds partial unique indexes for pending VIP/prepay payments in SQLite and PostgreSQL |
 
 ---
 
@@ -28,7 +28,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 1.1 | ESLint passes with 0 errors | ✅ | `bun run lint` → exit 0; permissive ruleset in `eslint.config.mjs` |
 | 1.2 | `tsc --noEmit` passes with 0 errors | ✅ | `bunx tsc --noEmit` → exit 0 |
 | 1.3 | Unit + integration tests pass | ✅ | `bun run test` → 216/216 tests pass across 10 files |
-| 1.4 | CI workflow on PR | 🛠️ | `scripts/setup-ci.sh` exists; wire into GitHub Actions on first push to production repo |
+| 1.4 | CI workflow on PR | 🛠️ | GitHub Actions runs lint, TypeScript, unit/integration, Playwright browser E2E, Docker E2E and PostgreSQL CI; latest run is awaiting GitHub workflow approval and lockfile refresh |
 | 1.5 | Pre-commit hooks (lint + tsc) | 🛠️ | Add `husky` install in production repo; commands already verified to pass |
 | 1.6 | Code coverage report | ⚠️ | `vitest run --coverage` configured but thresholds not enforced |
 
@@ -46,7 +46,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 2.6 | OTP codes hashed at rest (SHA-256) | ✅ | `src/lib/otp-crypto.ts`; integration tests assert DB column holds 64-char hex digest |
 | 2.7 | Session tokens hashed at rest | ✅ | `Session.tokenHash` populated with SHA-256; JWT never persisted verbatim |
 | 2.8 | HTTPS-only cookies in production | 🛠️ | Cookie `secure` flag set in `src/lib/auth.ts` when `NODE_ENV=production` |
-| 2.9 | Dependency vulnerability scan | ✅ | `bun audit` integrated into `security-audit.sh` (step 10) |
+| 2.9 | Dependency vulnerability scan | 🛠️ | Full `bun audit` report is printed and critical/high findings fail Production Readiness; dependency lock refresh and final zero-high/critical scan still pending |
 | 2.10 | CSP / HSTS / X-Frame-Options headers | 🛠️ | Configured in `Caddyfile.production` (HSTS, nosniff, DENY frame, CSP) |
 
 ---
@@ -57,7 +57,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 3.1 | All dependencies pinned | ✅ | `package.json` uses caret semver; `bun.lock` resolves to exact versions |
 | 3.2 | No unused dependencies | ⚠️ | Manual audit needed; some Radix UI components may be unused |
-| 3.3 | `bun audit` clean | ✅ | `scripts/security-audit.sh` step 10 |
+| 3.3 | `bun audit` clean | 🛠️ | First automated fix preview reduced 123 findings to 11; direct package upgrades and transitive overrides are committed, but regenerated lockfile and final audit are pending |
 | 3.4 | Prisma client generated | ✅ | `prisma generate` runs in `Dockerfile` builder stage + dev script `db:generate` |
 
 ---
@@ -71,7 +71,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 4.3 | `NODE_ENV=production` enforced | ✅ | `Dockerfile` sets `NODE_ENV=production`; `package.json start` script sets it too |
 | 4.4 | Strong `JWT_SECRET` required | 🛠️ | `scripts/deploy.sh` exits 1 if `JWT_SECRET` env var missing |
 | 4.5 | `DB_PASSWORD` required | 🛠️ | `scripts/deploy.sh` exits 1 if `DB_PASSWORD` env var missing |
-| 4.6 | Payment provider config | 🛠️ | `PAYMENT_PROVIDER` + `ZARINPAL_MERCHANT_ID` / `IDPAY_API_KEY` / `NEXTPAY_API_KEY` consumed by `src/lib/payment-provider.ts` |
+| 4.6 | Payment provider config | 🛠️ | Production supports Zarinpal or IDPay only; deployment requires real provider credentials and rejects the simulator |
 | 4.7 | SMS provider config | 🛠️ | `SMS_PROVIDER` + Kavenegar/MeliPayamak/Farapayamak credentials consumed by `src/lib/sms-provider.ts` |
 | 4.8 | ETA provider config | 🛠️ | `NESHAN_API_KEY` / `GOOGLE_MAPS_API_KEY` / `OSRM_API_URL` consumed by `src/lib/eta-provider.ts` |
 
@@ -94,14 +94,14 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 6.1 | Payment provider abstraction | 🛠️ | Zarinpal + IDPay implemented; simulator restricted to non-production; unknown/misconfigured providers fail closed. CI pending. |
+| 6.1 | Payment provider abstraction | 🛠️ | Zarinpal + IDPay implemented; simulator is allowed only outside production or in explicitly marked staging; provider tests added, final CI pending |
 | 6.2 | Auto-init on server boot | 🛠️ | `src/lib/init.ts` now calls `initPaymentProvider()`; provider also initializes lazily at first use. |
 | 6.3 | Authenticated payment initiation + UI redirect | 🛠️ | `payment-initiation.ts` is shared by `/api/gateway/initiate`, `/api/payments`, `/api/prepay`, and `/api/vip/subscribe`; UI redirects to hosted bank pages and never collects card/CVV/OTP. |
 | 6.4 | Zarinpal create + verify callback | 🛠️ | Server-to-server request/verify; callback requires matching stored Authority and accepts provider verification codes 100/101. Live credentials not tested. |
 | 6.5 | IDPay create + verify callback | 🛠️ | Stable `order_id` is persisted as the gateway order code and reused during verify; callback status/order are checked. Live credentials not tested. |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY`, public HTTPS `APP_URL`, and provider sandbox/production acceptance test. |
-| 6.7 | Idempotent fulfillment | 🛠️ | A PENDING Payment is reserved before redirect; conditional callback claim settles it once, then applies invoice/warranty, VIP, or prepay wallet/commission effects transactionally. CI/concurrency test pending. |
-| 6.8 | Payment readiness gate | 🛠️ | `/api/ready` rejects simulator/misconfigured providers and requires HTTPS `APP_URL`; payment status is not yet included in `/api/health`. |
+| 6.7 | Idempotent fulfillment | 🛠️ | Conditional callback claim settles once; partial unique DB index prevents concurrent pending VIP/prepay intents per customer; payment verification and idempotency tests added, PostgreSQL migration CI pending |
+| 6.8 | Payment readiness gate | 🛠️ | `/api/ready` rejects simulator/misconfigured production providers and validates `APP_URL` as a public HTTPS origin; `/api/health` remains a liveness probe |
 
 ---
 
@@ -122,7 +122,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 8.1 | Prisma schema provider-agnostic | ✅ | `scripts/db-switch-provider.sh` flips between SQLite (dev) and PostgreSQL (prod) |
-| 8.2 | PostgreSQL migration committed | ✅ | `prisma/migrations-postgresql/20260925000000_init/migration.sql` + `migration_lock.toml` |
+| 8.2 | PostgreSQL migrations committed | 🛠️ | Initial migration plus `20261031140000_unique_pending_gateway_intents`; deploy, staging, Docker E2E and PostgreSQL CI now copy the full migration history |
 | 8.3 | `migrate deploy` runs on container start | ✅ | `Dockerfile` CMD: `prisma migrate deploy && node server.js` |
 | 8.4 | Connection pooling | ⬜ | Use PgBouncer in prod; not configured yet |
 | 8.5 | Read replica | ⬜ | Optional; not yet needed at expected scale |
@@ -153,7 +153,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 10.1 | Dockerfile (multi-stage, non-root) | ✅ | `Dockerfile` — node:20-alpine, non-root `nextjs` user, runs `prisma migrate deploy && node server.js` |
 | 10.2 | docker-compose for app + db + redis | ✅ | `docker-compose.yml` (3 services with healthcheck + volumes) |
-| 10.3 | Deploy script | ✅ | `scripts/deploy.sh` (env validation → provider switch → migrate → build → health-poll → restore dev) |
+| 10.3 | Deploy script | 🛠️ | `scripts/deploy.sh` requires DB/Redis/JWT, public HTTPS APP_URL and real SMS/payment providers; waits for `/api/ready` rather than liveness only |
 | 10.4 | Provision VPS | ⬜ | Needs real server (Hetzner / ArvanCloud / ParsPack) |
 | 10.5 | Install Docker + Caddy on VPS | ⬜ | Post-provision step on real server |
 | 10.6 | Configure firewall (ufw: allow 80, 443, 22) | ⬜ | Post-provision step on real server |
@@ -207,10 +207,10 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 14.1 | Liveness probe (`/api/health`) | ✅ | `src/app/api/health/route.ts` — DB + Redis + SMS + ETA + migration count; 200/503 |
-| 14.2 | Readiness probe (`/api/ready`) | ✅ | `src/app/api/ready/route.ts` — DB reachable + migrations applied; 200/503 |
+| 14.2 | Readiness probe (`/api/ready`) | ✅ | DB reachable + migrations applied; production additionally requires PostgreSQL, real SMS/payment providers and a public HTTPS callback origin; staging is explicitly isolated |
 | 14.3 | `/api/health` returns 503 when DB down | ✅ | `db.$queryRaw\`SELECT 1\`` failure → `ok=false` → 503 |
 | 14.4 | `/api/ready` returns 503 when migrations missing | ✅ | Checks `_prisma_migrations` table count > 0 |
-| 14.5 | Docker healthcheck uses `/api/health` | ✅ | `scripts/deploy.sh` polls `/api/health` post-deploy |
+| 14.5 | Docker liveness and deployment readiness | ✅ | Container healthcheck uses `/api/health`; production and staging deploy scripts poll `/api/ready` before reporting success |
 | 14.6 | Differentiate liveness vs readiness | ✅ | `/api/health` = process + deps status; `/api/ready` = ready-to-serve (DB + migrations only) |
 
 ---
@@ -312,7 +312,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 22.1 | E2E test framework | ⬜ | Add Playwright config; not yet present |
+| 22.1 | E2E test framework | 🛠️ | Playwright config and browser tests exist; CI now installs Chromium and runs them, pending workflow approval and successful run |
 | 22.2 | Customer signup → booking → payment flow | ⬜ | Manual smoke test pending staging deploy |
 | 22.3 | Technician accept job → update status → invoice | ⬜ | Manual smoke test pending staging deploy |
 | 22.4 | Admin login → dashboard → user management | ⬜ | Manual smoke test pending staging deploy |
@@ -388,7 +388,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 28.1 | Push RC image to VPS | 🛠️ | `scripts/deploy.sh` orchestrates: provider switch → migrate → build → up -d → health-poll |
+| 28.1 | Push RC image to VPS | 🛠️ | `scripts/deploy.sh` orchestrates env validation → full PostgreSQL migrations → build → up -d → readiness gate; real host/domain and secrets remain pending |
 | 28.2 | Run `prisma migrate deploy` | ✅ | `Dockerfile` CMD does this on every container boot |
 | 28.3 | Caddy picks up new cert | 🛠️ | Caddy auto-provisions on first request to `mekanix.ir` |
 | 28.4 | DNS resolves to VPS | ⬜ | Verify with `dig mekanix.ir` |
@@ -400,8 +400,8 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 29.1 | `curl https://mekanix.ir/api/health` → 200 | 🛠️ | `scripts/deploy.sh` polls `/api/health` until `ok:true` |
-| 29.2 | `curl https://mekanix.ir/api/ready` → 200 | 🛠️ | Manual curl post-deploy |
+| 29.1 | `curl https://mekanix.ir/api/health` → 200 | 🛠️ | Liveness check; must be verified after DNS/HTTPS activation |
+| 29.2 | `curl https://mekanix.ir/api/ready` → 200 | 🛠️ | Production deploy script waits for readiness; real domain and provider credentials still required |
 | 29.3 | Customer OTP send + verify | ⬜ | Manual test with real phone |
 | 29.4 | Payment flow end-to-end | ⬜ | Manual test with real card |
 | 29.5 | Admin login | ⬜ | Manual test with `ADMIN_BOOTSTRAP_*` |
@@ -432,7 +432,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 31.3 | Check DB size + slow queries | ⬜ | `pg_stat_statements` |
 | 31.4 | Verify backup ran successfully | 🛠️ | `mini-services/backup-scheduler` `/backups` endpoint lists files |
 | 31.5 | Confirm SMS delivery rate | ⬜ | Provider dashboard (Kavenegar/MeliPayamak) |
-| 31.6 | Confirm payment success rate | ⬜ | Provider dashboard (Zarinpal/IDPay) |
+| 31.6 | Confirm payment success rate | ⬜ | Provider dashboard (Zarinpal/IDPay); requires live gateway acceptance test |
 | 31.7 | Gather user feedback | ⬜ | Support tickets + app store reviews |
 | 31.8 | Schedule v1.0.1 patch release (if needed) | ⬜ | Based on feedback |
 
