@@ -44,7 +44,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
     }
     const html = await res.text();
     const rate = parseTelegramUsdIrrRate(html);
-    if (rate && rate > 100000 && rate < 10000000) {
+    if (rate && Number.isSafeInteger(rate) && rate >= 100_000 && rate <= 100_000_000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
         update: { value: String(rate), description: `@${channel}`, updatedAt: new Date() },
