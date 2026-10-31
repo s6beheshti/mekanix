@@ -235,6 +235,139 @@ describe("payment initiation server-side authority", () => {
     });
   });
 
+  it("reuses an existing hosted VIP link after confirming its original IRR amount", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://mekanix.ir");
+    mocks.getUsdIrrRateSnapshot.mockResolvedValue({
+      rate: 6_000_000,
+      baseRate: 6_000_000,
+      multiplier: 1,
+      source: "mekanix-internal",
+      fetchedAt: Date.now(),
+      rateUpdatedAt: null,
+      ageMs: null,
+      trustedForPayments: false,
+    });
+    mocks.db.paymentGatewayLog.findFirst.mockResolvedValueOnce({
+      id: "gateway-log-existing",
+      code: "PG-existing",
+      userId: "customer-1",
+      amount: 108_000_000,
+      status: "REDIRECTED",
+      paymentUrl: "https://www.zarinpal.com/pg/StartPay/existing-authority",
+      initiatedAt: new Date(Date.now() - 60_000),
+      paymentId: "payment-existing",
+      description: JSON.stringify({
+        kind: "vip",
+        subscriptionId: "subscription-existing",
+        planId: "plan-1",
+        durationDays: 365,
+        planName: "سالانه",
+        amountUsd: 9,
+        exchangeRate: 12_000_000,
+        exchangeRateSource: "telegram",
+        exchangeRateUpdatedAt: Date.now() - 60_000,
+      }),
+    });
+
+    const response = await postPayment({
+      purpose: "vip",
+      planId: "plan-1",
+      expectedAmountIrr: 108_000_000,
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.reused).toBe(true);
+    expect(body.paymentUrl).toContain("existing-authority");
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+    expect(mocks.db.payment.create).not.toHaveBeenCalled();
+    expect(mocks.db.userVipSubscription.create).not.toHaveBeenCalled();
+  });
+
+  it("asks the customer to reconfirm the stored amount when a pending link uses another rate", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://mekanix.ir");
+    mocks.db.paymentGatewayLog.findFirst.mockResolvedValueOnce({
+      id: "gateway-log-existing",
+      code: "PG-existing",
+      userId: "customer-1",
+      amount: 108_000_000,
+      status: "REDIRECTED",
+      paymentUrl: "https://www.zarinpal.com/pg/StartPay/existing-authority",
+      initiatedAt: new Date(Date.now() - 60_000),
+      paymentId: "payment-existing",
+      description: JSON.stringify({
+        kind: "vip",
+        subscriptionId: "subscription-existing",
+        planId: "plan-1",
+        durationDays: 365,
+        planName: "سالانه",
+        amountUsd: 9,
+        exchangeRate: 12_000_000,
+        exchangeRateSource: "telegram",
+        exchangeRateUpdatedAt: Date.now() - 60_000,
+      }),
+    });
+
+    const response = await postPayment({
+      purpose: "vip",
+      planId: "plan-1",
+      expectedAmountIrr: 100_000_000,
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("AMOUNT_CHANGED");
+    expect(body.amountUsd).toBe(9);
+    expect(body.exchangeRate).toBe(12_000_000);
+    expect(body.gatewayAmountIrr).toBe(108_000_000);
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+  });
+
+  it("expires an abandoned VIP intent after its redirect lifetime and allows a fresh attempt", async () => {
+    mocks.db.paymentGatewayLog.findFirst.mockResolvedValueOnce({
+      id: "gateway-log-expired",
+      code: "PG-expired",
+      userId: "customer-1",
+      amount: 108_000_000,
+      status: "REDIRECTED",
+      paymentUrl: "https://www.zarinpal.com/pg/StartPay/expired-authority",
+      initiatedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      paymentId: "payment-expired",
+      description: JSON.stringify({
+        kind: "vip",
+        subscriptionId: "subscription-expired",
+        planId: "plan-1",
+        durationDays: 365,
+        planName: "سالانه",
+        amountUsd: 9,
+        exchangeRate: 12_000_000,
+        exchangeRateSource: "telegram",
+        exchangeRateUpdatedAt: Date.now() - 25 * 60 * 60 * 1000,
+      }),
+    });
+
+    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+
+    expect(response.status).toBe(200);
+    expect(mocks.db.paymentGatewayLog.updateMany).toHaveBeenCalledWith({
+      where: { id: "gateway-log-expired", status: { in: ["INITIATED", "REDIRECTED"] } },
+      data: { status: "CANCELLED" },
+    });
+    expect(mocks.db.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "payment-expired", status: "PENDING" },
+      data: { status: "FAILED" },
+    });
+    expect(mocks.db.userVipSubscription.updateMany).toHaveBeenCalledWith({
+      where: { id: "subscription-expired", userId: "customer-1", status: "PENDING_PAYMENT" },
+      data: { status: "CANCELLED" },
+    });
+    expect(mocks.createPayment).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks a second pending VIP subscription before reserving another payment", async () => {
     mocks.db.userVipSubscription.findFirst.mockResolvedValue({ id: "pending-subscription" });
 
