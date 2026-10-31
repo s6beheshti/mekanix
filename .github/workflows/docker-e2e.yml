@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DB_PASSWORD: test_password
+      DB_PASSWORD: ci_test_database_password_long_enough
       JWT_SECRET: ci-staging-secret-with-more-than-32-characters
-      REDIS_PASSWORD: test_redis_password
+      REDIS_PASSWORD: ci_test_redis_password_long_enough
       APP_URL: http://localhost:3000
       DEPLOYMENT_ENV: staging
       SMS_PROVIDER: console
