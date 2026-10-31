@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider";
+import { isPublicHttpsOrigin } from "@/lib/url-validation";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -152,7 +153,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   let callbackUrl: URL;
   try {
     callbackUrl = new URL("/api/gateway/callback", appUrl);
-    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" && callbackUrl.protocol !== "https:") {
+    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" && !isPublicHttpsOrigin(appUrl)) {
       throw new Error("Production callback URL must use HTTPS");
     }
   } catch {
