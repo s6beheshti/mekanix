@@ -47,8 +47,8 @@ function memRateLimit(key: string, max: number, windowMs: number): { success: bo
 }
 
 // ──────────── Unified rate limit function ────────────
-// Synchronous version (uses in-memory) — for backward compat.
-// Existing callers use rateLimit(key, max, windowMs) synchronously.
+// Synchronous version — development/test only.
+// Production callers must use rateLimitAsync(); this API denies in production.
 
 export function rateLimit(key: string, max: number, windowMs: number): { success: boolean; resetMs: number } {
   if (process.env.NODE_ENV === "production") {
@@ -58,8 +58,8 @@ export function rateLimit(key: string, max: number, windowMs: number): { success
   return memRateLimit(key, max, windowMs);
 }
 
-// Async version that uses Redis when available.
-// New callers should use this for distributed rate limiting.
+// Async version using Redis for distributed rate limiting.
+// Production/staging fail closed when Redis is unavailable; dev/test may use memory.
 
 export async function rateLimitAsync(key: string, max: number, windowMs: number): Promise<{ success: boolean; resetMs: number }> {
   // Try Redis first
