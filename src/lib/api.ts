@@ -104,8 +104,11 @@ export const api = {
     req<Invoice>(`/api/invoices`, { method: "POST", body: JSON.stringify({ jobId, ...data }) }),
   updateInvoice: (id: string, data: any) =>
     req<Invoice>(`/api/invoices/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  payInvoice: (invoiceId: string, method: string) =>
-    req<Payment>(`/api/payments`, { method: "POST", body: JSON.stringify({ invoiceId, method }) }),
+  payInvoice: (invoiceId: string) =>
+    req<{ ok: boolean; code: string; paymentUrl: string; amount: number; currency: string }>(
+      `/api/payments`,
+      { method: "POST", body: JSON.stringify({ invoiceId }) }
+    ),
   createReview: (data: { jobId: string; technicianId: string; rating: number; comment?: string }) =>
     req<Review>(`/api/reviews`, { method: "POST", body: JSON.stringify(data) }),
   listMessages: (jobId: string) => req<Message[]>(`/api/messages?jobId=${jobId}`),
