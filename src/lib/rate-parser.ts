@@ -10,7 +10,7 @@ function normalizeDigits(value: string): string {
  * Parse a USD quote from the configured Tehran Telegram channel.
  * The platform stores and charges in Rial, so Toman quotes are multiplied by 10.
  */
-export function parseTelegramUsdIrrRate(html: string): number | null {
+export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "toman" = "toman"): number | null {
   const patterns: Array<{ regex: RegExp; unitGroup?: number }> = [
     { regex: /دلار[^0-9۰-۹٠-٩]*([\d,٬۰-۹٠-٩\s]+)\s*(ریال|تومان)?/i, unitGroup: 2 },
     { regex: /USD[^0-9۰-۹٠-٩]*([\d,٬۰-۹٠-٩]+)/i },
@@ -25,7 +25,8 @@ export function parseTelegramUsdIrrRate(html: string): number | null {
     let rate = Number.parseInt(raw, 10);
     if (!Number.isFinite(rate)) continue;
 
-    if (pattern.unitGroup && match[pattern.unitGroup] === "تومان") {
+    const unit = pattern.unitGroup ? match[pattern.unitGroup] : undefined;
+    if (unit === "تومان" || (!unit && defaultUnit === "toman")) {
       rate *= 10;
     }
 
