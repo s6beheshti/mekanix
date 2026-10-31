@@ -89,7 +89,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
         update: { value: "telegram", updatedAt: new Date() },
         create: { key: "usd_irr_rate_source", value: "telegram" },
       });
-      console.log(`✓ Telegram: ${quote.rate.toLocaleString()} IRR/USD (quoted ${quotedAt.toISOString()})`);
+      console.log(`✓ Telegram: ${quote.rate.toLocaleString()} IRR/USD (${quote.quoteType}; quoted ${quotedAt.toISOString()})`);
       return quote.rate;
     }
     console.log("⚠️ No fresh timestamped Telegram quote, fallback API");
