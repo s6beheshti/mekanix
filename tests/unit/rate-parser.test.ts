@@ -26,6 +26,11 @@ describe("parseTelegramUsdIrrRate", () => {
     expect(parseTelegramUsdIrrRate("دلار خرید: 270,300\nدلار فروش: 270,390")).toBe(2_703_900);
   });
 
+  it("selects the sell amount when buy and sell prices share one line", () => {
+    expect(parseTelegramUsdIrrRate("دلار تهران: 270,380 خرید🔵 271,000 فروش🔴")).toBe(2_710_000);
+    expect(parseTelegramUsdIrrRate("دلار تهران: فروش 271,000")).toBe(2_710_000);
+  });
+
   it("allows channels with unitless Rial quotes to override the default", () => {
     expect(parseTelegramUsdIrrRate("دلار تهران: 12,000,000", "rial")).toBe(12_000_000);
   });
