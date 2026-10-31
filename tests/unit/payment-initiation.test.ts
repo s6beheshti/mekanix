@@ -10,9 +10,9 @@ const mocks = vi.hoisted(() => ({
   db: {
     user: { findUnique: vi.fn() },
     vipPlan: { findFirst: vi.fn() },
-    userVipSubscription: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    payment: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
-    paymentGatewayLog: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    userVipSubscription: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    payment: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    paymentGatewayLog: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     invoice: { findUnique: vi.fn() },
     job: { findUnique: vi.fn() },
   },
@@ -70,6 +70,9 @@ describe("payment initiation server-side authority", () => {
     mocks.db.paymentGatewayLog.findFirst.mockResolvedValue(null);
     mocks.db.paymentGatewayLog.create.mockResolvedValue({ id: "gateway-log-1" });
     mocks.db.paymentGatewayLog.update.mockResolvedValue({});
+    mocks.db.paymentGatewayLog.updateMany.mockResolvedValue({ count: 1 });
+    mocks.db.payment.updateMany.mockResolvedValue({ count: 1 });
+    mocks.db.userVipSubscription.updateMany.mockResolvedValue({ count: 1 });
     mocks.createPayment.mockImplementation(async (input: { orderId: string }) => ({
       success: true,
       authority: `sim_${input.orderId}`,
