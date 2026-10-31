@@ -59,3 +59,44 @@ export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "tom
 
   return null;
 }
+
+export type TelegramUsdIrrQuote = {
+  rate: number;
+  quotedAt: number;
+};
+
+/**
+ * Return only a quote attached to a Telegram message timestamp that is still
+ * within the payment freshness window. Fetch time alone must never make an old
+ * channel post look current.
+ */
+export function parseFreshTelegramUsdIrrQuote(
+  html: string,
+  defaultUnit: "rial" | "toman" = "toman",
+  now = Date.now(),
+  maxAgeMs = 15 * 60 * 1000,
+): TelegramUsdIrrQuote | null {
+  const blocks = Array.from(
+    html.matchAll(
+      /<div\\b[^>]*class=["'][^"']*\\btgme_widget_message_wrap\\b[^"']*["'][\\s\\S]*?(?=<div\\b[^>]*class=["'][^"']*\\btgme_widget_message_wrap\\b|$)/gi,
+    ),
+    (match) => match[0],
+  );
+
+  const quotes: TelegramUsdIrrQuote[] = [];
+  for (const block of blocks) {
+    const timeMatch = block.match(/<time\\b[^>]*datetime=["']([^"']+)["'][^>]*>/i);
+    if (!timeMatch?.[1]) continue;
+
+    const quotedAt = Date.parse(timeMatch[1]);
+    if (!Number.isFinite(quotedAt) || quotedAt > now + 60_000 || now - quotedAt > maxAgeMs) {
+      continue;
+    }
+
+    const rate = parseTelegramUsdIrrRate(block, defaultUnit);
+    if (rate !== null) quotes.push({ rate, quotedAt });
+  }
+
+  quotes.sort((a, b) => b.quotedAt - a.quotedAt);
+  return quotes[0] ?? null;
+}
