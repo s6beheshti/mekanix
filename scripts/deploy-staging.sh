@@ -19,6 +19,19 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 : "${JWT_SECRET:?JWT_SECRET is required for staging}"
 : "${REDIS_PASSWORD:?REDIS_PASSWORD is required for staging}"
 
+if [ ${#JWT_SECRET} -lt 32 ]; then
+  echo "❌ JWT_SECRET must contain at least 32 characters"
+  exit 1
+fi
+if [ ${#DB_PASSWORD} -lt 16 ]; then
+  echo "❌ DB_PASSWORD must contain at least 16 characters"
+  exit 1
+fi
+if [ ${#REDIS_PASSWORD} -lt 24 ]; then
+  echo "❌ REDIS_PASSWORD must contain at least 24 characters"
+  exit 1
+fi
+
 echo "🚀 MEKANIX Staging Deployment"
 echo "   Port: 3001"
 echo "   DB: mekanix_staging"
