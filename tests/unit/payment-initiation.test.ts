@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   db: {
     user: { findUnique: vi.fn() },
     vipPlan: { findFirst: vi.fn() },
-    userVipSubscription: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    userVipSubscription: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     payment: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     paymentGatewayLog: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     invoice: { findUnique: vi.fn() },
@@ -62,6 +62,7 @@ describe("payment initiation server-side authority", () => {
       name: "سالانه",
     });
     mocks.db.userVipSubscription.findFirst.mockResolvedValue(null);
+    mocks.db.userVipSubscription.findUnique.mockResolvedValue({ userId: "customer-1", status: "PENDING_PAYMENT" });
     mocks.db.userVipSubscription.create.mockResolvedValue({ id: "subscription-1" });
     mocks.db.userVipSubscription.update.mockResolvedValue({});
     mocks.db.payment.findUnique.mockResolvedValue(null);
