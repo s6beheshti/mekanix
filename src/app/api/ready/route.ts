@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getSmsProviderStatus } from "@/lib/sms-provider";
 import { getPaymentProviderStatus } from "@/lib/payment-provider";
 import { isPublicHttpsOrigin } from "@/lib/url-validation";
+import { isRedisAvailable } from "@/lib/redis";
 
 // GET /api/ready — readiness check (different from liveness)
 // /api/health = is the process alive? (always 200 if running)
@@ -27,6 +28,7 @@ export async function GET() {
     checks: {
       database: false,
       migrationsApplied: false,
+      redis: false,
       jwtSecret: false,
       smsProvider: false,
       paymentProvider: false,
@@ -43,6 +45,15 @@ export async function GET() {
   } else {
     ready.ok = false;
     ready.errors.push("JWT_SECRET must contain at least 32 characters");
+  }
+
+  // Production and staging require Redis; in-memory fallback is not distributed.
+  const requiresRedis = isProduction || process.env.DEPLOYMENT_ENV === "staging";
+  if (!requiresRedis || (await isRedisAvailable())) {
+    ready.checks.redis = true;
+  } else {
+    ready.ok = false;
+    ready.errors.push("Redis: not reachable; production/staging cannot use in-memory fallback");
   }
 
   // ─── 1. Database reachable ───
