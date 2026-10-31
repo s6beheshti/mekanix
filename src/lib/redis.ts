@@ -56,6 +56,7 @@ async function getRedisClient(): Promise<any | null> {
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
       connectTimeout: 5000,
+      lazyConnect: true,
     });
     candidate.on("ready", () => {
       redisAvailable = true;
@@ -68,7 +69,10 @@ async function getRedisClient(): Promise<any | null> {
       if (redisClient === candidate) redisClient = null;
     });
 
-    // Cache only a client that has completed a successful health check.
+    // Wait for the socket to become ready before sending PING. With
+    // enableOfflineQueue=false, pinging during the initial TCP handshake
+    // fails immediately with "Stream isn't writeable".
+    await candidate.connect();
     await candidate.ping();
     redisClient = candidate;
     redisAvailable = true;
