@@ -41,7 +41,10 @@ function parsePendingPaymentMetadata(value: string | null): PaymentMetadata | nu
       !Number.isSafeInteger(parsed.exchangeRate) ||
       parsed.exchangeRate <= 0 ||
       typeof parsed.exchangeRateSource !== "string" ||
-      !(parsed.exchangeRateUpdatedAt === null || Number.isFinite(parsed.exchangeRateUpdatedAt))
+      !(parsed.exchangeRateUpdatedAt === null || Number.isFinite(parsed.exchangeRateUpdatedAt)) ||
+      (parsed.kind === "vip" && (typeof parsed.subscriptionId !== "string" || typeof parsed.planId !== "string")) ||
+      (parsed.kind === "invoice" && typeof parsed.invoiceId !== "string") ||
+      (parsed.kind === "prepay" && typeof parsed.jobId !== "string")
     ) return null;
     return parsed;
   } catch {
@@ -129,6 +132,19 @@ async function resumePendingIntent(
     ) throw new Error("Unsafe stored payment URL");
   } catch {
     return NextResponse.json({ error: "نشانی درگاه ذخیره‌شده معتبر نیست؛ با پشتیبانی تماس بگیرید" }, { status: 409 });
+  }
+
+  if (!log.paymentId || Math.round(metadata.amountUsd * metadata.exchangeRate) !== Number(log.amount)) {
+    return NextResponse.json({ error: "اطلاعات پرداخت قبلی معتبر نیست؛ با پشتیبانی تماس بگیرید" }, { status: 409 });
+  }
+  if (metadata.kind === "vip") {
+    const subscription = await db.userVipSubscription.findUnique({
+      where: { id: metadata.subscriptionId },
+      select: { userId: true, status: true },
+    });
+    if (!subscription || subscription.userId !== log.userId || subscription.status !== "PENDING_PAYMENT") {
+      return NextResponse.json({ error: "اشتراک در انتظار پرداخت دیگر معتبر نیست" }, { status: 409 });
+    }
   }
 
   const expected = typeof expectedAmountIrr === "number" ? expectedAmountIrr : null;
