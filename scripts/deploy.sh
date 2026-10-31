@@ -9,8 +9,12 @@
 #   bash scripts/deploy.sh
 #
 # Required env vars:
-#   DB_PASSWORD     — PostgreSQL password
-#   JWT_SECRET      — JWT signing secret
+#   DB_PASSWORD      — PostgreSQL password
+#   JWT_SECRET       — JWT signing secret
+#   REDIS_PASSWORD   — Redis password
+#   APP_URL          — public HTTPS origin
+#   SMS_PROVIDER     — kavenegar / melipayamak / farapayamak
+#   PAYMENT_PROVIDER — zarinpal / idpay
 
 set -euo pipefail
 
@@ -22,23 +26,29 @@ echo "🚀 MEKANIX Production Deployment"
 echo "   Repo: $REPO_DIR"
 echo ""
 
-# ─── Validate required env vars ───
+# ─── Validate required production env vars ───
 MISSING=0
-if [ -z "${DB_PASSWORD:-}" ]; then
-  echo "❌ DB_PASSWORD not set"
+for VAR in DB_PASSWORD JWT_SECRET REDIS_PASSWORD APP_URL SMS_PROVIDER PAYMENT_PROVIDER; do
+  if [ -z "${!VAR:-}" ]; then
+    echo "❌ $VAR not set"
+    MISSING=1
+  fi
+done
+if [ -n "${APP_URL:-}" ] && [[ "$APP_URL" != https://* ]]; then
+  echo "❌ APP_URL must start with https://"
   MISSING=1
 fi
-if [ -z "${JWT_SECRET:-}" ]; then
-  echo "❌ JWT_SECRET not set"
-  MISSING=1
-  echo "❌ JWT_SECRET not set"
-  MISSING=1
-fi
+case "${SMS_PROVIDER:-}" in
+  kavenegar|melipayamak|farapayamak) ;;
+  *) echo "❌ SMS_PROVIDER must be a real provider (not console)"; MISSING=1 ;;
+esac
+case "${PAYMENT_PROVIDER:-}" in
+  zarinpal|idpay) ;;
+  *) echo "❌ PAYMENT_PROVIDER must be zarinpal or idpay (not simulator)"; MISSING=1 ;;
+esac
 if [ "$MISSING" = "1" ]; then
   echo ""
-  echo "Set required env vars:"
-  echo "  export DB_PASSWORD=your_secure_password"
-  echo "  export JWT_SECRET=your_secure_secret"
+  echo "Set all required production environment variables before deployment."
   exit 1
 fi
 
@@ -72,24 +82,25 @@ echo "🏗️  Building and deploying with docker compose..."
 cd "$BUILD_CTX"
 docker compose up -d --build
 
-# ─── Wait for health ───
-echo "⏳ Waiting for app to be healthy..."
-HEALTH_URL="http://localhost:3000/api/health"
+# ─── Wait for production readiness (not merely process health) ───
+echo "⏳ Waiting for production readiness..."
+READY_URL="http://localhost:3000/api/ready"
+READY_JSON="{}"
 for i in $(seq 1 60); do
-  HEALTH_JSON="$(curl -s "$HEALTH_URL" 2>/dev/null || echo '{}')"
-  if echo "$HEALTH_JSON" | grep -q '"ok":true'; then
-    echo "✅ App is healthy!"
+  READY_JSON="$(curl -fsS "$READY_URL" 2>/dev/null || echo '{}')"
+  if echo "$READY_JSON" | grep -q '"ok":true'; then
+    echo "✅ App is production-ready!"
     echo ""
-    echo "$HEALTH_JSON" | python3 -c "
+    echo "$READY_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(f'  Database: {d[\"services\"][\"database\"]}')
-print(f'  Redis: {d[\"services\"][\"redis\"]}')
+print('  Checks:', ', '.join(k for k, v in d['checks'].items() if v))
 " 2>/dev/null || true
     break
   fi
   if [ "$i" = "60" ]; then
-    echo "❌ App did not become healthy within 120s"
+    echo "❌ App did not become production-ready within 120s"
+    echo "   Last readiness response: $READY_JSON"
     echo "   Check logs: docker compose logs"
     exit 1
   fi
