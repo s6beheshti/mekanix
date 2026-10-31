@@ -5,6 +5,15 @@ import { requireAuth } from "@/lib/auth";
 import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
 type PaymentMetadata =
   | { kind: "vip"; subscriptionId: string; planId: string; durationDays: number; planName: string }
   | { kind: "invoice"; invoiceId: string }
@@ -191,6 +200,9 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (pendingSubscriptionId) {
       await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
     }
+    if (isUniqueConstraintError(error)) {
+      return NextResponse.json({ error: "برای این صورتحساب یک پرداخت موفق یا در حال انجام وجود دارد" }, { status: 409 });
+    }
     console.error("[payment] Could not reserve payment record:", error);
     return NextResponse.json({ error: "ثبت درخواست پرداخت ممکن نشد" }, { status: 500 });
   }
@@ -215,6 +227,9 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } }).catch(() => undefined);
     if (pendingSubscriptionId) {
       await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+    }
+    if (isUniqueConstraintError(error)) {
+      return NextResponse.json({ error: "یک پرداخت از همین نوع برای حساب شما در حال انجام است" }, { status: 409 });
     }
     console.error("[payment] Could not create gateway log:", error);
     return NextResponse.json({ error: "ثبت تراکنش در سامانه ممکن نشد" }, { status: 500 });
