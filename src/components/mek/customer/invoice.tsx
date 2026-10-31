@@ -2,12 +2,11 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Receipt, Loader2, CreditCard, Wallet, Landmark, Banknote, ShieldCheck, CheckCircle2, ArrowLeft, Lock, FileText,
+  Receipt, Loader2, ShieldCheck, CheckCircle2, ArrowLeft, Lock, FileText,
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Invoice, type Job, type Payment } from "@/lib/api";
-import { PAYMENT_METHODS } from "@/lib/constants";
+import { api, type Invoice, type Job } from "@/lib/api";
 import { fmtDate, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const [job, setJob] = useState<Job | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [method, setMethod] = useState("card");
   const [paying, setPaying] = useState(false);
 
   useEffect(() => {
@@ -41,13 +39,10 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         const updated = await api.updateJobStatus(job.id, job.status, { customerApproved: true });
         setJob(updated);
       }
-      const pay = await api.payInvoice(invoice.id, method);
-      if (pay.status === "SUCCEEDED") {
-        toast.success(t("pay.success"));
-        go("completion", { jobId: job!.id });
-      } else {
-        toast.error(t("pay.failed"));
-      }
+      const pay = await api.payInvoice(invoice.id);
+      if (!pay.paymentUrl) throw new Error(t("pay.failed"));
+      toast.message(isFa ? "در حال انتقال به درگاه بانکی..." : "Redirecting to the bank gateway...");
+      window.location.assign(pay.paymentUrl);
     } catch (e: any) {
       toast.error(e.message ?? t("pay.failed"));
     } finally {
@@ -168,20 +163,11 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
             <h3 className="font-display text-sm font-semibold">{t("invoice.approvePay")}</h3>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{t("invoice.approvePayHint")}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {PAYMENT_METHODS.map((m) => {
-              const Icon = { CreditCard, Wallet, Landmark, Banknote }[m.icon] ?? CreditCard;
-              return (
-                <button
-                  key={m.slug}
-                  onClick={() => setMethod(m.slug)}
-                  className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 transition-colors ${method === m.slug ? "border-amber bg-amber/10" : "border-border hover:bg-accent"}`}
-                >
-                  <Icon className={`size-5 ${method === m.slug ? "text-amber" : "text-muted-foreground"}`} />
-                  <span className="text-[10px] font-medium leading-tight">{t(`pay.${m.slug}`)}</span>
-                </button>
-              );
-            })}
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+            <ShieldCheck className="size-4 shrink-0 text-emerald-glow" />
+            {isFa
+              ? "با ادامه، برای پرداخت امن به درگاه بانکی منتقل می‌شوید."
+              : "Continue to the secure bank gateway to complete this payment."}
           </div>
 
           <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-glow/20 bg-emerald-glow/5 p-3 text-[11px] text-muted-foreground">
