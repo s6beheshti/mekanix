@@ -29,7 +29,7 @@ cd "$REPO_DIR"
 if [ -f "$REPO_DIR/.env" ]; then
   set -a
   # shellcheck disable=SC1091
-  source <(sed 's/\\r$//' "$REPO_DIR/.env")
+  source <(sed 's/\r$//' "$REPO_DIR/.env")
   set +a
 fi
 
