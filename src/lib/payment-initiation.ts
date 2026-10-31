@@ -99,8 +99,8 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (job.prepayPaid) return NextResponse.json({ error: "پیش‌پرداخت این سفارش قبلاً انجام شده است" }, { status: 409 });
     if (!job.technician) return NextResponse.json({ error: "مکانیک برای این سفارش تعیین نشده است" }, { status: 409 });
     const heavy = job.request.vehicle.type !== "CAR";
-    const inspectionFee = Number(heavy ? job.technician.inspectionFeeHeavy : job.technician.inspectionFee);
-    const travelFee = Number(job.technician.travelFeeBase);
+    const inspectionFee = Number((heavy ? job.technician.inspectionFeeHeavy : job.technician.inspectionFee) ?? (heavy ? 20 : 7));
+    const travelFee = Number(job.technician.travelFeeBase ?? 3);
     amount = Math.round(inspectionFee + travelFee);
     title = `پیش‌پرداخت سفارش ${job.code}`;
     metadata = { kind: "prepay", jobId: job.id, inspectionFee, travelFee, heavy };
