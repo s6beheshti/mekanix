@@ -22,7 +22,7 @@ describe("payment provider production safety", () => {
     vi.resetModules();
   });
 
-  it("never enables the simulator in production", async () => {
+  it("disables the simulator in production unless the runtime is explicitly staging", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const provider = await import("@/lib/payment-provider");
 
