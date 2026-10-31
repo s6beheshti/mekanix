@@ -12,6 +12,27 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/health") return Response.json({ ok: true, channel, port });
+    if (url.pathname === "/ready") {
+      const [rateSetting, sourceSetting] = await Promise.all([
+        db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } }),
+        db.platformSetting.findUnique({ where: { key: "usd_irr_rate_source" } }),
+      ]);
+      const rate = Number(rateSetting?.value);
+      const updatedAt = rateSetting?.updatedAt ? new Date(rateSetting.updatedAt).getTime() : null;
+      const ageMs = updatedAt === null ? null : Date.now() - updatedAt;
+      const ok =
+        sourceSetting?.value === "telegram" &&
+        Number.isSafeInteger(rate) &&
+        rate >= 100_000 &&
+        rate <= 100_000_000 &&
+        ageMs !== null &&
+        ageMs >= 0 &&
+        ageMs <= 15 * 60 * 1000;
+      return Response.json(
+        { ok, rate: Number.isFinite(rate) ? rate : null, source: sourceSetting?.value ?? "unknown", ageMs },
+        { status: ok ? 200 : 503 },
+      );
+    }
     if (url.pathname === "/fetch-now") {
       const rate = await fetchAndStoreRate();
       return Response.json({ rate, channel, fetchedAt: new Date().toISOString() });
