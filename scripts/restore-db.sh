@@ -60,7 +60,11 @@ case "$DB_URL" in
     SQLITE_PATH="${DB_URL#file:}"
     [[ "$SQLITE_PATH" = /* ]] || SQLITE_PATH="$REPO_DIR/$SQLITE_PATH"
     mkdir -p "$(dirname "$SQLITE_PATH")"
-    if command -v sqlite3 >/dev/null 2>&1 && head -c 128 "$RESTORE_TMP" | grep -aEiq "PRAGMA|BEGIN TRANSACTION|CREATE TABLE"; then
+    if head -c 128 "$RESTORE_TMP" | grep -aEiq "PRAGMA|BEGIN TRANSACTION|CREATE TABLE"; then
+      if ! command -v sqlite3 >/dev/null 2>&1; then
+        echo "❌ sqlite3 is required to restore a SQL dump; install sqlite3 and retry"
+        exit 1
+      fi
       echo "📥 Restoring SQLite SQL dump..."
       rm -f "$SQLITE_PATH"
       sqlite3 "$SQLITE_PATH" < "$RESTORE_TMP"
