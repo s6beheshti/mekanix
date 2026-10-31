@@ -27,7 +27,7 @@ const server = Bun.serve({
         rate >= 100_000 &&
         rate <= 100_000_000 &&
         ageMs !== null &&
-        ageMs >= -TELEGRAM_RATE_MAX_FUTURE_SKEW_MS &&
+        ageMs >= 0 &&
         ageMs <= TELEGRAM_RATE_MAX_AGE_MS;
       return Response.json(
         { ok, rate: Number.isFinite(rate) ? rate : null, source: sourceSetting?.value ?? "unknown", ageMs },
