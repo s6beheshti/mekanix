@@ -2,9 +2,9 @@
 import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();
-const channel = process.env.TELEGRAM_RATE_channel || "NerkhDollarIRT";
-const port = Number(process.env.port || 3004);
-const pollIntervalMs = Math.max(30_000, Number(process.env.pollIntervalMs || 60_000));
+const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
+const port = Number(process.env.PORT || 3004);
+const pollIntervalMs = Math.max(30_000, Number(process.env.POLL_INTERVAL_MS || 60_000));
 
 const server = Bun.serve({
   port,
@@ -21,7 +21,7 @@ const server = Bun.serve({
       return Response.json({
         rate: setting?.value ? parseFloat(setting.value) : null,
         source: source?.value ?? "telegram",
-        channel: channel,
+        channel,
         updatedAt: setting?.updatedAt,
       });
     }
