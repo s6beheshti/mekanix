@@ -27,6 +27,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - TELEGRAM_RATE_CHANNEL=${TELEGRAM_RATE_CHANNEL:-NerkhDollarIRT}
+      - TELEGRAM_RATE_UNIT=${TELEGRAM_RATE_UNIT:-toman}
       - PORT=3004
       - POLL_INTERVAL_MS=${RATE_BOT_POLL_INTERVAL_MS:-60000}
     depends_on:
