@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { verifyAndFulfillGatewayCallback } from "@/lib/payment-fulfillment";
+import { rateLimitAsync } from "@/lib/rate-limit";
 
 /**
  * Compatibility endpoint for clients that complete the return flow themselves.
@@ -11,6 +12,14 @@ import { verifyAndFulfillGatewayCallback } from "@/lib/payment-fulfillment";
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
+
+  const limited = await rateLimitAsync("payment:verify:user:" + session.userId, 5, 60_000);
+  if (!limited.success) {
+    return NextResponse.json({ error: "تعداد درخواست‌های تأیید پرداخت بیش از حد مجاز است" }, {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(limited.resetMs / 1000)) },
+    });
+  }
 
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   const code = typeof body?.code === "string" ? body.code.trim() : "";
