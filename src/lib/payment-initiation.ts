@@ -26,6 +26,129 @@ type PaymentMetadata = {
   | { kind: "invoice"; invoiceId: string }
   | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean }
 );
+const PENDING_REDIRECT_TTL_MS = 24 * 60 * 60 * 1000;
+const PENDING_INITIATION_TTL_MS = 5 * 60 * 1000;
+
+function parsePendingPaymentMetadata(value: string | null): PaymentMetadata | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as PaymentMetadata;
+    if (
+      !parsed ||
+      !["vip", "invoice", "prepay"].includes(parsed.kind) ||
+      !Number.isFinite(parsed.amountUsd) ||
+      parsed.amountUsd <= 0 ||
+      !Number.isSafeInteger(parsed.exchangeRate) ||
+      parsed.exchangeRate <= 0 ||
+      typeof parsed.exchangeRateSource !== "string" ||
+      !(parsed.exchangeRateUpdatedAt === null || Number.isFinite(parsed.exchangeRateUpdatedAt))
+    ) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function resumePendingIntent(
+  log: {
+    id: string;
+    code: string;
+    userId: string | null;
+    amount: unknown;
+    status: string;
+    paymentUrl: string | null;
+    initiatedAt: Date;
+    paymentId: string | null;
+    description: string | null;
+  },
+  kind: PaymentMetadata["kind"],
+  resourceId: string,
+  expectedAmountIrr: unknown,
+  isLiveProduction: boolean,
+): Promise<NextResponse | null> {
+  const metadata = parsePendingPaymentMetadata(log.description);
+  if (!metadata || metadata.kind !== kind) {
+    return NextResponse.json({ error: "یک پرداخت قبلی برای این حساب در انتظار تعیین تکلیف است" }, { status: 409 });
+  }
+
+  const matchesResource =
+    (metadata.kind === "vip" && metadata.planId === resourceId) ||
+    (metadata.kind === "invoice" && metadata.invoiceId === resourceId) ||
+    (metadata.kind === "prepay" && metadata.jobId === resourceId);
+  if (!matchesResource) {
+    return NextResponse.json({ error: "ابتدا پرداخت در انتظار قبلی را تکمیل کنید" }, { status: 409 });
+  }
+
+  const ageMs = Date.now() - log.initiatedAt.getTime();
+  const ttlMs = log.status === "INITIATED" ? PENDING_INITIATION_TTL_MS : PENDING_REDIRECT_TTL_MS;
+  if (ageMs < 0) {
+    return NextResponse.json({ error: "زمان درخواست پرداخت معتبر نیست؛ صفحه را تازه‌سازی کنید" }, { status: 409 });
+  }
+
+  if (ageMs > ttlMs) {
+    const expired = await db.paymentGatewayLog.updateMany({
+      where: { id: log.id, status: { in: ["INITIATED", "REDIRECTED"] } },
+      data: { status: "CANCELLED" },
+    });
+    if (expired.count === 0) {
+      return NextResponse.json({ error: "وضعیت پرداخت هم‌زمان تغییر کرد؛ صفحه را تازه‌سازی کنید" }, { status: 409 });
+    }
+    if (log.paymentId) {
+      await db.payment.updateMany({
+        where: { id: log.paymentId, status: "PENDING" },
+        data: { status: "FAILED" },
+      });
+    }
+    if (metadata.kind === "vip") {
+      await db.userVipSubscription.updateMany({
+        where: { id: metadata.subscriptionId, userId: log.userId ?? undefined, status: "PENDING_PAYMENT" },
+        data: { status: "CANCELLED" },
+      });
+    }
+    return null;
+  }
+
+  if (log.status !== "REDIRECTED" || !log.paymentUrl) {
+    return NextResponse.json({ error: "درخواست پرداخت قبلی در حال آماده‌سازی است؛ چند لحظه دیگر دوباره تلاش کنید" }, { status: 409 });
+  }
+
+  try {
+    const redirect = new URL(log.paymentUrl);
+    const safeProtocol = redirect.protocol === "https:" || (!isLiveProduction && redirect.protocol === "http:");
+    if (!safeProtocol) throw new Error("Unsafe stored payment URL");
+  } catch {
+    return NextResponse.json({ error: "نشانی درگاه ذخیره‌شده معتبر نیست؛ با پشتیبانی تماس بگیرید" }, { status: 409 });
+  }
+
+  const expected = typeof expectedAmountIrr === "number" ? expectedAmountIrr : null;
+  if (
+    (isLiveProduction && expected === null) ||
+    (expected !== null && (!Number.isSafeInteger(expected) || expected !== Number(log.amount)))
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "AMOUNT_CHANGED",
+        gatewayAmountIrr: Number(log.amount),
+        amountUsd: metadata.amountUsd,
+        exchangeRate: metadata.exchangeRate,
+        currency: "IRR",
+        reused: true,
+      },
+      { status: 409 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    code: log.code,
+    paymentUrl: log.paymentUrl,
+    amount: Number(log.amount),
+    currency: "IRR",
+    reused: true,
+  });
+}
+
 
 function gatewayType(provider: string): "ZARINPAL" | "IDPAY" | "SHAPARAK_SIM" {
   if (provider === "zarinpal") return "ZARINPAL";
@@ -73,16 +196,15 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
 
   const rateSnapshot = await getUsdIrrRateSnapshot({ forceRefresh: true });
   const isLiveProduction = process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging";
-  if (
+  const rateError =
     !Number.isSafeInteger(rateSnapshot.rate) ||
     rateSnapshot.rate <= 0 ||
     (isLiveProduction && !rateSnapshot.trustedForPayments)
-  ) {
-    return NextResponse.json(
-      { error: "نرخ تبدیل دلار به ریال برای پرداخت معتبر یا به‌روز نیست؛ لطفاً بعداً دوباره تلاش کنید" },
-      { status: 503 }
-    );
-  }
+      ? NextResponse.json(
+          { error: "نرخ تبدیل دلار به ریال برای پرداخت معتبر یا به‌روز نیست؛ لطفاً بعداً دوباره تلاش کنید" },
+          { status: 503 },
+        )
+      : null;
   const exchangeRate = rateSnapshot.rate;
   const exchangeRateSource = rateSnapshot.source;
   const exchangeRateUpdatedAt = rateSnapshot.rateUpdatedAt;
@@ -96,6 +218,16 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   if (body.purpose === "vip" && typeof body.planId === "string" && body.planId.trim()) {
     const plan = await db.vipPlan.findFirst({ where: { id: body.planId, active: true } });
     if (!plan) return NextResponse.json({ error: "طرح اشتراک معتبر نیست" }, { status: 404 });
+    const pendingGatewayLog = await db.paymentGatewayLog.findFirst({
+      where: { userId: user.id, purpose: "vip", status: { in: ["INITIATED", "REDIRECTED"] } },
+      orderBy: { initiatedAt: "desc" },
+    });
+    if (pendingGatewayLog) {
+      const resumed = await resumePendingIntent(pendingGatewayLog, "vip", plan.id, body.expectedAmountIrr, isLiveProduction);
+      if (resumed) return resumed;
+    }
+    if (rateError) return rateError;
+
     const pendingVip = await db.userVipSubscription.findFirst({
       where: { userId: user.id, status: "PENDING_PAYMENT" },
     });
@@ -132,6 +264,20 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (invoice.status === "PAID" || invoice.status === "DRAFT") {
       return NextResponse.json({ error: "این صورتحساب در وضعیت قابل پرداخت نیست" }, { status: 409 });
     }
+    const pendingGatewayLog = await db.paymentGatewayLog.findFirst({
+      where: {
+        userId: user.id,
+        purpose: "invoice",
+        status: { in: ["INITIATED", "REDIRECTED"] },
+        description: { contains: invoice.id },
+      },
+      orderBy: { initiatedAt: "desc" },
+    });
+    if (pendingGatewayLog) {
+      const resumed = await resumePendingIntent(pendingGatewayLog, "invoice", invoice.id, body.expectedAmountIrr, isLiveProduction);
+      if (resumed) return resumed;
+    }
+    if (rateError) return rateError;
     amountUsd = Math.round(Number(invoice.total) * 100) / 100;
     amount = Math.round(amountUsd * exchangeRate);
     title = `پرداخت صورتحساب ${invoice.code}`;
@@ -156,6 +302,16 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       return NextResponse.json({ error: "دسترسی به این سفارش مجاز نیست" }, { status: 403 });
     }
     if (job.prepayPaid) return NextResponse.json({ error: "پیش‌پرداخت این سفارش قبلاً انجام شده است" }, { status: 409 });
+    const pendingGatewayLog = await db.paymentGatewayLog.findFirst({
+      where: { userId: user.id, purpose: "prepay", status: { in: ["INITIATED", "REDIRECTED"] } },
+      orderBy: { initiatedAt: "desc" },
+    });
+    if (pendingGatewayLog) {
+      const resumed = await resumePendingIntent(pendingGatewayLog, "prepay", job.id, body.expectedAmountIrr, isLiveProduction);
+      if (resumed) return resumed;
+    }
+    if (rateError) return rateError;
+
     const pendingPrepayment = await db.paymentGatewayLog.findFirst({
       where: {
         userId: user.id,
@@ -359,10 +515,14 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       return NextResponse.json({ error: "درگاه نشانی پرداخت امنی برنگرداند" }, { status: 502 });
     }
 
-    await db.paymentGatewayLog.update({
-      where: { id: log.id },
-      data: { status: "REDIRECTED", referenceId: result.authority },
+    const redirected = await db.paymentGatewayLog.updateMany({
+      where: { id: log.id, status: "INITIATED" },
+      data: { status: "REDIRECTED", referenceId: result.authority, paymentUrl: paymentUrl.toString() },
     });
+    if (redirected.count === 0) {
+      await db.payment.updateMany({ where: { id: pendingPayment.id, status: "PENDING" }, data: { status: "FAILED" } });
+      return NextResponse.json({ error: "درخواست پرداخت منقضی شده است؛ دوباره تلاش کنید" }, { status: 409 });
+    }
 
     return NextResponse.json({ ok: true, code, paymentUrl: paymentUrl.toString(), amount, currency: "IRR" });
   } catch (error) {
