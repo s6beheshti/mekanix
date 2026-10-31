@@ -139,7 +139,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   const code = `PG-${randomUUID()}`;
   callbackUrl.searchParams.set("code", code);
 
-  let pendingPayment;
+  let pendingPayment: { id: string };
   try {
     if (metadata.kind === "invoice") {
       const existingPayment = await db.payment.findUnique({ where: { invoiceId: metadata.invoiceId } });
@@ -178,7 +178,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     return NextResponse.json({ error: "ثبت درخواست پرداخت ممکن نشد" }, { status: 500 });
   }
 
-  let log;
+  let log: { id: string };
   try {
     log = await db.paymentGatewayLog.create({
       data: {
@@ -227,6 +227,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       (process.env.NODE_ENV === "production" && paymentUrl.protocol !== "https:")
     ) {
       await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } });
+      await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } });
       if (pendingSubscriptionId) {
         await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } });
       }
