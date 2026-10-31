@@ -10,6 +10,25 @@ describe.skipIf(process.env.CI !== "true")("pending payment database guard", () 
     await db.$disconnect();
   });
 
+  it("adds the nullable hosted payment URL column", async () => {
+    if (process.env.DATABASE_URL?.startsWith("postgres")) {
+      const columns = await db.$queryRaw<Array<{ column_name: string }>>`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'PaymentGatewayLog'
+          AND column_name = 'paymentUrl'
+      `;
+      expect(columns).toHaveLength(1);
+      return;
+    }
+
+    const columns = await db.$queryRawUnsafe<Array<{ name: string }>>(
+      'PRAGMA table_info("PaymentGatewayLog")',
+    );
+    expect(columns.some((column) => column.name === "paymentUrl")).toBe(true);
+  });
+
   it("applies the partial unique index in the active database provider", async () => {
     if (process.env.DATABASE_URL?.startsWith("postgresql://")) {
       const indexes = await db.$queryRaw<Array<{ indexname: string }>>`
