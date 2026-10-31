@@ -91,6 +91,20 @@ jobs:
           print('✅ Application readiness checks passed')
           "
 
+      - name: Verify encrypted database backup
+        run: |
+          cd /tmp/mekanix-build
+          for i in $(seq 1 60); do
+            if docker compose exec -T backup-scheduler bash -lc 'set -e; FILE=$(find /backups -maxdepth 1 -type f -name "*.sql.gz.gpg" -print -quit); test -n "$FILE"; gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --decrypt "$FILE" 3<<<"$BACKUP_ENCRYPTION_PASSPHRASE" | gzip -t'; then
+              echo "✅ Encrypted backup exists and decrypts to a valid gzip stream"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs backup-scheduler
+          echo "❌ Encrypted backup was not created or could not be decrypted"
+          exit 1
+
       - name: Verify database is PostgreSQL
         run: |
           HEALTH=$(curl -s http://localhost:3000/api/health)
