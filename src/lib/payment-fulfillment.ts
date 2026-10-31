@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
+import { verifyPayment } from "@/lib/payment-provider";
 
 type PaymentMetadata =
   | { kind: "vip"; subscriptionId: string; planId: string }
@@ -120,4 +121,54 @@ export async function fulfillVerifiedPayment(
 
     return { paymentId: payment.id, alreadyProcessed: false };
   });
+}
+
+
+/**
+ * Validate the browser return against the persisted attempt, then verify
+ * directly with the selected payment provider before fulfilling anything.
+ */
+export async function verifyAndFulfillGatewayCallback(
+  code: string,
+  authority: string,
+  callbackStatus: string,
+  callbackPayload: Record<string, string>
+): Promise<{ paymentId: string; alreadyProcessed: boolean }> {
+  const log = await db.paymentGatewayLog.findUnique({ where: { code } });
+  if (!log) throw new Error("Payment attempt not found");
+
+  if (log.status === "VERIFIED" && log.paymentId) {
+    return { paymentId: log.paymentId, alreadyProcessed: true };
+  }
+  if (log.status !== "REDIRECTED" || !log.referenceId || !log.userId) {
+    throw new Error("Payment attempt is not awaiting a callback");
+  }
+  if (authority !== log.referenceId) {
+    throw new Error("Gateway reference does not match the payment attempt");
+  }
+
+  if (log.gateway === "ZARINPAL" && callbackStatus !== "OK") {
+    throw new Error("Zarinpal reported an unsuccessful payment");
+  }
+  if (log.gateway === "IDPAY") {
+    if (callbackStatus !== "1" || callbackPayload.order_id !== log.code) {
+      throw new Error("IDPay reported an unsuccessful or mismatched payment");
+    }
+  }
+  if (log.gateway === "SHAPARAK_SIM") {
+    if (process.env.NODE_ENV === "production" || callbackStatus !== "OK" || callbackPayload.simulator !== "true") {
+      throw new Error("Simulator callbacks are disabled or invalid");
+    }
+  }
+
+  const amount = Number(log.amount);
+  const verification = await verifyPayment(authority, amount, log.code);
+  if (!verification.success || !verification.refId) {
+    throw new Error(verification.error || "Gateway verification failed");
+  }
+  if (verification.amount != null && Number(verification.amount) !== amount) {
+    throw new Error("Verified amount does not match the stored order amount");
+  }
+
+  return fulfillVerifiedPayment(log.id, verification.refId, callbackPayload);
 }
