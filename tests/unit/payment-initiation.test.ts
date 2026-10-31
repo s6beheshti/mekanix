@@ -112,6 +112,21 @@ describe("payment initiation server-side authority", () => {
     });
   });
 
+  it("refuses production payment initiation when APP_URL is private", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://localhost:3000");
+
+    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+
+    expect(response.status).toBe(503);
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+    expect(mocks.db.userVipSubscription.update).toHaveBeenCalledWith({
+      where: { id: "subscription-1" },
+      data: { status: "CANCELLED" },
+    });
+  });
+
   it("blocks a second pending VIP subscription before reserving another payment", async () => {
     mocks.db.userVipSubscription.findFirst.mockResolvedValue({ id: "pending-subscription" });
 
