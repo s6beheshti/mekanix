@@ -708,6 +708,7 @@ describe("MEKANIX Business E2E Flow", () => {
         amount: 100_000,
         description: "Test payment",
         callbackUrl: "https://example.com/callback",
+        orderId: "PG-test",
       });
       expect(result.success).toBe(true);
       expect(result.paymentUrl).toBeDefined();
@@ -716,9 +717,9 @@ describe("MEKANIX Business E2E Flow", () => {
 
     it("should verify simulator payment (always succeeds)", async () => {
       const { verifyPayment } = await import("@/lib/payment-provider");
-      const result = await verifyPayment("sim_test", 100_000);
+      const result = await verifyPayment("sim_PG-test", 100_000, "PG-test");
       expect(result.success).toBe(true);
-      expect(result.refId).toBeDefined();
+      expect(result.refId).toBe("dev_PG-test");
     });
 
     it("should report provider status as 'simulator' when PAYMENT_PROVIDER is unset", () => {
