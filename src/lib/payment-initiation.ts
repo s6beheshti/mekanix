@@ -170,12 +170,24 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       return NextResponse.json({ error: result.error || "ایجاد تراکنش در درگاه ناموفق بود" }, { status: 502 });
     }
 
+    const paymentUrl = new URL(result.paymentUrl);
+    if (
+      !["https:", "http:"].includes(paymentUrl.protocol) ||
+      (process.env.NODE_ENV === "production" && paymentUrl.protocol !== "https:")
+    ) {
+      await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } });
+      if (pendingSubscriptionId) {
+        await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } });
+      }
+      return NextResponse.json({ error: "درگاه نشانی پرداخت امنی برنگرداند" }, { status: 502 });
+    }
+
     await db.paymentGatewayLog.update({
       where: { id: log.id },
       data: { status: "REDIRECTED", referenceId: result.authority },
     });
 
-    return NextResponse.json({ ok: true, code, paymentUrl: result.paymentUrl, amount, currency: "IRR" });
+    return NextResponse.json({ ok: true, code, paymentUrl: paymentUrl.toString(), amount, currency: "IRR" });
   } catch (error) {
     await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } }).catch(() => undefined);
     if (pendingSubscriptionId) {
