@@ -8,5 +8,9 @@ export async function POST(req: Request) {
   if (!body || typeof body.jobId !== "string" || !body.jobId.trim()) {
     return NextResponse.json({ error: "jobId الزامی است" }, { status: 400 });
   }
-  return initiatePayment(req, { purpose: "prepay", jobId: body.jobId });
+  return initiatePayment(req, {
+    purpose: "prepay",
+    jobId: body.jobId,
+    expectedAmountIrr: typeof body.expectedAmountIrr === "number" ? body.expectedAmountIrr : undefined,
+  });
 }
