@@ -56,6 +56,7 @@ async function resumePendingIntent(
     userId: string | null;
     amount: unknown;
     status: string;
+    gateway: string;
     paymentUrl: string | null;
     initiatedAt: Date;
     paymentId: string | null;
@@ -115,7 +116,17 @@ async function resumePendingIntent(
   try {
     const redirect = new URL(log.paymentUrl);
     const safeProtocol = redirect.protocol === "https:" || (!isLiveProduction && redirect.protocol === "http:");
-    if (!safeProtocol) throw new Error("Unsafe stored payment URL");
+    const allowedHosts: Record<string, string[]> = {
+      ZARINPAL: ["www.zarinpal.com", "payment.zarinpal.com"],
+      IDPAY: ["idpay.ir", "www.idpay.ir"],
+    };
+    const hostAllowed = (allowedHosts[log.gateway] ?? []).includes(redirect.hostname.toLowerCase());
+    if (
+      !safeProtocol ||
+      Boolean(redirect.username) ||
+      Boolean(redirect.password) ||
+      (isLiveProduction && !hostAllowed)
+    ) throw new Error("Unsafe stored payment URL");
   } catch {
     return NextResponse.json({ error: "نشانی درگاه ذخیره‌شده معتبر نیست؛ با پشتیبانی تماس بگیرید" }, { status: 409 });
   }
