@@ -11,6 +11,7 @@
 - Renamed VIP plan `priceIrr` to `priceUsd` with SQLite and PostgreSQL migrations.
 - Added a configurable Telegram rate collector that treats unitless NerkhDollarIRT quotes as Toman, prefers sell quotes, normalizes to Rial, and blocks production collection unless a fresh Telegram-sourced quote is available.
 - Payment-rate freshness is measured from the original Telegram post timestamp (not scrape time); stale quotes cannot authorize production payment collection.
+- Pending hosted bank redirects are persisted and reused for up to 24 hours; abandoned initialization reservations expire after five minutes so customers can retry without generating duplicate charges.
 - Added idempotent payment settlement, pending payment reservations, callback handling, and post-payment VIP/invoice/wallet fulfillment.
 - Legacy `/api/payments`, `/api/prepay`, and `/api/vip/subscribe` endpoints now delegate to the gateway flow instead of simulating success.
 - Live bank acceptance testing remains pending until gateway credentials and public HTTPS `APP_URL` are configured.
