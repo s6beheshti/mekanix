@@ -76,8 +76,9 @@ function parseRateFromHtml(html: string): number | null {
     if (m && m[1]) {
       let raw = m[1].trim().replace(/[۰-۹٠-٩]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩".indexOf(d) % 10));
       raw = raw.replace(/[٬,‌\s]/g, "");
-      const rate = parseInt(raw, 10);
-      if (!isNaN(rate) && rate > 100000 && rate < 10000000) return rate;
+      let rate = parseInt(raw, 10);
+      if (m[2] === "تومان") rate *= 10; // Normalize Toman to Rial for gateway calculations.
+      if (!isNaN(rate) && rate > 100000 && rate < 100000000) return rate;
     }
   }
   return null;
