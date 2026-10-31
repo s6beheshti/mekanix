@@ -43,7 +43,7 @@ describe("payment initiation server-side authority", () => {
     mocks.db.vipPlan.findFirst.mockResolvedValue({
       id: "plan-1",
       active: true,
-      priceIrr: 125_000,
+      priceUsd: 125_000,
       durationDays: 365,
       name: "سالانه",
     });
