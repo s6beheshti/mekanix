@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { verifyPayment } from "@/lib/payment-provider";
 
 type PaymentMetadata =
-  | { kind: "vip"; subscriptionId: string; planId: string }
+  | { kind: "vip"; subscriptionId: string; planId: string; durationDays: number; planName: string }
   | { kind: "invoice"; invoiceId: string }
   | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean };
 
@@ -62,7 +62,7 @@ export async function fulfillVerifiedPayment(
     let invoiceId: string | null = null;
     if (metadata.kind === "invoice") {
       const invoice = await tx.invoice.findUnique({ where: { id: metadata.invoiceId } });
-      if (!invoice || invoice.status === "PAID" || Math.round(Number(invoice.total)) !== Number(log.amount)) {
+      if (!invoice || ["PAID", "DRAFT"].includes(invoice.status) || Math.round(Number(invoice.total)) !== Number(log.amount)) {
         throw new Error("Invoice is unavailable or its amount changed");
       }
       invoiceId = invoice.id;
@@ -81,8 +81,9 @@ export async function fulfillVerifiedPayment(
     });
 
     if (metadata.kind === "vip") {
-      const plan = await tx.vipPlan.findUnique({ where: { id: metadata.planId } });
-      if (!plan || !plan.active) throw new Error("VIP plan is no longer available");
+      if (!Number.isSafeInteger(metadata.durationDays) || metadata.durationDays <= 0) {
+        throw new Error("VIP plan duration snapshot is invalid");
+      }
       await tx.userVipSubscription.updateMany({
         where: { userId: log.userId, status: "ACTIVE" },
         data: { status: "CANCELLED" },
@@ -97,7 +98,7 @@ export async function fulfillVerifiedPayment(
         data: {
           status: "ACTIVE",
           startedAt: new Date(),
-          expiresAt: new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + metadata.durationDays * 24 * 60 * 60 * 1000),
           paymentId: payment.id,
         },
       });
@@ -107,7 +108,7 @@ export async function fulfillVerifiedPayment(
           userId: log.userId,
           type: "vip_activated",
           title: "اشتراک VIP فعال شد",
-          body: `اشتراک ${plan.name} فعال شد.`,
+          body: `اشتراک ${metadata.planName} فعال شد.`,
           category: "system",
           link: "customer/settings",
         },
