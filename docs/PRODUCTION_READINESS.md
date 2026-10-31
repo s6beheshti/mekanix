@@ -28,7 +28,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 1.1 | ESLint passes with 0 errors | ✅ | `bun run lint` → exit 0; permissive ruleset in `eslint.config.mjs` |
 | 1.2 | `tsc --noEmit` passes with 0 errors | ✅ | `bunx tsc --noEmit` → exit 0 |
 | 1.3 | Unit + integration tests pass | ✅ | `bun run test` → 216/216 tests pass across 10 files |
-| 1.4 | CI workflow on PR | 🛠️ | GitHub Actions runs lint, TypeScript, unit/integration, Playwright browser E2E, Docker E2E and PostgreSQL CI; latest run is awaiting GitHub workflow approval and lockfile refresh |
+| 1.4 | CI workflow on PR | 🛠️ | GitHub Actions runs lint, TypeScript, unit/integration, Playwright browser E2E, Docker E2E and PostgreSQL CI; latest automated dependency commit requires a fresh PR run to validate the regenerated lockfile |
 | 1.5 | Pre-commit hooks (lint + tsc) | 🛠️ | Add `husky` install in production repo; commands already verified to pass |
 | 1.6 | Code coverage report | ⚠️ | `vitest run --coverage` configured but thresholds not enforced |
 
@@ -46,7 +46,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 2.6 | OTP codes hashed at rest (SHA-256) | ✅ | `src/lib/otp-crypto.ts`; integration tests assert DB column holds 64-char hex digest |
 | 2.7 | Session tokens hashed at rest | ✅ | `Session.tokenHash` populated with SHA-256; JWT never persisted verbatim |
 | 2.8 | HTTPS-only cookies in production | 🛠️ | Cookie `secure` flag set in `src/lib/auth.ts` when `NODE_ENV=production` |
-| 2.9 | Dependency vulnerability scan | 🛠️ | Full `bun audit` report is printed and critical/high findings fail Production Readiness; dependency lock refresh and final zero-high/critical scan still pending |
+| 2.9 | Dependency vulnerability scan | ✅ | `bun audit` reports no known vulnerabilities across 980 packages after lockfile regeneration on 2026-10-31; rerun CI against the final PR head before merge |
 | 2.10 | CSP / HSTS / X-Frame-Options headers | 🛠️ | Configured in `Caddyfile.production` (HSTS, nosniff, DENY frame, CSP) |
 
 ---
@@ -57,7 +57,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 3.1 | All dependencies pinned | ✅ | `package.json` uses caret semver; `bun.lock` resolves to exact versions |
 | 3.2 | No unused dependencies | ⚠️ | Manual audit needed; some Radix UI components may be unused |
-| 3.3 | `bun audit` clean | 🛠️ | First automated fix preview reduced 123 findings to 11; direct package upgrades and transitive overrides are committed, but regenerated lockfile and final audit are pending |
+| 3.3 | `bun audit` clean | ✅ | Dependency remediation preview on 2026-10-31: `No vulnerabilities found (checked 980 packages)`; minimatch is overridden to patched 11.0.3 and Zod resolves to 4.6.7 |
 | 3.4 | Prisma client generated | ✅ | `prisma generate` runs in `Dockerfile` builder stage + dev script `db:generate` |
 
 ---
