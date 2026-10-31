@@ -132,7 +132,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     return NextResponse.json({ error: "مبلغ سفارش معتبر نیست" }, { status: 400 });
   }
 
-  const appUrl = process.env.APP_URL?.trim() || (process.env.NODE_ENV === "production" ? "" : new URL(req.url).origin);
+  const appUrl = process.env.APP_URL?.trim() || (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" ? "" : new URL(req.url).origin);
   if (!appUrl) {
     if (pendingSubscriptionId) {
       await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
@@ -143,7 +143,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   let callbackUrl: URL;
   try {
     callbackUrl = new URL("/api/gateway/callback", appUrl);
-    if (process.env.NODE_ENV === "production" && callbackUrl.protocol !== "https:") {
+    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" && callbackUrl.protocol !== "https:") {
       throw new Error("Production callback URL must use HTTPS");
     }
   } catch {
@@ -241,7 +241,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     const paymentUrl = new URL(result.paymentUrl);
     if (
       !["https:", "http:"].includes(paymentUrl.protocol) ||
-      (process.env.NODE_ENV === "production" && paymentUrl.protocol !== "https:")
+      (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" && paymentUrl.protocol !== "https:")
     ) {
       await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } });
       await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } });
