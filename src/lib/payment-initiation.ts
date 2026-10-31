@@ -78,7 +78,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (pendingVip) {
       return NextResponse.json({ error: "یک درخواست اشتراک در حال پرداخت دارید؛ ابتدا همان تراکنش را تعیین تکلیف کنید" }, { status: 409 });
     }
-    amount = Math.round(Number(plan.priceIrr));
+    amount = Math.round(Number(plan.priceUsd));
     title = `اشتراک MEKANIX ${plan.name}`;
     const subscription = await db.userVipSubscription.create({
       data: { userId: user.id, planId: plan.id, status: "PENDING_PAYMENT" },
