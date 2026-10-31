@@ -16,30 +16,20 @@ fi
 mapfile -d '' tracked_files < <(git ls-files -z)
 
 # Database files must never be committed.
-db_files=()
 for file in "${tracked_files[@]}"; do
-  if [[ "$file" =~ .(db|sqlite|sqlite3)$ ]]; then
-    db_files+=("$file")
+  if [[ "$file" == *.db || "$file" == *.sqlite || "$file" == *.sqlite3 ]]; then
+    echo "❌ Database file tracked by git: $file"
+    errors=$((errors + 1))
   fi
 done
-if (("${#db_files[@]}" > 0)); then
-  echo "❌ Database files tracked by git:"
-  printf '  %s\n' "${db_files[@]}"
-  errors=$((errors + 1))
-fi
 
 # Only the root .env.example template may be tracked.
-env_files=()
 for file in "${tracked_files[@]}"; do
   if [[ "$file" =~ (^|/)\.env($|\.) ]] && [[ "$file" != ".env.example" ]]; then
-    env_files+=("$file")
+    echo "❌ Environment file tracked by git: $file"
+    errors=$((errors + 1))
   fi
 done
-if (("${#env_files[@]}" > 0)); then
-  echo "❌ Environment files tracked by git:"
-  printf '  %s\n' "${env_files[@]}"
-  errors=$((errors + 1))
-fi
 
 # Generated or local-only directories are not allowed in the repository.
 for file in "${tracked_files[@]}"; do
