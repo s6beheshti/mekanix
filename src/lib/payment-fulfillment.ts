@@ -42,7 +42,7 @@ export async function fulfillVerifiedPayment(
 
     const metadata = parseMetadata(log.description);
     const claim = await tx.paymentGatewayLog.updateMany({
-      where: { id: log.id, status: "REDIRECTED", paymentId: null },
+      where: { id: log.id, status: "REDIRECTED", paymentId: log.paymentId },
       data: {
         status: "VERIFIED",
         verifiedAt: new Date(),
@@ -68,17 +68,35 @@ export async function fulfillVerifiedPayment(
       invoiceId = invoice.id;
     }
 
-    const payment = await tx.payment.create({
-      data: {
-        code: `PAY-${randomUUID()}`,
-        invoiceId,
-        userId: log.userId,
-        amount: log.amount,
-        currency: "IRR",
-        method: log.gateway.toLowerCase(),
-        status: "SUCCEEDED",
-      },
-    });
+    let payment;
+    if (log.paymentId) {
+      const pendingPayment = await tx.payment.findUnique({ where: { id: log.paymentId } });
+      if (
+        !pendingPayment ||
+        pendingPayment.status !== "PENDING" ||
+        pendingPayment.userId !== log.userId ||
+        Number(pendingPayment.amount) !== Number(log.amount) ||
+        pendingPayment.invoiceId !== invoiceId
+      ) {
+        throw new Error("Reserved payment record does not match the verified order");
+      }
+      payment = await tx.payment.update({
+        where: { id: pendingPayment.id },
+        data: { status: "SUCCEEDED", method: log.gateway.toLowerCase(), amount: log.amount, currency: "IRR" },
+      });
+    } else {
+      payment = await tx.payment.create({
+        data: {
+          code: `PAY-${randomUUID()}`,
+          invoiceId,
+          userId: log.userId,
+          amount: log.amount,
+          currency: "IRR",
+          method: log.gateway.toLowerCase(),
+          status: "SUCCEEDED",
+        },
+      });
+    }
 
     if (metadata.kind === "vip") {
       if (!Number.isSafeInteger(metadata.durationDays) || metadata.durationDays <= 0) {
