@@ -570,6 +570,12 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     });
     if (redirected.count === 0) {
       await db.payment.updateMany({ where: { id: pendingPayment.id, status: "PENDING" }, data: { status: "FAILED" } });
+      if (pendingSubscriptionId) {
+        await db.userVipSubscription.updateMany({
+          where: { id: pendingSubscriptionId, status: "PENDING_PAYMENT" },
+          data: { status: "CANCELLED" },
+        });
+      }
       return NextResponse.json({ error: "درخواست پرداخت منقضی شده است؛ دوباره تلاش کنید" }, { status: 409 });
     }
 
