@@ -139,19 +139,69 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
   const code = `PG-${randomUUID()}`;
   callbackUrl.searchParams.set("code", code);
 
-  const log = await db.paymentGatewayLog.create({
-    data: {
-      code,
-      userId: user.id,
-      amount,
-      currency: "IRR",
-      gateway: gatewayType(provider.provider),
-      status: "INITIATED",
-      purpose: body.purpose,
-      mobile: user.phone,
-      description: JSON.stringify(metadata),
-    },
-  });
+  let pendingPayment;
+  try {
+    if (metadata.kind === "invoice") {
+      const existingPayment = await db.payment.findUnique({ where: { invoiceId: metadata.invoiceId } });
+      if (existingPayment) {
+        let canRetry = existingPayment.status === "FAILED" || existingPayment.status === "REFUNDED";
+        if (existingPayment.status === "PENDING") {
+          const previousLog = await db.paymentGatewayLog.findFirst({
+            where: { paymentId: existingPayment.id },
+            orderBy: { initiatedAt: "desc" },
+          });
+          canRetry = previousLog?.status === "FAILED" || previousLog?.status === "CANCELLED";
+        }
+        if (!canRetry) {
+          if (pendingSubscriptionId) await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } });
+          return NextResponse.json({ error: "برای این صورتحساب یک پرداخت موفق یا در حال انجام وجود دارد" }, { status: 409 });
+        }
+        pendingPayment = await db.payment.update({
+          where: { id: existingPayment.id },
+          data: { code: `PAY-${randomUUID()}`, userId: user.id, amount, currency: "IRR", method: "gateway_pending", status: "PENDING" },
+        });
+      } else {
+        pendingPayment = await db.payment.create({
+          data: { code: `PAY-${randomUUID()}`, invoiceId: metadata.invoiceId, userId: user.id, amount, currency: "IRR", method: "gateway_pending", status: "PENDING" },
+        });
+      }
+    } else {
+      pendingPayment = await db.payment.create({
+        data: { code: `PAY-${randomUUID()}`, invoiceId: null, userId: user.id, amount, currency: "IRR", method: "gateway_pending", status: "PENDING" },
+      });
+    }
+  } catch (error) {
+    if (pendingSubscriptionId) {
+      await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+    }
+    console.error("[payment] Could not reserve payment record:", error);
+    return NextResponse.json({ error: "ثبت درخواست پرداخت ممکن نشد" }, { status: 500 });
+  }
+
+  let log;
+  try {
+    log = await db.paymentGatewayLog.create({
+      data: {
+        code,
+        userId: user.id,
+        amount,
+        currency: "IRR",
+        gateway: gatewayType(provider.provider),
+        status: "INITIATED",
+        purpose: body.purpose,
+        mobile: user.phone,
+        description: JSON.stringify(metadata),
+        paymentId: pendingPayment.id,
+      },
+    });
+  } catch (error) {
+    await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } }).catch(() => undefined);
+    if (pendingSubscriptionId) {
+      await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+    }
+    console.error("[payment] Could not create gateway log:", error);
+    return NextResponse.json({ error: "ثبت تراکنش در سامانه ممکن نشد" }, { status: 500 });
+  }
 
   try {
     const result = await createPayment({
@@ -164,6 +214,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
 
     if (!result.success || !result.authority || !result.paymentUrl) {
       await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } });
+      await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } });
       if (pendingSubscriptionId) {
         await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } });
       }
@@ -190,6 +241,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     return NextResponse.json({ ok: true, code, paymentUrl: paymentUrl.toString(), amount, currency: "IRR" });
   } catch (error) {
     await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } }).catch(() => undefined);
+    await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } }).catch(() => undefined);
     if (pendingSubscriptionId) {
       await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } }).catch(() => undefined);
     }
