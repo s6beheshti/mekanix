@@ -40,11 +40,26 @@ export async function GET(req: NextRequest) {
       where: { id: log.id, status: "REDIRECTED" },
       data: { status: "CANCELLED", callbackPayload: JSON.stringify(payload) },
     });
-    if (cancelled.count === 1 && log.paymentId) {
-      await db.payment.updateMany({
-        where: { id: log.paymentId, status: "PENDING" },
-        data: { status: "FAILED" },
-      });
+    if (cancelled.count === 1) {
+      if (log.paymentId) {
+        await db.payment.updateMany({
+          where: { id: log.paymentId, status: "PENDING" },
+          data: { status: "FAILED" },
+        });
+      }
+      if (log.purpose === "vip" && log.description) {
+        try {
+          const metadata = JSON.parse(log.description) as { subscriptionId?: string };
+          if (metadata.subscriptionId) {
+            await db.userVipSubscription.updateMany({
+              where: { id: metadata.subscriptionId, status: "PENDING_PAYMENT" },
+              data: { status: "CANCELLED" },
+            });
+          }
+        } catch {
+          // Invalid metadata must not turn a bank cancellation into success.
+        }
+      }
     }
     return resultRedirect(req, "failed", code);
   }
