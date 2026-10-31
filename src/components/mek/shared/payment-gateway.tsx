@@ -56,7 +56,7 @@ export function PaymentGatewayDialog({
         throw new Error(isFa ? "نشانی درگاه پرداخت معتبر نیست" : "The gateway URL is invalid");
       }
       const paymentUrl = new URL(data.paymentUrl);
-      if (process.env.NODE_ENV === "production" && paymentUrl.protocol !== "https:") {
+      if (!["https:", "http:"].includes(paymentUrl.protocol) || (process.env.NODE_ENV === "production" && paymentUrl.protocol !== "https:")) {
         throw new Error(isFa ? "نشانی درگاه پرداخت امن نیست" : "The gateway URL must use HTTPS");
       }
       window.location.assign(paymentUrl.toString());
