@@ -47,7 +47,8 @@ function parseLabeledQuote(
     const numberPattern = /([\d,٬۰-۹٠-٩]+)\s*(ریال|تومان)?/g;
     const beforeMatches = [...before.matchAll(numberPattern)];
     const beforeMatch = beforeMatches[beforeMatches.length - 1];
-    const afterMatch = after.match(numberPattern);
+    const afterMatches = [...after.matchAll(numberPattern)];
+    const afterMatch = afterMatches[0];
     const beforeDistance = beforeMatch
       ? before.length - ((beforeMatch.index ?? 0) + beforeMatch[0].length)
       : Number.POSITIVE_INFINITY;

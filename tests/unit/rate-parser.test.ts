@@ -63,6 +63,19 @@ describe("parseTelegramUsdIrrQuote", () => {
     });
   });
 
+  it("parses a sell label that appears before its numeric quote", () => {
+    const html = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-10-31T11:57:00.000Z"></time>
+        <div>فروش دلار: 270,410 تومان</div>
+      </div>
+    `;
+    expect(parseTelegramUsdIrrQuote(html, "toman", now)).toMatchObject({
+      rate: 2_704_100,
+      quoteType: "sell",
+    });
+  });
+
   it("rejects posts more than five minutes in the future", () => {
     const html = `
       <div class="tgme_widget_message_wrap">
