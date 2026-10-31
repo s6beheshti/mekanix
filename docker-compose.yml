@@ -28,7 +28,6 @@ services:
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - TELEGRAM_RATE_CHANNEL=${TELEGRAM_RATE_CHANNEL:-NerkhDollarIRT}
       - TELEGRAM_RATE_UNIT=${TELEGRAM_RATE_UNIT:-toman}
-      - TELEGRAM_RATE_UNIT=${TELEGRAM_RATE_UNIT:-toman}
       - PORT=3004
       - POLL_INTERVAL_MS=${RATE_BOT_POLL_INTERVAL_MS:-60000}
     depends_on:
@@ -104,7 +103,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes", "--appendfsync", "everysec"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
