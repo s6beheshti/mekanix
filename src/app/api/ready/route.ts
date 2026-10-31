@@ -4,6 +4,7 @@ import { getSmsProviderStatus } from "@/lib/sms-provider";
 import { getPaymentProviderStatus } from "@/lib/payment-provider";
 import { isPublicHttpsOrigin } from "@/lib/url-validation";
 import { isRedisAvailable } from "@/lib/redis";
+import { getUsdIrrRateSnapshot } from "@/lib/exchange-rate";
 
 // GET /api/ready — readiness check (different from liveness)
 // /api/health = is the process alive? (always 200 if running)
@@ -34,6 +35,7 @@ export async function GET() {
       paymentProvider: false,
       databaseProvider: false,
       paymentCallbackUrl: false,
+      exchangeRateTrusted: false,
     },
     errors: [] as string[],
   };
@@ -106,6 +108,15 @@ export async function GET() {
 
   // ─── 3. Production safety gates ───
   if (isProduction) {
+    // 2c. A fresh Telegram market rate is mandatory for real-money collection.
+    const exchangeRate = await getUsdIrrRateSnapshot();
+    if (exchangeRate.trustedForPayments) {
+      ready.checks.exchangeRateTrusted = true;
+    } else {
+      ready.ok = false;
+      ready.errors.push("Exchange rate: a fresh trusted Telegram USD/IRR rate is required for production payments");
+    }
+
     // 3a. SMS must NOT be console in production
     const smsStatus = getSmsProviderStatus();
     if (smsStatus.provider === "console") {
@@ -147,6 +158,7 @@ export async function GET() {
     ready.checks.smsProvider = true;
     ready.checks.paymentProvider = true;
     ready.checks.paymentCallbackUrl = true;
+    ready.checks.exchangeRateTrusted = true;
   }
 
   const status = ready.ok ? 200 : 503;
