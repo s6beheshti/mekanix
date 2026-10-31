@@ -11,7 +11,7 @@ BACKUP_DIR="${BACKUP_DIR:-$REPO_DIR/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 DB_URL="${DATABASE_URL:-file:$REPO_DIR/db/custom.db}"
 PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
-ENCRYPTION_REQUIRED="${BACKUP_ENCRYPTION_REQUIRED:-${NODE_ENV:-} == production}"
+ENCRYPTION_REQUIRED="${BACKUP_ENCRYPTION_REQUIRED:-false}"
 TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
@@ -32,10 +32,12 @@ if [[ -n "$PASSPHRASE" ]]; then
 else
   BACKUP_FILE="$BACKUP_DIR/mekanix_${TIMESTAMP}.sql.gz"
 fi
+BACKUP_TMP="$BACKUP_FILE.tmp"
+trap 'rm -f "$BACKUP_TMP"' EXIT
 
 encrypt_stream() {
   gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-    --symmetric --cipher-algo AES256 --output "$BACKUP_FILE" 3<<<"$PASSPHRASE"
+    --symmetric --cipher-algo AES256 --output "$BACKUP_TMP" 3<<<"$PASSPHRASE"
 }
 
 echo "📦 Creating database backup..."
@@ -51,7 +53,7 @@ case "$DB_URL" in
     if [[ -n "$PASSPHRASE" ]]; then
       pg_dump --clean --if-exists "$DB_URL" | gzip -c | encrypt_stream
     else
-      pg_dump --clean --if-exists "$DB_URL" | gzip -c > "$BACKUP_FILE"
+      pg_dump --clean --if-exists "$DB_URL" | gzip -c > "$BACKUP_TMP"
     fi
     ;;
   file:*)
@@ -66,13 +68,13 @@ case "$DB_URL" in
       if [[ -n "$PASSPHRASE" ]]; then
         sqlite3 "$SQLITE_PATH" .dump | gzip -c | encrypt_stream
       else
-        sqlite3 "$SQLITE_PATH" .dump | gzip -c > "$BACKUP_FILE"
+        sqlite3 "$SQLITE_PATH" .dump | gzip -c > "$BACKUP_TMP"
       fi
     else
       if [[ -n "$PASSPHRASE" ]]; then
         gzip -c "$SQLITE_PATH" | encrypt_stream
       else
-        gzip -c "$SQLITE_PATH" > "$BACKUP_FILE"
+        gzip -c "$SQLITE_PATH" > "$BACKUP_TMP"
       fi
     fi
     ;;
@@ -82,17 +84,17 @@ case "$DB_URL" in
     ;;
 esac
 
-if [[ ! -s "$BACKUP_FILE" ]]; then
+if [[ ! -s "$BACKUP_TMP" ]]; then
   echo "❌ Backup file is empty"
-  rm -f "$BACKUP_FILE"
   exit 1
 fi
-chmod 600 "$BACKUP_FILE"
+chmod 600 "$BACKUP_TMP"
+mv "$BACKUP_TMP" "$BACKUP_FILE"
 BACKUP_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
 echo "✅ Backup created: $BACKUP_FILE ($BACKUP_SIZE)"
 
 echo "🧹 Cleaning backups older than $RETENTION_DAYS days..."
 find "$BACKUP_DIR" -maxdepth 1 -type f -name "mekanix_*.sql.gz*" -mtime "+$RETENTION_DAYS" -delete
 echo "📋 Recent backups:"
-find "$BACKUP_DIR" -maxdepth 1 -type f -name "mekanix_*.sql.gz*" -printf '%TY-%Tm-%Td %TH:%TM %s bytes %f\n' | sort -r | head -5 || true
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "mekanix_*.sql.gz*" -print | sort -r | head -5 || true
 echo "✅ Backup verified (non-empty)"
