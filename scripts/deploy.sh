@@ -15,6 +15,7 @@
 #   APP_URL          — public HTTPS origin
 #   SMS_PROVIDER     — kavenegar / melipayamak / farapayamak
 #   PAYMENT_PROVIDER — zarinpal / idpay
+#   BACKUP_ENCRYPTION_PASSPHRASE — 32+ chars, used to encrypt backups at rest
 
 set -euo pipefail
 
@@ -29,7 +30,7 @@ echo ""
 
 # ─── Validate required production env vars ───
 MISSING=0
-for VAR in DB_PASSWORD JWT_SECRET REDIS_PASSWORD APP_URL SMS_PROVIDER PAYMENT_PROVIDER; do
+for VAR in DB_PASSWORD JWT_SECRET REDIS_PASSWORD APP_URL SMS_PROVIDER PAYMENT_PROVIDER BACKUP_ENCRYPTION_PASSPHRASE; do
   if [ -z "${!VAR:-}" ]; then
     echo "❌ $VAR not set"
     MISSING=1
@@ -45,6 +46,10 @@ if [ -n "${DB_PASSWORD:-}" ] && ! is_strong_secret "$DB_PASSWORD" 16; then
 fi
 if [ -n "${REDIS_PASSWORD:-}" ] && ! is_strong_secret "$REDIS_PASSWORD" 24; then
   echo "❌ REDIS_PASSWORD must be at least 24 characters and must not be a placeholder"
+  MISSING=1
+fi
+if [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] && ! is_strong_secret "$BACKUP_ENCRYPTION_PASSPHRASE" 32; then
+  echo "❌ BACKUP_ENCRYPTION_PASSPHRASE must be at least 32 characters and must not be a placeholder"
   MISSING=1
 fi
 if [ -n "${DB_PASSWORD:-}" ] && [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
