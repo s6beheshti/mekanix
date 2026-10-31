@@ -38,6 +38,30 @@ describe("payment provider production safety", () => {
     })).resolves.toMatchObject({ success: false });
   });
 
+  it("allows the simulator only in an explicitly marked staging runtime", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "staging");
+    const provider = await import("@/lib/payment-provider");
+
+    expect(provider.getPaymentProviderStatus()).toEqual({
+      configured: true,
+      provider: "simulator",
+    });
+    const created = await provider.createPayment({
+      amount: 1000,
+      description: "staging test",
+      callbackUrl: "http://localhost:3001/api/gateway/callback",
+      orderId: "PG-staging",
+    });
+    expect(created).toMatchObject({
+      success: true,
+      authority: "sim_PG-staging",
+    });
+
+    await expect(provider.verifyPayment("sim_PG-staging", 1000, "PG-staging"))
+      .resolves.toMatchObject({ success: true, amount: 1000 });
+  });
+
   it("fails closed for an unknown or unimplemented provider", async () => {
     vi.stubEnv("PAYMENT_PROVIDER", "nextpay");
     vi.stubEnv("NEXTPAY_API_KEY", "configured-but-not-implemented");
