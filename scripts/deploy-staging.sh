@@ -45,10 +45,11 @@ sed -i 's/provider = "sqlite"/provider = "postgresql"/' "$BUILD_CTX/prisma/schem
 cd "$BUILD_CTX"
 docker compose -f docker-compose.staging.yml up -d --build
 
-echo "⏳ Waiting for staging to be healthy..."
+echo "⏳ Waiting for staging readiness..."
 for i in $(seq 1 90); do
-  if curl -s http://localhost:3001/api/health | grep -q '"ok":true'; then
-    echo "✅ Staging is healthy!"
+  READY_JSON="$(curl -fsS http://localhost:3001/api/ready 2>/dev/null || echo '{}')"
+  if echo "$READY_JSON" | grep -q '"ok":true'; then
+    echo "✅ Staging is ready!"
     echo ""
     echo "   URL:    http://localhost:3001"
     echo "   Health: http://localhost:3001/api/health"
@@ -58,6 +59,7 @@ for i in $(seq 1 90); do
   echo "   Waiting... ($i/90)"
   sleep 2
 done
-echo "❌ Staging did not become healthy"
+echo "❌ Staging did not become ready"
+echo "Last readiness response: $READY_JSON"
 docker compose -f docker-compose.staging.yml logs
 exit 1
