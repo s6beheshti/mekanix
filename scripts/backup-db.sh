@@ -9,6 +9,10 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-$REPO_DIR/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+if ! [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] || [[ "$RETENTION_DAYS" -lt 1 ]]; then
+  echo "❌ BACKUP_RETENTION_DAYS must be a positive integer"
+  exit 1
+fi
 DB_URL="${DATABASE_URL:-file:$REPO_DIR/db/custom.db}"
 PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
 ENCRYPTION_REQUIRED="${BACKUP_ENCRYPTION_REQUIRED:-false}"
