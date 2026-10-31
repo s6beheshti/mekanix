@@ -1,8 +1,9 @@
 name: Docker E2E
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "fix/payment-provider-production-wiring", "fix/auth-otp-redis-hardening"]
   pull_request:
     branches: [main]
 
