@@ -1,7 +1,5 @@
-// MEKANIX — Rate Limiting (Redis-backed with in-memory fallback)
-//
-// When REDIS_URL is set, rate limiting is distributed across all instances.
-// Otherwise, falls back to in-memory (single-instance dev mode).
+// MEKANIX — Rate Limiting (Redis-backed)
+// Redis is mandatory in production/staging; in-memory fallback is development/test only.
 
 import { kvIncr } from "./redis";
 
@@ -53,6 +51,10 @@ function memRateLimit(key: string, max: number, windowMs: number): { success: bo
 // Existing callers use rateLimit(key, max, windowMs) synchronously.
 
 export function rateLimit(key: string, max: number, windowMs: number): { success: boolean; resetMs: number } {
+  if (process.env.NODE_ENV === "production") {
+    console.error("[rate-limit] Synchronous in-memory limiter is disabled in production");
+    return { success: false, resetMs: windowMs };
+  }
   return memRateLimit(key, max, windowMs);
 }
 
@@ -68,8 +70,12 @@ export async function rateLimitAsync(key: string, max: number, windowMs: number)
       return { success: false, resetMs: windowMs };
     }
     return { success: true, resetMs: windowMs };
-  } catch {
-    // Fall back to in-memory
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      // Fail closed: never replace a distributed production limit with per-instance memory.
+      console.error("[rate-limit] Redis unavailable; denying request", error);
+      return { success: false, resetMs: windowMs };
+    }
     return memRateLimit(key, max, windowMs);
   }
 }
