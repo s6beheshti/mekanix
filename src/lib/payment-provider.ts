@@ -2,7 +2,7 @@
 //
 // Production policy:
 // - Zarinpal and IDPay are the only implemented live providers.
-// - The simulator is available only outside production.
+// - The simulator is available only outside production or in explicit staging.
 // - Unknown, incomplete, and stub providers fail closed (never silently simulate).
 //
 // Amounts passed to this module are IRR (Rial), not Toman.
@@ -64,7 +64,7 @@ const simulator: Provider = {
     return { success: true, paymentUrl: callback.toString(), authority, orderId: req.orderId };
   },
   verify: async (authority, amount, orderId) => {
-    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" || authority !== `sim_${orderId}`) {
+    if ((process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging") || authority !== `sim_${orderId}`) {
       return { success: false, error: "تأیید شبیه‌ساز معتبر نیست" };
     }
     return { success: true, refId: `dev_${orderId}`, amount };
