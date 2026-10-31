@@ -447,7 +447,7 @@ describe("payment initiation server-side authority", () => {
       id: "invoice-1",
       code: "INV-1",
       status: "SENT",
-      total: 150_000,
+      total: 150, // USD base amount; converted to Rial only for the gateway
       job: { request: { customer: { userId: "customer-1" } } },
     });
 
