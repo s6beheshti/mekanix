@@ -13,22 +13,11 @@
 //      generator to choose the verification secret." `Math.random()` does
 //      not meet that bar; `crypto.randomInt()` does.
 //
-//   2. `hashOtpCode(code)` — SHA-256 hex digest of the code. The hashed
-//      form is what gets persisted to `OtpCode.code` in the DB so that a
-//      read-only DB leak (SQL injection, backup theft, snapshot access)
-//      cannot reveal usable OTP codes. Verification re-hashes the
-//      user-supplied code and matches the hash.
-//
-//      SHA-256 is sufficient here because the OTP code space is only
-//      10^6 (1,000,000 possible values) and codes expire in 5 minutes —
-//      an offline brute force of the *full* code is feasible in theory,
-//      but a single leaked hash is only useful for ~5 minutes and only
-//      for the phone it was issued to. Adding per-code salt would not
-//      raise the effective security (the phone IS the salt-equivalent
-//      in our schema: `@@index([phone, createdAt])`). We use SHA-256
-//      (not bcrypt/argon2) deliberately because OTP hashes must be
-//      cheap to compute on every verify request — the rate limiter +
-//      short TTL are the primary defenses, not KDF cost.
+//   2. `hashOtpCode(code)` — keyed HMAC-SHA256 of the code using the
+//      server-side JWT secret as a pepper. The digest is persisted to
+//      `OtpCode.code`; a database-only leak cannot brute-force the six-digit
+//      space without also compromising the application secret. Verification
+//      computes the same HMAC and compares the digest.
 //
 // Both helpers use `node:crypto` (built-in) — no new dependencies.
 
