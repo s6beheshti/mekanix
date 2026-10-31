@@ -1,6 +1,6 @@
 // Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
 import { PrismaClient } from "@prisma/client";
-import { parseFreshTelegramUsdIrrQuote } from "../../src/lib/rate-parser";
+import { parseTelegramUsdIrrQuote } from "../../src/lib/rate-parser";
 
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
@@ -73,7 +73,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
       quote.rate >= 1_000_000 &&
       quote.rate <= 100_000_000
     ) {
-      const quotedAt = new Date(quote.quotedAt);
+      const quotedAt = new Date(quote.postedAt);
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
         update: { value: String(quote.rate), description: `@${channel}`, updatedAt: quotedAt },
