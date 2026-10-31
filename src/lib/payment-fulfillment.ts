@@ -2,15 +2,30 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { verifyPayment } from "@/lib/payment-provider";
 
-type PaymentMetadata =
+type PaymentMetadata = {
+  amountUsd: number;
+  exchangeRate: number;
+  exchangeRateSource: string;
+  exchangeRateUpdatedAt: number | null;
+} & (
   | { kind: "vip"; subscriptionId: string; planId: string; durationDays: number; planName: string }
   | { kind: "invoice"; invoiceId: string }
-  | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean };
+  | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean }
+);
 
 function parseMetadata(value: string | null): PaymentMetadata {
   if (!value) throw new Error("Payment metadata is missing");
   const parsed = JSON.parse(value) as PaymentMetadata;
-  if (!parsed || !["vip", "invoice", "prepay"].includes(parsed.kind)) {
+  if (
+    !parsed ||
+    !["vip", "invoice", "prepay"].includes(parsed.kind) ||
+    !Number.isFinite(parsed.amountUsd) ||
+    parsed.amountUsd <= 0 ||
+    !Number.isSafeInteger(parsed.exchangeRate) ||
+    parsed.exchangeRate <= 0 ||
+    typeof parsed.exchangeRateSource !== "string" ||
+    !(parsed.exchangeRateUpdatedAt === null || Number.isFinite(parsed.exchangeRateUpdatedAt))
+  ) {
     throw new Error("Payment metadata is invalid");
   }
   return parsed;
@@ -41,6 +56,10 @@ export async function fulfillVerifiedPayment(
     }
 
     const metadata = parseMetadata(log.description);
+    const expectedIrrAmount = Math.round(metadata.amountUsd * metadata.exchangeRate);
+    if (!Number.isSafeInteger(expectedIrrAmount) || expectedIrrAmount <= 0 || expectedIrrAmount !== Number(log.amount)) {
+      throw new Error("Stored gateway amount does not match the USD price and exchange-rate snapshot");
+    }
     const claim = await tx.paymentGatewayLog.updateMany({
       where: { id: log.id, status: "REDIRECTED", paymentId: log.paymentId },
       data: {
@@ -62,8 +81,13 @@ export async function fulfillVerifiedPayment(
     let invoiceId: string | null = null;
     if (metadata.kind === "invoice") {
       const invoice = await tx.invoice.findUnique({ where: { id: metadata.invoiceId } });
-      if (!invoice || (invoice.status === "PAID" || invoice.status === "DRAFT") || Math.round(Number(invoice.total)) !== Number(log.amount)) {
-        throw new Error("Invoice is unavailable or its amount changed");
+      if (
+        !invoice ||
+        invoice.status === "PAID" ||
+        invoice.status === "DRAFT" ||
+        Math.round(Number(invoice.total) * 100) / 100 !== metadata.amountUsd
+      ) {
+        throw new Error("Invoice is unavailable or its USD amount changed");
       }
       invoiceId = invoice.id;
     }
@@ -75,14 +99,14 @@ export async function fulfillVerifiedPayment(
         !pendingPayment ||
         pendingPayment.status !== "PENDING" ||
         pendingPayment.userId !== log.userId ||
-        Number(pendingPayment.amount) !== Number(log.amount) ||
+        Math.round(Number(pendingPayment.amount) * 100) / 100 !== metadata.amountUsd ||
         pendingPayment.invoiceId !== invoiceId
       ) {
         throw new Error("Reserved payment record does not match the verified order");
       }
       payment = await tx.payment.update({
         where: { id: pendingPayment.id },
-        data: { status: "SUCCEEDED", method: log.gateway.toLowerCase(), amount: log.amount, currency: "IRR" },
+        data: { status: "SUCCEEDED", method: log.gateway.toLowerCase(), amount: metadata.amountUsd, currency: "IRR" },
       });
     } else {
       payment = await tx.payment.create({
@@ -90,7 +114,7 @@ export async function fulfillVerifiedPayment(
           code: `PAY-${randomUUID()}`,
           invoiceId,
           userId: log.userId,
-          amount: log.amount,
+          amount: metadata.amountUsd,
           currency: "IRR",
           method: log.gateway.toLowerCase(),
           status: "SUCCEEDED",
@@ -136,8 +160,12 @@ export async function fulfillVerifiedPayment(
         where: { id: metadata.invoiceId },
         include: { job: { include: { technician: true } } },
       });
-      if (!invoice || invoice.status === "PAID" || Math.round(Number(invoice.total)) !== Number(log.amount)) {
-        throw new Error("Invoice is unavailable or its amount changed");
+      if (
+        !invoice ||
+        invoice.status === "PAID" ||
+        Math.round(Number(invoice.total) * 100) / 100 !== metadata.amountUsd
+      ) {
+        throw new Error("Invoice is unavailable or its USD amount changed");
       }
       await tx.invoice.update({ where: { id: metadata.invoiceId }, data: { status: "PAID" } });
       await tx.job.update({
@@ -155,7 +183,7 @@ export async function fulfillVerifiedPayment(
             userId: invoice.job.technician.userId,
             type: "job_completed",
             title: "Payment received",
-            body: `Invoice ${invoice.code} paid — ${Number(invoice.total)} IRR`,
+            body: `Invoice ${invoice.code} paid — ${Number(log.amount)} IRR`,
             category: "payment",
             link: "technician/earnings",
           },
@@ -169,12 +197,18 @@ export async function fulfillVerifiedPayment(
           technician: { include: { wallet: true, user: true } },
         },
       });
-      const gross = Math.round(metadata.inspectionFee + metadata.travelFee);
-      if (!job || job.prepayPaid || !job.technician || gross !== Number(log.amount)) {
-        throw new Error("Prepayment is unavailable or its amount changed");
+      const grossUsd = Math.round((metadata.inspectionFee + metadata.travelFee) * 100) / 100;
+      if (
+        !job ||
+        job.prepayPaid ||
+        !job.technician ||
+        grossUsd !== metadata.amountUsd ||
+        Math.round(grossUsd * metadata.exchangeRate) !== Number(log.amount)
+      ) {
+        throw new Error("Prepayment is unavailable or its USD amount changed");
       }
-      const commission = Math.round(gross * 0.10);
-      const net = gross - commission;
+      const commission = Math.round(grossUsd * 0.10 * 100) / 100;
+      const net = Math.round((grossUsd - commission) * 100) / 100;
       const prepayment = await tx.job.updateMany({
         where: { id: metadata.jobId, prepayPaid: false },
         data: {
@@ -199,7 +233,7 @@ export async function fulfillVerifiedPayment(
           jobId: job.id,
           kind: "PREPAY",
           status: "PENDING",
-          grossAmount: gross,
+          grossAmount: grossUsd,
           commissionAmount: commission,
           netAmount: net,
           holdUntil: null,
@@ -222,7 +256,7 @@ export async function fulfillVerifiedPayment(
         where: { id: wallet.id },
         data: {
           pendingBalance: { increment: net },
-          totalEarned: { increment: gross },
+          totalEarned: { increment: grossUsd },
           totalCommission: { increment: commission },
         },
       });
