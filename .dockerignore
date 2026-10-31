@@ -1,0 +1,33 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated builds
+node_modules
+.next
+out
+build
+coverage
+playwright-report
+test-results
+
+# Git metadata and local tooling
+.git
+.github
+.claude
+.zscripts
+skills
+
+# Local databases, backups, uploads and logs
+db/*.db
+db/*.db-journal
+*.sqlite
+*.sqlite3
+backups
+upload
+download
+*.log
+*.pid
+.DS_Store
+*.pem
