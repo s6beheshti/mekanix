@@ -14,6 +14,11 @@ jobs:
     env:
       DB_PASSWORD: test_password
       JWT_SECRET: test_secret_for_ci
+      REDIS_PASSWORD: test_redis_password
+      APP_URL: http://localhost:3000
+      DEPLOYMENT_ENV: staging
+      SMS_PROVIDER: console
+      PAYMENT_PROVIDER: simulator
     
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +77,19 @@ jobs:
           docker compose -f /tmp/mekanix-build/docker-compose.yml logs
           exit 1
       
+      - name: Verify application readiness
+        run: |
+          READY=$(curl -fsS http://localhost:3000/api/ready)
+          echo "$READY" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d.get('ok') is True, f'Application is not ready: {d}'
+          assert d['checks']['database'] is True
+          assert d['checks']['migrationsApplied'] is True
+          assert d['checks']['paymentCallbackUrl'] is True
+          print('✅ Application readiness checks passed')
+          "
+
       - name: Verify database is PostgreSQL
         run: |
           HEALTH=$(curl -s http://localhost:3000/api/health)
