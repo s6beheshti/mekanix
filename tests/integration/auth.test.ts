@@ -19,13 +19,18 @@
 //   - POST /api/auth/otp/send with missing phone → 400
 //   - POST /api/auth/otp/verify with valid code → 200 + `user` object
 //   - POST /api/auth/otp/verify with invalid code → 400
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ──────────── Module-level mocks (hoisted by vitest) ────────────
 //
 // `vi.mock` is hoisted before any import statements, so the mock factories
 // run before the route handlers are imported. Inside the factory we use
 // `vi.fn()` so individual tests can override return values.
+
+const { mockRateLimitAsync, mockSendOtp } = vi.hoisted(() => ({
+  mockRateLimitAsync: vi.fn().mockResolvedValue({ success: true, resetMs: 60_000 }),
+  mockSendOtp: vi.fn().mockResolvedValue({ success: true, messageId: "mock-sms" }),
+}));
 
 const mockOtpFindFirst = vi.fn();
 const mockOtpUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
@@ -74,7 +79,7 @@ vi.mock("@/lib/db", () => ({
 // don't trip across tests.
 vi.mock("@/lib/rate-limit", () => ({
   rateLimit: vi.fn(() => ({ success: true, resetMs: 60_000 })),
-  rateLimitAsync: vi.fn().mockResolvedValue({ success: true, resetMs: 60_000 }),
+  rateLimitAsync: mockRateLimitAsync,
   checkRateLimit: vi.fn(() => null),
   getClientId: vi.fn(() => "127.0.0.1"),
   RATE_LIMITS: {
@@ -84,6 +89,10 @@ vi.mock("@/lib/rate-limit", () => ({
     WITHDRAW: { max: 3, windowMs: 3_600_000 },
     API_DEFAULT: { max: 60, windowMs: 60_000 },
   },
+}));
+
+vi.mock("@/lib/sms-provider", () => ({
+  sendOtp: mockSendOtp,
 }));
 
 // ──────────── Import route handlers (after mocks are hoisted) ────────────
@@ -103,6 +112,8 @@ function jsonReq(url: string, body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRateLimitAsync.mockReset().mockResolvedValue({ success: true, resetMs: 60_000 });
+  mockSendOtp.mockReset().mockResolvedValue({ success: true, messageId: "mock-sms" });
   // Restore default mock implementations after each test
   mockOtpUpdateMany.mockResolvedValue({ count: 0 });
   mockOtpCreate.mockResolvedValue({});
@@ -112,6 +123,10 @@ beforeEach(() => {
   mockSessionCreate.mockResolvedValue({});
   mockSessionFindUnique.mockResolvedValue(null);
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 // ──────────── POST /api/auth/otp/send ────────────
@@ -134,24 +149,42 @@ describe("integration — POST /api/auth/otp/send", () => {
     expect(mockOtpUpdateMany).toHaveBeenCalledTimes(1);
     expect(mockOtpCreate).toHaveBeenCalledTimes(1);
 
-    // SECURITY regression check: the plaintext `code` returned to the client
-    // must NOT be what gets persisted to the DB. The DB column should hold
-    // the SHA-256 hex digest (64 lowercase hex chars), so a read-only DB
-    // leak cannot reveal usable codes.
+    // SECURITY regression check: the plaintext code is never persisted.
+    // The database stores a keyed HMAC-SHA256 digest, not an offline-brute-forceable SHA-256 hash.
     const createCall = mockOtpCreate.mock.calls[0][0] as {
       data: { phone: string; code: string; expiresAt: Date };
     };
     expect(createCall.data.phone).toBe("+989121234567");
     expect(createCall.data.code).toHaveLength(64);
     expect(createCall.data.code).toMatch(/^[0-9a-f]{64}$/);
-    // The persisted hash must equal SHA-256(body.code) — i.e. the two
-    // operations share the same hashing helper.
+    // The persisted HMAC must match the shared helper and differ from an
+    // unkeyed SHA-256 digest of the six-digit code.
     expect(createCall.data.code).toBe(hashOtpCode(body.code));
-    expect(createCall.data.code).toBe(
+    expect(createCall.data.code).not.toBe(
       createHash("sha256").update(body.code).digest("hex")
     );
     // And it must NOT be the plaintext code itself.
     expect(createCall.data.code).not.toBe(body.code);
+  });
+
+  it("returns 502 and invalidates an undelivered OTP when SMS fails in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
+    mockSendOtp.mockResolvedValueOnce({ success: false, error: "provider unavailable" });
+    mockOtpUpdateMany
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
+
+    const req = jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+989121234567",
+    });
+    const res = await otpSendPOST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(body.code).toBeUndefined();
+    expect(body.error).toContain("ارسال کد");
+    expect(mockOtpUpdateMany).toHaveBeenCalledTimes(2);
   });
 
   it("accepts a phone with spaces / dashes (schema allows those, route strips them)", async () => {
@@ -218,7 +251,7 @@ describe("integration — POST /api/auth/otp/verify", () => {
       consumed: false,
       expiresAt,
     });
-    mockOtpUpdate.mockResolvedValueOnce({});
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 1 });
     // Existing user with a customer record
     mockUserFindUnique.mockResolvedValueOnce({
       id: "user_1",
@@ -244,15 +277,19 @@ describe("integration — POST /api/auth/otp/verify", () => {
     expect(body.created).toBe(false);
 
     // The OTP should have been marked as consumed
-    expect(mockOtpUpdate).toHaveBeenCalledWith(
+    expect(mockOtpUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "otp_1" },
-        data: expect.objectContaining({ consumed: true }),
+        where: expect.objectContaining({
+          id: "otp_1",
+          consumed: false,
+          expiresAt: { gt: expect.any(Date) },
+        }),
+        data: { consumed: true },
       })
     );
 
     // SECURITY regression check: the verify route must hash the user-supplied
-    // code with SHA-256 before looking it up — the DB column holds the hash,
+    // code with the keyed HMAC helper before looking it up — the DB column holds the digest,
     // not the plaintext code. Assert findFirst was called with the digest.
     expect(mockOtpFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -326,6 +363,21 @@ describe("integration — POST /api/auth/otp/verify", () => {
     expect(body.user.id).toBe("user_new");
   });
 
+  it("rate-limits OTP verification per phone in addition to per IP", async () => {
+    mockRateLimitAsync
+      .mockResolvedValueOnce({ success: true, resetMs: 60_000 })
+      .mockResolvedValueOnce({ success: false, resetMs: 30_000 });
+
+    const req = jsonReq("https://mekanix.test/api/auth/otp/verify", {
+      phone: "+989121234567",
+      code: "123456",
+    });
+    const res = await otpVerifyPOST(req);
+
+    expect(res.status).toBe(429);
+    expect(mockOtpFindFirst).not.toHaveBeenCalled();
+  });
+
   it("returns 400 for an invalid code (no matching OTP record)", async () => {
     mockOtpFindFirst.mockResolvedValueOnce(null); // no OTP found
 
@@ -339,6 +391,28 @@ describe("integration — POST /api/auth/otp/verify", () => {
     const body = await res.json();
     expect(body).toHaveProperty("error");
     // No user lookup should have happened
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects a concurrent second claim of the same OTP", async () => {
+    mockOtpFindFirst.mockResolvedValueOnce({
+      id: "otp_race",
+      phone: "+989121234567",
+      code: "123456",
+      consumed: false,
+      expiresAt: new Date(Date.now() + 4 * 60 * 1000),
+    });
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const req = jsonReq("https://mekanix.test/api/auth/otp/verify", {
+      phone: "+989121234567",
+      code: "123456",
+    });
+    const res = await otpVerifyPOST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain("قبلاً استفاده شده");
     expect(mockUserFindUnique).not.toHaveBeenCalled();
   });
 
