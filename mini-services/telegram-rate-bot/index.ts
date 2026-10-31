@@ -1,5 +1,6 @@
 // Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
 import { PrismaClient } from "@prisma/client";
+import { parseTelegramUsdIrrRate } from "../../src/lib/rate-parser";
 
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
@@ -42,7 +43,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
       return await fetchFallbackApi();
     }
     const html = await res.text();
-    const rate = parseRateFromHtml(html);
+    const rate = parseTelegramUsdIrrRate(html);
     if (rate && rate > 100000 && rate < 10000000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
@@ -63,25 +64,6 @@ async function fetchAndStoreRate(): Promise<number | null> {
     console.log(`⚠️ Error: ${e.message}, fallback`);
     return await fetchFallbackApi();
   }
-}
-
-function parseRateFromHtml(html: string): number | null {
-  const patterns = [
-    /دلار[^0-9۰-۹]*([\d,٬۰-۹\s]+)\s*(ریال|تومان)?/i,
-    /USD[^0-9]*([\d,۰-۹]+)/i,
-    /dollar[^0-9]*([\d,۰-۹]+)/i,
-  ];
-  for (const p of patterns) {
-    const m = html.match(p);
-    if (m && m[1]) {
-      let raw = m[1].trim().replace(/[۰-۹٠-٩]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩".indexOf(d) % 10));
-      raw = raw.replace(/[٬,‌\s]/g, "");
-      let rate = parseInt(raw, 10);
-      if (m[2] === "تومان") rate *= 10; // Normalize Toman to Rial for gateway calculations.
-      if (!isNaN(rate) && rate > 100000 && rate < 100000000) return rate;
-    }
-  }
-  return null;
 }
 
 async function fetchFallbackApi(): Promise<number | null> {
