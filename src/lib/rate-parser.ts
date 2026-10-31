@@ -88,7 +88,7 @@ export function parseFreshTelegramUsdIrrQuote(
     const quotedAt = Date.parse(timeMatch[1]);
     if (
       !Number.isFinite(quotedAt) ||
-      quotedAt > now + 60_000 ||
+      quotedAt > now ||
       now - quotedAt > maxAgeMs
     ) {
       continue;
