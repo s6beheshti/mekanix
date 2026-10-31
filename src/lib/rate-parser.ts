@@ -26,7 +26,7 @@ export function parseTelegramUsdIrrRate(html: string, defaultUnit: "rial" | "tom
     if (!Number.isFinite(rate)) continue;
 
     const unit = pattern.unitGroup ? match[pattern.unitGroup] : undefined;
-    if (unit === "تومان" || (!unit && defaultUnit === "toman")) {
+    if (unit === "تومان" || (pattern.unitGroup && !unit && defaultUnit === "toman")) {
       rate *= 10;
     }
 
