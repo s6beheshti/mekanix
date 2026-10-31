@@ -42,6 +42,20 @@ describe("USD/IRR payment rate trust", () => {
     expect(snapshot.trustedForPayments).toBe(true);
   });
 
+  it("allows a small future timestamp skew from the Telegram source", async () => {
+    findUnique.mockImplementation(({ where }: { where: { key: string } }) => {
+      if (where.key === "usd_irr_rate_telegram") {
+        return Promise.resolve({ value: "12000000", updatedAt: new Date(Date.now() + 3 * 60_000) });
+      }
+      if (where.key === "usd_irr_rate_source") return Promise.resolve({ value: "telegram" });
+      if (where.key === "usd_irr_multiplier") return Promise.resolve({ value: "1" });
+      return Promise.resolve(null);
+    });
+
+    const { getUsdIrrRateSnapshot } = await import("@/lib/exchange-rate");
+    expect((await getUsdIrrRateSnapshot()).trustedForPayments).toBe(true);
+  });
+
   it("does not trust a stale Telegram rate", async () => {
     findUnique.mockImplementation(({ where }: { where: { key: string } }) => {
       if (where.key === "usd_irr_rate_telegram") {
