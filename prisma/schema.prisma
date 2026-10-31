@@ -679,11 +679,11 @@ model Wallet {
   id              String     @id @default(cuid())
   technicianId    String     @unique
   technician      Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
-  balance         Decimal    @default(0) // current withdrawable balance (IRR)
-  pendingBalance  Decimal    @default(0) // held balance (in 12h escrow, IRR)
-  totalEarned     Decimal    @default(0) // lifetime gross earnings (IRR)
-  totalCommission Decimal    @default(0) // lifetime platform commission (IRR)
-  totalWithdrawn  Decimal    @default(0) // lifetime withdrawn amount (IRR)
+  balance         Decimal    @default(0) // available USD base; converted to IRR for display
+  pendingBalance  Decimal    @default(0) // held USD base balance (12h escrow)
+  totalEarned     Decimal    @default(0) // lifetime gross earnings (USD base)
+  totalCommission Decimal    @default(0) // lifetime platform commission (USD base)
+  totalWithdrawn  Decimal    @default(0) // lifetime withdrawn amount (USD base)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -740,7 +740,7 @@ model WithdrawalRequest {
   code        String           @unique // WD-...
   walletId    String
   wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  amount      Decimal  // IRR
+  amount      Decimal  // USD base; converted to IRR when paid out
   method      String           @default("card") // card | bank | wallet-to-wallet
   cardNumber  String? // masked Iranian card number (shetab)
   bankName    String?
@@ -982,7 +982,7 @@ model WalletLedger {
   walletId        String
   wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   type            String   // CREDIT | DEBIT | HOLD | RELEASE | REFUND | COMMISSION | WITHDRAWAL
-  amount          Decimal    @default(0)
+  amount          Decimal    @default(0) // USD base amount
   balanceBefore   Decimal    @default(0)
   balanceAfter    Decimal    @default(0)
   referenceType   String?  // Job | Payment | Withdrawal | Manual
