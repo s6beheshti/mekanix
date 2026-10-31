@@ -15,7 +15,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` version pinned at `0.2.1`; release tag pending `git tag v1.0.0` |
-| 0.2 | Update `CHANGELOG.md` | ⬜ | Not yet authored — track in release tag |
+| 0.2 | Update `CHANGELOG.md` | ✅ | `CHANGELOG.md` records payment hardening, USD/IRR conversion, dependency remediation, Redis recovery, and remaining live-provider gates |
 | 0.3 | Lock all dependency versions | ✅ | `bun.lock` checked in; all deps pinned to exact semver |
 | 0.4 | Freeze Prisma schema | 🛠️ | Schema remains stable; `20261031140000_unique_pending_gateway_intents` adds partial unique indexes for pending VIP/prepay payments in SQLite and PostgreSQL |
 
@@ -28,7 +28,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 1.1 | ESLint passes with 0 errors | ✅ | `bun run lint` → exit 0; permissive ruleset in `eslint.config.mjs` |
 | 1.2 | `tsc --noEmit` passes with 0 errors | ✅ | `bunx tsc --noEmit` → exit 0 |
 | 1.3 | Unit + integration tests pass | ✅ | `bun run test` → 216/216 tests pass across 10 files |
-| 1.4 | CI workflow on PR | 🛠️ | GitHub Actions runs lint, TypeScript, unit/integration, Playwright browser E2E, Docker E2E and PostgreSQL CI; latest automated dependency commit requires a fresh PR run to validate the regenerated lockfile |
+| 1.4 | CI workflow on PR | 🛠️ | GitHub Actions runs lint, TypeScript, unit/integration, Playwright browser E2E, Docker E2E and PostgreSQL CI; final run on the latest branch head is pending |
 | 1.5 | Pre-commit hooks (lint + tsc) | 🛠️ | Add `husky` install in production repo; commands already verified to pass |
 | 1.6 | Code coverage report | ⚠️ | `vitest run --coverage` configured but thresholds not enforced |
 
@@ -96,11 +96,11 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 6.1 | Payment provider abstraction | 🛠️ | Zarinpal + IDPay implemented; simulator is allowed only outside production or in explicitly marked staging; provider tests added, final CI pending |
 | 6.2 | Auto-init on server boot | 🛠️ | `src/lib/init.ts` now calls `initPaymentProvider()`; provider also initializes lazily at first use. |
-| 6.3 | Authenticated payment initiation + UI redirect | 🛠️ | `payment-initiation.ts` is shared by `/api/gateway/initiate`, `/api/payments`, `/api/prepay`, and `/api/vip/subscribe`; UI redirects to hosted bank pages and never collects card/CVV/OTP. |
+| 6.3 | Authenticated payment initiation + UI redirect | 🛠️ | Shared server-side initiation derives USD base prices, converts them with a trusted Telegram quote, snapshots the rate, requires client confirmation of the exact IRR amount, and redirects only to hosted bank pages; no card/CVV/OTP collection. |
 | 6.4 | Zarinpal create + verify callback | 🛠️ | Server-to-server request/verify; callback requires matching stored Authority and accepts provider verification codes 100/101. Live credentials not tested. |
 | 6.5 | IDPay create + verify callback | 🛠️ | Stable `order_id` is persisted as the gateway order code and reused during verify; callback status/order are checked. Live credentials not tested. |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY`, public HTTPS `APP_URL`, and provider sandbox/production acceptance test. |
-| 6.7 | Idempotent fulfillment | 🛠️ | Conditional callback claim settles once; partial unique DB index prevents concurrent pending VIP/prepay intents per customer; payment verification and idempotency tests added, PostgreSQL migration CI pending |
+| 6.7 | Idempotent fulfillment | 🛠️ | Conditional callback claim settles once; partial unique indexes prevent concurrent pending VIP/prepay intents; invoice, VIP and prepayment settlement preserve USD base ledger amounts while verifying the reserved IRR charge; final PostgreSQL CI pending |
 | 6.8 | Payment readiness gate | 🛠️ | `/api/ready` rejects simulator/misconfigured production providers and validates `APP_URL` as a public HTTPS origin; `/api/health` remains a liveness probe |
 
 ---
@@ -151,7 +151,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 10.1 | Dockerfile (multi-stage, non-root) | ✅ | `Dockerfile` — node:20-alpine, non-root `nextjs` user, runs `prisma migrate deploy && node server.js` |
+| 10.1 | Dockerfile (multi-stage, non-root) | ✅ | `Dockerfile` — node:20-slim, OpenSSL installed for Prisma generation/runtime, non-root `nextjs` user, runs `prisma migrate deploy && node server.js` |
 | 10.2 | docker-compose for app + db + redis | ✅ | `docker-compose.yml` (3 services with healthcheck + volumes) |
 | 10.3 | Deploy script | 🛠️ | `scripts/deploy.sh` requires DB/Redis/JWT, public HTTPS APP_URL and real SMS/payment providers; waits for `/api/ready` rather than liveness only |
 | 10.4 | Provision VPS | ⬜ | Needs real server (Hetzner / ArvanCloud / ParsPack) |
@@ -444,8 +444,8 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 - Persian UI amounts are displayed in IRR using the exchange-rate snapshot returned by `/api/exchange-rate`.
 - `PaymentGatewayLog.amount` is the integer IRR amount sent to the bank and verified in the callback; `Payment.amount` remains the USD base amount used by the UI.
 - Payment initiation snapshots the rate, records the snapshot in gateway metadata, and compares the client-visible `expectedAmountIrr` with the server calculation. A mismatch returns HTTP 409 before payment reservation or bank redirect.
-- Live production payments require a fresh Telegram-sourced USD/IRR quote updated within 15 minutes, a valid multiplier (0.5–2), and a normalized Rial rate within the configured safety bounds. The internal display fallback is never accepted for real-money collection.
-- The Telegram collector treats unitless `NerkhDollarIRT` quotes as Toman by default (configurable with `TELEGRAM_RATE_UNIT`), prefers the sell quote, normalizes to Rial, writes the source and timestamp to PostgreSQL, and exposes `/health` and `/ready`; production deployment readiness independently checks the same trusted-rate contract.
+- Live production payments require a Telegram-sourced USD/IRR quote whose original post timestamp is no more than 15 minutes old, a valid multiplier (0.5–2), and a normalized Rial rate within the configured safety bounds. Collector fetch time cannot make an old post look fresh; internal/API fallbacks are never accepted for real-money collection.
+- The Telegram collector treats unitless `NerkhDollarIRT` quotes as Toman by default (configurable with `TELEGRAM_RATE_UNIT`), prefers the sell quote, normalizes to Rial, persists the original message timestamp, and exposes `/health` and `/ready`; production deployment readiness independently checks the same trusted-rate contract.
 
 ## Summary
 
