@@ -115,11 +115,15 @@ function createZarinpalProvider(merchantId: string): Provider {
         const data = await res.json();
         const code = Number(data.data?.code);
         const refId = data.data?.ref_id;
+        const verifiedAmount = data.data?.amount;
         // 100 = verified; 101 = already verified (safe for callback retries).
         if (!res.ok || ![100, 101].includes(code) || refId == null) {
           return { success: false, error: data.errors?.message || "Zarinpal verification failed" };
         }
-        return { success: true, refId: String(refId), amount };
+        if (verifiedAmount != null && Number(verifiedAmount) !== amount) {
+          return { success: false, error: "Zarinpal verified amount does not match the order" };
+        }
+        return { success: true, refId: String(refId), amount: verifiedAmount == null ? amount : Number(verifiedAmount) };
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : "Zarinpal verification failed" };
       }
