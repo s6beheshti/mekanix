@@ -1,5 +1,6 @@
 // MEKANIX — typed API client (browser fetch wrapper)
 import type { Prisma } from "@prisma/client";
+import { getUsdToIrrRate } from "@/lib/format";
 import type {
   User as UserModel, Vehicle as VehicleModel, Payment as PaymentModel,
   Notification as NotificationModel, ServiceCategory as ServiceCategoryModel,
@@ -104,10 +105,16 @@ export const api = {
     req<Invoice>(`/api/invoices`, { method: "POST", body: JSON.stringify({ jobId, ...data }) }),
   updateInvoice: (id: string, data: any) =>
     req<Invoice>(`/api/invoices/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  payInvoice: (invoiceId: string) =>
+  payInvoice: (invoiceId: string, amountUsd: number) =>
     req<{ ok: boolean; code: string; paymentUrl: string; amount: number; currency: string }>(
       `/api/payments`,
-      { method: "POST", body: JSON.stringify({ invoiceId }) }
+      {
+        method: "POST",
+        body: JSON.stringify({
+          invoiceId,
+          expectedAmountIrr: Math.round(amountUsd * getUsdToIrrRate()),
+        }),
+      }
     ),
   createReview: (data: { jobId: string; technicianId: string; rating: number; comment?: string }) =>
     req<Review>(`/api/reviews`, { method: "POST", body: JSON.stringify(data) }),
