@@ -48,12 +48,37 @@ export async function GET() {
   }
 
   // Production and staging require Redis; in-memory fallback is not distributed.
-  const requiresRedis = isProduction || process.env.DEPLOYMENT_ENV === "staging";
-  if (!requiresRedis || (await isRedisAvailable())) {
+  const requiresProductionInfra = isProduction || process.env.DEPLOYMENT_ENV === "staging";
+  let redisPasswordIsStrong = false;
+  try {
+    const redisUrl = new URL(process.env.REDIS_URL || "");
+    redisPasswordIsStrong = decodeURIComponent(redisUrl.password).length >= 24;
+  } catch {
+    // Missing or malformed Redis URL is not production-ready.
+  }
+  if (!requiresProductionInfra || (redisPasswordIsStrong && (await isRedisAvailable()))) {
     ready.checks.redis = true;
   } else {
     ready.ok = false;
-    ready.errors.push("Redis: not reachable; production/staging cannot use in-memory fallback");
+    ready.errors.push("Redis: requires a reachable Redis service with a 24+ character password");
+  }
+
+  if (requiresProductionInfra) {
+    try {
+      const databaseUrl = new URL(process.env.DATABASE_URL || "");
+      const databasePasswordIsStrong = decodeURIComponent(databaseUrl.password).length >= 16;
+      if (databaseUrl.protocol === "postgresql:" && databasePasswordIsStrong) {
+        ready.checks.databaseProvider = true;
+      } else {
+        ready.ok = false;
+        ready.errors.push("Database: production/staging requires PostgreSQL and a 16+ character password");
+      }
+    } catch {
+      ready.ok = false;
+      ready.errors.push("Database: production/staging requires a valid PostgreSQL DATABASE_URL");
+    }
+  } else {
+    ready.checks.databaseProvider = true;
   }
 
   // ─── 1. Database reachable ───
@@ -105,15 +130,6 @@ export async function GET() {
       ready.checks.paymentProvider = true;
     }
 
-    // 3c. Database must be PostgreSQL in production (not SQLite)
-    const dbUrl = process.env.DATABASE_URL || "";
-    if (dbUrl.startsWith("file:")) {
-      ready.ok = false;
-      ready.errors.push("Database: SQLite (file:) not allowed in production — use PostgreSQL (postgresql://)");
-    } else {
-      ready.checks.databaseProvider = true;
-    }
-
     // 3d. Payment callbacks require a stable public HTTPS origin.
     try {
       if (isPublicHttpsOrigin(process.env.APP_URL)) {
@@ -130,7 +146,6 @@ export async function GET() {
     // Non-production: all providers allowed
     ready.checks.smsProvider = true;
     ready.checks.paymentProvider = true;
-    ready.checks.databaseProvider = true;
     ready.checks.paymentCallbackUrl = true;
   }
 
