@@ -7,6 +7,9 @@ const { pingMock, disconnectMock } = vi.hoisted(() => ({
 
 vi.mock("ioredis", () => ({
   Redis: class {
+    on() {
+      return this;
+    }
     ping() {
       return pingMock();
     }
