@@ -17,7 +17,7 @@ import { getPaymentProviderStatus } from "@/lib/payment-provider";
 // Returns 200 if ready, 503 if not ready.
 
 export async function GET() {
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging";
   
   const ready = {
     ok: true,
@@ -95,11 +95,32 @@ export async function GET() {
     // 3d. Payment callbacks require a stable public HTTPS origin.
     try {
       const appUrl = new URL(process.env.APP_URL || "");
-      if (appUrl.protocol === "https:" && appUrl.hostname) {
+      const hostname = appUrl.hostname.toLowerCase();
+      const isLocalOrPrivateHost =
+        hostname === "localhost" ||
+        hostname.endsWith(".localhost") ||
+        hostname.endsWith(".local") ||
+        hostname.endsWith(".internal") ||
+        hostname === "127.0.0.1" ||
+        hostname === "::1" ||
+        hostname === "[::1]" ||
+        /^10\./.test(hostname) ||
+        /^192\.168\./.test(hostname) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+      if (
+        appUrl.protocol === "https:" &&
+        hostname &&
+        !isLocalOrPrivateHost &&
+        !appUrl.username &&
+        !appUrl.password &&
+        appUrl.pathname === "/" &&
+        !appUrl.search &&
+        !appUrl.hash
+      ) {
         ready.checks.paymentCallbackUrl = true;
       } else {
         ready.ok = false;
-        ready.errors.push("Payment callback: APP_URL must be a public HTTPS origin");
+        ready.errors.push("Payment callback: APP_URL must be a public HTTPS origin without credentials, path, query, or fragment");
       }
     } catch {
       ready.ok = false;
