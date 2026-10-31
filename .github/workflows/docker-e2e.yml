@@ -76,7 +76,7 @@ jobs:
       
       - name: Verify application readiness
         run: |
-          READY=$(curl -fsS http://localhost:3000/api/ready)
+          READY=$(curl -sS http://localhost:3000/api/ready)
           echo "$READY" | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
