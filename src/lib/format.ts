@@ -1,11 +1,9 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 
-// USD → IRR conversion rate. Default fallback is 60,000 (realistic 2024 rate).
-// On the client, `useT()` triggers a fetch from /api/exchange-rate which updates
-// this live. In production, that endpoint scrapes Telegram rate channels or
-// calls a free FX API.
-let USD_TO_IRR = 60000;
+// USD → IRR conversion rate. This is a display-only fallback; production payments
+// require a fresh Telegram-sourced market quote from /api/exchange-rate.
+let USD_TO_IRR = 6_000_000;
 
 export function setUsdToIrrRate(rate: number) {
   if (typeof rate === "number" && rate > 0) {
