@@ -83,6 +83,10 @@ export async function fulfillVerifiedPayment(
     if (metadata.kind === "vip") {
       const plan = await tx.vipPlan.findUnique({ where: { id: metadata.planId } });
       if (!plan || !plan.active) throw new Error("VIP plan is no longer available");
+      await tx.userVipSubscription.updateMany({
+        where: { userId: log.userId, status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+      });
       const activation = await tx.userVipSubscription.updateMany({
         where: {
           id: metadata.subscriptionId,
