@@ -153,7 +153,7 @@ describe("payment initiation server-side authority", () => {
     vi.stubEnv("DEPLOYMENT_ENV", "production");
     vi.stubEnv("APP_URL", "https://localhost:3000");
 
-    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+    const response = await postPayment({ purpose: "vip", planId: "plan-1", expectedAmountIrr: 108_000_000 });
 
     expect(response.status).toBe(503);
     expect(mocks.createPayment).not.toHaveBeenCalled();
