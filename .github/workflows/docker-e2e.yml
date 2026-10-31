@@ -86,6 +86,7 @@ jobs:
           assert d['checks']['redis'] is True
           assert d['checks']['jwtSecret'] is True
           assert d['checks']['paymentCallbackUrl'] is True
+          assert d['checks']['exchangeRateTrusted'] is True
           print('✅ Application readiness checks passed')
           "
 
