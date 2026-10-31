@@ -137,6 +137,113 @@ describe("verified payment fulfillment", () => {
     expect(mocks.db.$transaction).not.toHaveBeenCalled();
   });
 
+  it("activates VIP using the USD base price and the reserved IRR amount", async () => {
+    const vipLog = {
+      ...invoiceLog,
+      code: "PG-vip-1",
+      amount: 228_000_000,
+      referenceId: "vip-authority",
+      description: JSON.stringify({
+        kind: "vip",
+        subscriptionId: "subscription-1",
+        planId: "gold",
+        durationDays: 30,
+        planName: "Gold",
+        amountUsd: 19,
+        exchangeRate: 12_000_000,
+        exchangeRateSource: "telegram",
+        exchangeRateUpdatedAt: Date.now(),
+      }),
+    };
+    mocks.db.paymentGatewayLog.findUnique.mockResolvedValue(vipLog);
+    mocks.tx.paymentGatewayLog.findUnique.mockResolvedValue(vipLog);
+    mocks.tx.payment.findUnique.mockResolvedValue({
+      id: "payment-1",
+      status: "PENDING",
+      userId: "customer-1",
+      amount: 19,
+      invoiceId: null,
+    });
+    mocks.verifyPayment.mockResolvedValue({ success: true, refId: "vip-bank-ref", amount: 228_000_000 });
+
+    const { verifyAndFulfillGatewayCallback } = await import("@/lib/payment-fulfillment");
+    await verifyAndFulfillGatewayCallback("PG-vip-1", "vip-authority", "OK", { Status: "OK" });
+
+    expect(mocks.tx.payment.update).toHaveBeenCalledWith({
+      where: { id: "payment-1" },
+      data: expect.objectContaining({ status: "SUCCEEDED", amount: 19, currency: "IRR" }),
+    });
+    expect(mocks.tx.userVipSubscription.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "subscription-1", status: "PENDING_PAYMENT" }),
+      data: expect.objectContaining({ status: "ACTIVE", paymentId: "payment-1" }),
+    }));
+  });
+
+  it("credits prepayment wallet transactions in USD base after verifying the IRR charge", async () => {
+    const prepayLog = {
+      ...invoiceLog,
+      code: "PG-prepay-1",
+      amount: 360_000_000,
+      referenceId: "prepay-authority",
+      description: JSON.stringify({
+        kind: "prepay",
+        jobId: "job-1",
+        inspectionFee: 25,
+        travelFee: 5,
+        heavy: true,
+        amountUsd: 30,
+        exchangeRate: 12_000_000,
+        exchangeRateSource: "telegram",
+        exchangeRateUpdatedAt: Date.now(),
+      }),
+    };
+    mocks.db.paymentGatewayLog.findUnique.mockResolvedValue(prepayLog);
+    mocks.tx.paymentGatewayLog.findUnique.mockResolvedValue(prepayLog);
+    mocks.tx.payment.findUnique.mockResolvedValue({
+      id: "payment-1",
+      status: "PENDING",
+      userId: "customer-1",
+      amount: 30,
+      invoiceId: null,
+    });
+    mocks.tx.job.findUnique.mockResolvedValue({
+      id: "job-1",
+      code: "JOB-1",
+      prepayPaid: false,
+      request: { customer: { userId: "customer-1" }, vehicle: { type: "EXCAVATOR" } },
+      technician: {
+        id: "technician-1",
+        userId: "technician-user-1",
+        user: { name: "Technician" },
+        wallet: { id: "wallet-1" },
+      },
+    });
+    mocks.verifyPayment.mockResolvedValue({ success: true, refId: "prepay-bank-ref", amount: 360_000_000 });
+
+    const { verifyAndFulfillGatewayCallback } = await import("@/lib/payment-fulfillment");
+    await verifyAndFulfillGatewayCallback("PG-prepay-1", "prepay-authority", "OK", { Status: "OK" });
+
+    expect(mocks.tx.payment.update).toHaveBeenCalledWith({
+      where: { id: "payment-1" },
+      data: expect.objectContaining({ status: "SUCCEEDED", amount: 30, currency: "IRR" }),
+    });
+    expect(mocks.tx.job.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "job-1", prepayPaid: false },
+      data: expect.objectContaining({ inspectionFee: 25, travelFee: 5, platformCommission: 3, netEarnings: 27 }),
+    }));
+    expect(mocks.tx.walletTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ grossAmount: 30, commissionAmount: 3, netAmount: 27 }),
+    }));
+    expect(mocks.tx.wallet.update).toHaveBeenCalledWith({
+      where: { id: "wallet-1" },
+      data: {
+        pendingBalance: { increment: 27 },
+        totalEarned: { increment: 30 },
+        totalCommission: { increment: 3 },
+      },
+    });
+  });
+
   it("returns an idempotent success for a callback already fulfilled", async () => {
     mocks.db.paymentGatewayLog.findUnique.mockResolvedValue({
       ...invoiceLog,
