@@ -9,7 +9,7 @@
 - All operational prices are stored as USD base amounts and converted to IRR for display; gateway requests use a fresh server-side exchange-rate snapshot.
 - The client must acknowledge the exact calculated Rial amount; if the rate changed, the flow refreshes the displayed amount and asks for confirmation before redirecting.
 - Renamed VIP plan `priceIrr` to `priceUsd` with SQLite and PostgreSQL migrations.
-- Added a configurable Telegram rate collector with Toman-to-Rial normalization; production collection is blocked unless a fresh Telegram-sourced quote is available.
+- Added a configurable Telegram rate collector that treats unitless NerkhDollarIRT quotes as Toman, prefers sell quotes, normalizes to Rial, and blocks production collection unless a fresh Telegram-sourced quote is available.
 - Added idempotent payment settlement, pending payment reservations, callback handling, and post-payment VIP/invoice/wallet fulfillment.
 - Legacy `/api/payments`, `/api/prepay`, and `/api/vip/subscribe` endpoints now delegate to the gateway flow instead of simulating success.
 - Live bank acceptance testing remains pending until gateway credentials and public HTTPS `APP_URL` are configured.
