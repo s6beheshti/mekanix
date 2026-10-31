@@ -125,9 +125,11 @@ export async function fulfillVerifiedPayment(
         where: { id: invoice.jobId },
         data: { status: "COMPLETED", completedAt: new Date() },
       });
-      await tx.warranty.create({
-        data: { jobId: invoice.jobId, months: 6, active: true },
-      }).catch(() => undefined);
+      await tx.warranty.upsert({
+        where: { jobId: invoice.jobId },
+        create: { jobId: invoice.jobId, months: 6, active: true },
+        update: { months: 6, active: true },
+      });
       if (invoice.job.technician?.userId) {
         await tx.notification.create({
           data: {
@@ -152,7 +154,7 @@ export async function fulfillVerifiedPayment(
       if (!job || job.prepayPaid || !job.technician || gross !== Number(log.amount)) {
         throw new Error("Prepayment is unavailable or its amount changed");
       }
-      const commission = gross * 0.10;
+      const commission = Math.round(gross * 0.10);
       const net = gross - commission;
       const prepayment = await tx.job.updateMany({
         where: { id: metadata.jobId, prepayPaid: false },
@@ -167,7 +169,11 @@ export async function fulfillVerifiedPayment(
         },
       });
       if (prepayment.count !== 1) throw new Error("Prepayment was already processed");
-      const wallet = job.technician.wallet ?? await tx.wallet.create({ data: { technicianId: job.technician.id } });
+      const wallet = job.technician.wallet ?? await tx.wallet.upsert({
+        where: { technicianId: job.technician.id },
+        create: { technicianId: job.technician.id },
+        update: {},
+      });
       await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
