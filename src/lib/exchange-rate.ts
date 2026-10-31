@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { TELEGRAM_RATE_MAX_AGE_MS } from "@/lib/rate-parser";
 import { TELEGRAM_RATE_MAX_AGE_MS, TELEGRAM_RATE_MAX_FUTURE_SKEW_MS } from "@/lib/rate-parser";
 
 export interface UsdIrrRateSnapshot {
