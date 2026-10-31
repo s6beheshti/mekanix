@@ -261,7 +261,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       zarinpal: ["www.zarinpal.com", "payment.zarinpal.com"],
       idpay: ["idpay.ir", "www.idpay.ir"],
     };
-    const allowedHosts = allowedGatewayHosts[providerStatus.provider] || [];
+    const allowedHosts = allowedGatewayHosts[provider.provider] || [];
     if (
       !["https:", "http:"].includes(paymentUrl.protocol) ||
       (isProductionGateway &&
