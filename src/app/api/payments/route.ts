@@ -8,5 +8,9 @@ export async function POST(req: Request) {
   if (!body || typeof body.invoiceId !== "string" || !body.invoiceId.trim()) {
     return NextResponse.json({ error: "invoiceId الزامی است" }, { status: 400 });
   }
-  return initiatePayment(req, { purpose: "invoice", invoiceId: body.invoiceId });
+  return initiatePayment(req, {
+    purpose: "invoice",
+    invoiceId: body.invoiceId,
+    expectedAmountIrr: typeof body.expectedAmountIrr === "number" ? body.expectedAmountIrr : undefined,
+  });
 }
