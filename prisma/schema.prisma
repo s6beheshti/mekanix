@@ -132,10 +132,10 @@ model Technician {
   completedJobs      Int        @default(0)
   rating             Decimal    @default(0)
   reviewCount        Int        @default(0)
-  hourlyRate         Decimal    @default(15) // IRR — realistic Iranian mobile mechanic rate
-  travelFeeBase      Decimal    @default(3) // IRR base travel fee (within-city)
-  inspectionFee      Decimal    @default(7) // IRR passenger — Sanjaq-like Iranian market
-  inspectionFeeHeavy Decimal    @default(20) // IRR heavy machinery
+  hourlyRate         Decimal    @default(15) // USD base; converted to IRR for display and payment
+  travelFeeBase      Decimal    @default(3) // USD base travel fee (within-city)
+  inspectionFee      Decimal    @default(7) // USD base passenger inspection fee
+  inspectionFeeHeavy Decimal    @default(20) // USD base heavy-machinery inspection fee
   status             TechStatus @default(OFFLINE)
   verified           Boolean    @default(false)
   level              TechLevel  @default(BRONZE)
@@ -387,8 +387,8 @@ model Invoice {
   taxRate    Decimal       @default(0.09)
   taxTotal   Decimal       @default(0)
   discount   Decimal       @default(0)
-  total      Decimal       @default(0)
-  currency   String        @default("IRR")
+  total      Decimal       @default(0) // USD base amount; UI converts to IRR
+  currency   String        @default("IRR") // display/gateway currency, not the stored base unit
   notes      String?
   status     InvoiceStatus @default(DRAFT)
   createdAt  DateTime      @default(now())
@@ -413,8 +413,8 @@ model Payment {
   invoice   Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   userId    String
   user      User          @relation(fields: [userId], references: [id])
-  amount    Decimal
-  currency  String        @default("IRR")
+  amount    Decimal       // USD base amount; UI converts to IRR
+  currency  String        @default("IRR") // display currency
   method    String        @default("card")
   status    PaymentStatus @default(PENDING)
   createdAt DateTime      @default(now())
@@ -716,9 +716,9 @@ model WalletTransaction {
   job              Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
   kind             TxnKind
   status           TxnStatus @default(PENDING)
-  grossAmount      Decimal   @default(0) // amount paid by customer (IRR)
-  commissionAmount Decimal   @default(0) // 10% platform cut (IRR)
-  netAmount        Decimal   @default(0) // amount credited to technician (IRR)
+  grossAmount      Decimal   @default(0) // USD base amount paid by customer
+  commissionAmount Decimal   @default(0) // 10% platform cut (USD base)
+  netAmount        Decimal   @default(0) // amount credited to technician (USD base)
   holdUntil        DateTime? // when funds become AVAILABLE (12h after job completion)
   releasedAt       DateTime? // when actually released
   description      String?
@@ -764,7 +764,7 @@ model VipPlan {
   id                      String   @id @default(cuid())
   slug                    String   @unique // silver | gold | platinum
   name                    String // display name (en) — UI uses i18n key vip.plan.<slug>
-  priceIrr                Decimal  // one-time price per duration (IRR)
+  priceUsd                Decimal  // USD base amount; converted to IRR for display and gateway payment
   durationDays            Int // validity period
   discountPct             Float    @default(0) // % off inspection fees
   priorityBoost           Int      @default(0) // matching priority boost
