@@ -104,7 +104,7 @@ echo "⏳ Waiting for production readiness..."
 READY_URL="http://localhost:3000/api/ready"
 READY_JSON="{}"
 for i in $(seq 1 60); do
-  READY_JSON="$(curl -fsS "$READY_URL" 2>/dev/null || echo '{}')"
+  READY_JSON="$(curl -sS "$READY_URL" 2>/dev/null || echo '{}')"
   if echo "$READY_JSON" | grep -q '"ok":true'; then
     echo "✅ App is production-ready!"
     echo ""
