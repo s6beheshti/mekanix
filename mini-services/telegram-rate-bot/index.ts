@@ -25,7 +25,7 @@ const server = Bun.serve({
       const ok =
         sourceSetting?.value === "telegram" &&
         Number.isSafeInteger(rate) &&
-        rate >= 1_000_000 &&
+        rate >= 100_000 &&
         rate <= 100_000_000 &&
         ageMs !== null &&
         ageMs >= 0 &&
@@ -70,7 +70,7 @@ async function fetchAndStoreRate(): Promise<number | null> {
     if (
       quote &&
       Number.isSafeInteger(quote.rate) &&
-      quote.rate >= 1_000_000 &&
+      quote.rate >= 100_000 &&
       quote.rate <= 100_000_000
     ) {
       const quotedAt = new Date(quote.postedAt);
