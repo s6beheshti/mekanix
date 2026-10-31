@@ -127,6 +127,13 @@ describe("payment initiation server-side authority", () => {
         paymentId: "payment-1",
       }),
     });
+    expect(mocks.db.paymentGatewayLog.updateMany).toHaveBeenCalledWith({
+      where: { id: "gateway-log-1", status: "INITIATED" },
+      data: expect.objectContaining({
+        status: "REDIRECTED",
+        paymentUrl: expect.stringContaining("/api/gateway/callback"),
+      }),
+    });
   });
 
   it("fails closed in production when the exchange-rate snapshot is stale", async () => {
