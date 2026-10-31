@@ -41,11 +41,14 @@ const server = Bun.serve({
     if (url.pathname === "/latest") {
       const setting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } });
       const source = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_source" } });
+      const updatedAt = setting?.updatedAt ? new Date(setting.updatedAt) : null;
       return Response.json({
         rate: setting?.value ? parseFloat(setting.value) : null,
-        source: source?.value ?? "telegram",
+        source: source?.value ?? "unknown",
         channel,
-        updatedAt: setting?.updatedAt,
+        rateUnit,
+        updatedAt: updatedAt?.toISOString() ?? null,
+        ageMs: updatedAt ? Date.now() - updatedAt.getTime() : null,
       });
     }
     return new Response("Not found", { status: 404 });
