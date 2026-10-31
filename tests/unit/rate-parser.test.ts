@@ -22,6 +22,18 @@ describe("parseTelegramUsdIrrRate", () => {
     expect(parseTelegramUsdIrrRate("دلار تهران⛳️: 270,380 خرید")).toBe(2_703_800);
   });
 
+  it("prefers the latest sell quote over buy quotes in Telegram HTML", () => {
+    const html = [
+      "<div>دلار تهران: 270,380 خرید</div>",
+      "<div>دلار تهران: 270,390 فروش</div>",
+    ].join("");
+    expect(parseTelegramUsdIrrRate(html)).toBe(2_703_900);
+  });
+
+  it("allows channels with unitless Rial quotes to override the default", () => {
+    expect(parseTelegramUsdIrrRate("دلار تهران: 270,380", "rial")).toBe(270_380);
+  });
+
   it("supports Arabic-Indic digits", () => {
     expect(parseTelegramUsdIrrRate("دلار ١٢,٠٠٠,٠٠٠ ریال")).toBe(12_000_000);
   });
