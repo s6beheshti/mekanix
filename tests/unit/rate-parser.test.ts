@@ -6,6 +6,10 @@ describe("parseTelegramUsdIrrRate", () => {
     expect(parseTelegramUsdIrrRate("قیمت دلار ۱,۲۰۰,۰۰۰ تومان")).toBe(12_000_000);
   });
 
+  it("normalizes bare Tehran Telegram quotes from Toman to Rial", () => {
+    expect(parseTelegramUsdIrrRate("دلار تهران⛳️: 270,380 خرید🔵")).toBe(2_703_800);
+  });
+
   it("keeps Rial quotes unchanged", () => {
     expect(parseTelegramUsdIrrRate("قیمت دلار ۱۲,۰۰۰,۰۰۰ ریال")).toBe(12_000_000);
   });
