@@ -298,7 +298,7 @@ export async function verifyAndFulfillGatewayCallback(
     }
   }
   if (log.gateway === "SHAPARAK_SIM") {
-    if (process.env.NODE_ENV === "production" || callbackStatus !== "OK" || callbackPayload.simulator !== "true") {
+    if ((process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging") || callbackStatus !== "OK" || callbackPayload.simulator !== "true") {
       throw new Error("Simulator callbacks are disabled or invalid");
     }
   }
