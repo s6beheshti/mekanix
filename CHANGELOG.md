@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Payments & Security
+- Replaced the client-side card/OTP simulator with bank-hosted payment redirects.
+- Production simulator and unimplemented providers fail closed; Zarinpal and IDPay use server-to-server verification.
+- Payment amounts and payer ownership are resolved server-side for VIP, invoice, and pre-service payments.
+- Added idempotent payment settlement, pending payment reservations, callback handling, and post-payment VIP/invoice/wallet fulfillment.
+- Legacy `/api/payments`, `/api/prepay`, and `/api/vip/subscribe` endpoints now delegate to the gateway flow instead of simulating success.
+- Live bank acceptance testing remains pending until gateway credentials and public HTTPS `APP_URL` are configured.
+
 ## [1.0.0] - 2026-09-25
 
 ### Added
@@ -15,7 +25,7 @@
 - Unified Service facade (read + write)
 - Offline mode with queue, sync, and idempotency
 - Lite API responses (?lite=true for weak internet)
-- Payment gateway abstraction (Zarinpal, IDPay, NextPay)
+- Payment gateway abstraction (Zarinpal, IDPay; development-only simulator)
 - SMS provider abstraction (Kavenegar, MeliPayamak, Farapayamak)
 - ETA provider abstraction (Neshan, Google Maps, OSRM)
 - Redis adapter for distributed rate limiting and idempotency
