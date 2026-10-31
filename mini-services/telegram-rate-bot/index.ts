@@ -1,21 +1,19 @@
-// Telegram rate scraper — reads @NerkhDollarIRT channel and writes rate to DB
-import { PrismaClient } from "/home/z/my-project/node_modules/.prisma/client/index.js";
+// Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
+import { PrismaClient } from "@prisma/client";
 
-const db = new PrismaClient({
-  datasources: { db: { url: "file:/home/z/my-project/db/custom.db" } },
-});
-const CHANNEL = "NerkhDollarIRT";
-const PORT = 3004;
-const POLL_INTERVAL_MS = 60 * 1000;
+const db = new PrismaClient();
+const channel = process.env.TELEGRAM_RATE_channel || "NerkhDollarIRT";
+const port = Number(process.env.port || 3004);
+const pollIntervalMs = Math.max(30_000, Number(process.env.pollIntervalMs || 60_000));
 
 const server = Bun.serve({
-  port: PORT,
+  port,
   async fetch(req) {
     const url = new URL(req.url);
-    if (url.pathname === "/health") return Response.json({ ok: true, channel: CHANNEL, port: PORT });
+    if (url.pathname === "/health") return Response.json({ ok: true, channel, port });
     if (url.pathname === "/fetch-now") {
       const rate = await fetchAndStoreRate();
-      return Response.json({ rate, channel: CHANNEL, fetchedAt: new Date().toISOString() });
+      return Response.json({ rate, channel, fetchedAt: new Date().toISOString() });
     }
     if (url.pathname === "/latest") {
       const setting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } });
@@ -23,7 +21,7 @@ const server = Bun.serve({
       return Response.json({
         rate: setting?.value ? parseFloat(setting.value) : null,
         source: source?.value ?? "telegram",
-        channel: CHANNEL,
+        channel: channel,
         updatedAt: setting?.updatedAt,
       });
     }
@@ -31,11 +29,11 @@ const server = Bun.serve({
   },
 });
 
-console.log(`📡 Telegram rate scraper on port ${PORT} — reading @${CHANNEL} every 1 min`);
+console.log(`[rate-bot] listening on ${port}; polling @${channel} every ${pollIntervalMs}ms`);
 
 async function fetchAndStoreRate(): Promise<number | null> {
   try {
-    const res = await fetch(`https://t.me/s/${CHANNEL}`, {
+    const res = await fetch(`https://t.me/s/${channel}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; MekanixBot/1.0)" },
       signal: AbortSignal.timeout(15000),
     });
@@ -48,8 +46,8 @@ async function fetchAndStoreRate(): Promise<number | null> {
     if (rate && rate > 100000 && rate < 10000000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
-        update: { value: String(rate), description: `@${CHANNEL}`, updatedAt: new Date() },
-        create: { key: "usd_irr_rate_telegram", value: String(rate), description: `@${CHANNEL}` },
+        update: { value: String(rate), description: `@${channel}`, updatedAt: new Date() },
+        create: { key: "usd_irr_rate_telegram", value: String(rate), description: `@${channel}` },
       });
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_source" },
@@ -111,7 +109,7 @@ async function fetchFallbackApi(): Promise<number | null> {
 }
 
 fetchAndStoreRate();
-setInterval(fetchAndStoreRate, POLL_INTERVAL_MS);
+const pollTimer = setInterval(fetchAndStoreRate, pollIntervalMs);
 
 
 async function shutdown(signal: string) {
