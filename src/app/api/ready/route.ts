@@ -135,5 +135,20 @@ export async function GET() {
   }
 
   const status = ready.ok ? 200 : 503;
-  return NextResponse.json(ready, { status });
+  if (isProduction && !ready.ok) {
+    console.error("[readiness] Production checks failed:", ready.errors);
+    return NextResponse.json(
+      {
+        ok: false,
+        timestamp: ready.timestamp,
+        checks: ready.checks,
+        errors: ["One or more production readiness checks failed; inspect server logs"],
+      },
+      { status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  return NextResponse.json(ready, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
