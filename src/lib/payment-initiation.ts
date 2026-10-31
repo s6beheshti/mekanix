@@ -232,7 +232,17 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       where: { userId: user.id, status: "PENDING_PAYMENT" },
     });
     if (pendingVip) {
-      return NextResponse.json({ error: "یک درخواست اشتراک در حال پرداخت دارید؛ ابتدا همان تراکنش را تعیین تکلیف کنید" }, { status: 409 });
+      const pendingAgeMs = pendingVip.createdAt instanceof Date
+        ? Date.now() - pendingVip.createdAt.getTime()
+        : 0;
+      if (pendingAgeMs > PENDING_INITIATION_TTL_MS) {
+        await db.userVipSubscription.updateMany({
+          where: { id: pendingVip.id, status: "PENDING_PAYMENT" },
+          data: { status: "CANCELLED" },
+        });
+      } else {
+        return NextResponse.json({ error: "یک درخواست اشتراک در حال پرداخت دارید؛ ابتدا همان تراکنش را تعیین تکلیف کنید" }, { status: 409 });
+      }
     }
     amountUsd = Math.round(Number(plan.priceUsd) * 100) / 100;
     amount = Math.round(amountUsd * exchangeRate);
@@ -302,6 +312,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
       return NextResponse.json({ error: "دسترسی به این سفارش مجاز نیست" }, { status: 403 });
     }
     if (job.prepayPaid) return NextResponse.json({ error: "پیش‌پرداخت این سفارش قبلاً انجام شده است" }, { status: 409 });
+    if (!job.technician) return NextResponse.json({ error: "مکانیک برای این سفارش تعیین نشده است" }, { status: 409 });
     const pendingGatewayLog = await db.paymentGatewayLog.findFirst({
       where: { userId: user.id, purpose: "prepay", status: { in: ["INITIATED", "REDIRECTED"] } },
       orderBy: { initiatedAt: "desc" },
@@ -323,7 +334,6 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     if (pendingPrepayment) {
       return NextResponse.json({ error: "برای این سفارش یک پرداخت در حال انجام وجود دارد" }, { status: 409 });
     }
-    if (!job.technician) return NextResponse.json({ error: "مکانیک برای این سفارش تعیین نشده است" }, { status: 409 });
     const heavy = job.request.vehicle.type !== "CAR";
     const inspectionFee = Number((heavy ? job.technician.inspectionFeeHeavy : job.technician.inspectionFee) ?? (heavy ? 20 : 7));
     const travelFee = Number(job.technician.travelFeeBase ?? 3);
@@ -415,6 +425,18 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
             orderBy: { initiatedAt: "desc" },
           });
           canRetry = previousLog?.status === "FAILED" || previousLog?.status === "CANCELLED";
+          if (!previousLog) {
+            const paymentAgeMs = existingPayment.createdAt instanceof Date
+              ? Date.now() - existingPayment.createdAt.getTime()
+              : 0;
+            if (paymentAgeMs > PENDING_INITIATION_TTL_MS) {
+              await db.payment.updateMany({
+                where: { id: existingPayment.id, status: "PENDING" },
+                data: { status: "FAILED" },
+              });
+              canRetry = true;
+            }
+          }
         }
         if (!canRetry) {
           if (pendingSubscriptionId) await db.userVipSubscription.update({ where: { id: pendingSubscriptionId }, data: { status: "CANCELLED" } });
