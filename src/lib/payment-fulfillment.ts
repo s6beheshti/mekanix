@@ -5,7 +5,7 @@ import { verifyPayment } from "@/lib/payment-provider";
 type PaymentMetadata =
   | { kind: "vip"; subscriptionId: string; planId: string }
   | { kind: "invoice"; invoiceId: string }
-  | { kind: "prepay"; jobId: string };
+  | { kind: "prepay"; jobId: string; inspectionFee: number; travelFee: number; heavy: boolean };
 
 function parseMetadata(value: string | null): PaymentMetadata {
   if (!value) throw new Error("Payment metadata is missing");
@@ -98,21 +98,133 @@ export async function fulfillVerifiedPayment(
         },
       });
       if (activation.count !== 1) throw new Error("VIP subscription could not be activated");
-    } else if (metadata.kind === "invoice") {
-      await tx.invoice.update({
-        where: { id: metadata.invoiceId },
-        data: { status: "PAID" },
+      await tx.notification.create({
+        data: {
+          userId: log.userId,
+          type: "vip_activated",
+          title: "اشتراک VIP فعال شد",
+          body: `اشتراک ${plan.name} فعال شد.`,
+          category: "system",
+          link: "customer/settings",
+        },
       });
+    } else if (metadata.kind === "invoice") {
+      const invoice = await tx.invoice.findUnique({
+        where: { id: metadata.invoiceId },
+        include: { job: { include: { technician: true } } },
+      });
+      if (!invoice || invoice.status === "PAID" || Math.round(Number(invoice.total)) !== Number(log.amount)) {
+        throw new Error("Invoice is unavailable or its amount changed");
+      }
+      await tx.invoice.update({ where: { id: metadata.invoiceId }, data: { status: "PAID" } });
+      await tx.job.update({
+        where: { id: invoice.jobId },
+        data: { status: "COMPLETED", completedAt: new Date() },
+      });
+      await tx.warranty.create({
+        data: { jobId: invoice.jobId, months: 6, active: true },
+      }).catch(() => undefined);
+      if (invoice.job.technician?.userId) {
+        await tx.notification.create({
+          data: {
+            userId: invoice.job.technician.userId,
+            type: "job_completed",
+            title: "Payment received",
+            body: `Invoice ${invoice.code} paid — ${Number(invoice.total)} IRR`,
+            category: "payment",
+            link: "technician/earnings",
+          },
+        });
+      }
     } else {
-      const job = await tx.job.findUnique({ where: { id: metadata.jobId } });
-      if (!job || job.prepayPaid || Math.round(Number(job.inspectionFee) + Number(job.travelFee)) !== Number(log.amount)) {
+      const job = await tx.job.findUnique({
+        where: { id: metadata.jobId },
+        include: {
+          request: { include: { customer: true, vehicle: true } },
+          technician: { include: { wallet: true, user: true } },
+        },
+      });
+      const gross = Math.round(metadata.inspectionFee + metadata.travelFee);
+      if (!job || job.prepayPaid || !job.technician || gross !== Number(log.amount)) {
         throw new Error("Prepayment is unavailable or its amount changed");
       }
+      const commission = gross * 0.10;
+      const net = gross - commission;
       const prepayment = await tx.job.updateMany({
         where: { id: metadata.jobId, prepayPaid: false },
-        data: { prepayPaid: true, prepayPaidAt: new Date() },
+        data: {
+          prepayPaid: true,
+          prepayPaidAt: new Date(),
+          inspectionFee: metadata.inspectionFee,
+          travelFee: metadata.travelFee,
+          platformCommission: commission,
+          netEarnings: net,
+          holdUntil: null,
+        },
       });
       if (prepayment.count !== 1) throw new Error("Prepayment was already processed");
+      const wallet = job.technician.wallet ?? await tx.wallet.create({ data: { technicianId: job.technician.id } });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          jobId: job.id,
+          kind: "PREPAY",
+          status: "PENDING",
+          grossAmount: gross,
+          commissionAmount: commission,
+          netAmount: net,
+          holdUntil: null,
+          description: `Pre-service payment — ${job.code} (${metadata.heavy ? "heavy" : "passenger"})`,
+        },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          jobId: job.id,
+          kind: "COMMISSION",
+          status: "COMPLETED",
+          grossAmount: 0,
+          commissionAmount: commission,
+          netAmount: -commission,
+          description: `Platform commission (10%) — ${job.code}` ,
+        },
+      });
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          pendingBalance: { increment: net },
+          totalEarned: { increment: gross },
+          totalCommission: { increment: commission },
+        },
+      });
+      await tx.notification.create({
+        data: {
+          userId: job.request.customer.userId,
+          type: "payment_required",
+          title: "Pre-service payment received",
+          body: `Chat & call with ${job.technician.user.name} is now active for ${job.code}`,
+          category: "payment",
+          link: "customer/track",
+        },
+      });
+      await tx.notification.create({
+        data: {
+          userId: job.technician.userId,
+          type: "payment_required",
+          title: "Pre-service payment received",
+          body: `${job.code} — customer paid inspection + travel fee. You can start moving now.`,
+          category: "payment",
+          link: "technician/requests",
+        },
+      });
+      await tx.message.create({
+        data: {
+          jobId: job.id,
+          fromUserId: job.request.customer.userId,
+          kind: "system",
+          body: "Pre-service payment received — chat unlocked.",
+        },
+      });
     }
 
     await tx.paymentGatewayLog.update({
