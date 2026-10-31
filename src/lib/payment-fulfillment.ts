@@ -62,7 +62,7 @@ export async function fulfillVerifiedPayment(
     let invoiceId: string | null = null;
     if (metadata.kind === "invoice") {
       const invoice = await tx.invoice.findUnique({ where: { id: metadata.invoiceId } });
-      if (!invoice || invoice.status === "PAID" || Number(invoice.total) !== Number(log.amount)) {
+      if (!invoice || invoice.status === "PAID" || Math.round(Number(invoice.total)) !== Number(log.amount)) {
         throw new Error("Invoice is unavailable or its amount changed");
       }
       invoiceId = invoice.id;
@@ -105,13 +105,14 @@ export async function fulfillVerifiedPayment(
       });
     } else {
       const job = await tx.job.findUnique({ where: { id: metadata.jobId } });
-      if (!job || job.prepayPaid || Number(job.inspectionFee) + Number(job.travelFee) !== Number(log.amount)) {
+      if (!job || job.prepayPaid || Math.round(Number(job.inspectionFee) + Number(job.travelFee)) !== Number(log.amount)) {
         throw new Error("Prepayment is unavailable or its amount changed");
       }
-      await tx.job.update({
-        where: { id: metadata.jobId },
+      const prepayment = await tx.job.updateMany({
+        where: { id: metadata.jobId, prepayPaid: false },
         data: { prepayPaid: true, prepayPaidAt: new Date() },
       });
+      if (prepayment.count !== 1) throw new Error("Prepayment was already processed");
     }
 
     await tx.paymentGatewayLog.update({
