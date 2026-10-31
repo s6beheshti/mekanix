@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSmsProviderStatus } from "@/lib/sms-provider";
 import { getPaymentProviderStatus } from "@/lib/payment-provider";
+import { isPublicHttpsOrigin } from "@/lib/url-validation";
 
 // GET /api/ready — readiness check (different from liveness)
 // /api/health = is the process alive? (always 200 if running)
@@ -94,29 +95,7 @@ export async function GET() {
 
     // 3d. Payment callbacks require a stable public HTTPS origin.
     try {
-      const appUrl = new URL(process.env.APP_URL || "");
-      const hostname = appUrl.hostname.toLowerCase();
-      const isLocalOrPrivateHost =
-        hostname === "localhost" ||
-        hostname.endsWith(".localhost") ||
-        hostname.endsWith(".local") ||
-        hostname.endsWith(".internal") ||
-        hostname === "127.0.0.1" ||
-        hostname === "::1" ||
-        hostname === "[::1]" ||
-        /^10\./.test(hostname) ||
-        /^192\.168\./.test(hostname) ||
-        /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
-      if (
-        appUrl.protocol === "https:" &&
-        hostname &&
-        !isLocalOrPrivateHost &&
-        !appUrl.username &&
-        !appUrl.password &&
-        appUrl.pathname === "/" &&
-        !appUrl.search &&
-        !appUrl.hash
-      ) {
+      if (isPublicHttpsOrigin(process.env.APP_URL)) {
         ready.checks.paymentCallbackUrl = true;
       } else {
         ready.ok = false;
