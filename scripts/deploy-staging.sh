@@ -13,22 +13,23 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/secret-validation.sh"
 
 # ─── Validate required env vars (NO defaults) ───
 : "${DB_PASSWORD:?DB_PASSWORD is required for staging}"
 : "${JWT_SECRET:?JWT_SECRET is required for staging}"
 : "${REDIS_PASSWORD:?REDIS_PASSWORD is required for staging}"
 
-if [ ${#JWT_SECRET} -lt 32 ]; then
-  echo "❌ JWT_SECRET must contain at least 32 characters"
+if ! is_strong_secret "$JWT_SECRET" 32; then
+  echo "❌ JWT_SECRET must be at least 32 characters and must not be a placeholder"
   exit 1
 fi
-if [ ${#DB_PASSWORD} -lt 16 ]; then
-  echo "❌ DB_PASSWORD must contain at least 16 characters"
+if ! is_strong_secret "$DB_PASSWORD" 16; then
+  echo "❌ DB_PASSWORD must be at least 16 characters and must not be a placeholder"
   exit 1
 fi
-if [ ${#REDIS_PASSWORD} -lt 24 ]; then
-  echo "❌ REDIS_PASSWORD must contain at least 24 characters"
+if ! is_strong_secret "$REDIS_PASSWORD" 24; then
+  echo "❌ REDIS_PASSWORD must be at least 24 characters and must not be a placeholder"
   exit 1
 fi
 

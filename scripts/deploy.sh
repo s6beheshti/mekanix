@@ -20,6 +20,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/secret-validation.sh"
 cd "$REPO_DIR"
 
 echo "🚀 MEKANIX Production Deployment"
@@ -34,16 +35,16 @@ for VAR in DB_PASSWORD JWT_SECRET REDIS_PASSWORD APP_URL SMS_PROVIDER PAYMENT_PR
     MISSING=1
   fi
 done
-if [ -n "${JWT_SECRET:-}" ] && [ ${#JWT_SECRET} -lt 32 ]; then
-  echo "❌ JWT_SECRET must contain at least 32 characters"
+if [ -n "${JWT_SECRET:-}" ] && ! is_strong_secret "$JWT_SECRET" 32; then
+  echo "❌ JWT_SECRET must be at least 32 characters and must not be a placeholder"
   MISSING=1
 fi
-if [ -n "${DB_PASSWORD:-}" ] && [ ${#DB_PASSWORD} -lt 16 ]; then
-  echo "❌ DB_PASSWORD must contain at least 16 characters"
+if [ -n "${DB_PASSWORD:-}" ] && ! is_strong_secret "$DB_PASSWORD" 16; then
+  echo "❌ DB_PASSWORD must be at least 16 characters and must not be a placeholder"
   MISSING=1
 fi
-if [ -n "${REDIS_PASSWORD:-}" ] && [ ${#REDIS_PASSWORD} -lt 24 ]; then
-  echo "❌ REDIS_PASSWORD must contain at least 24 characters"
+if [ -n "${REDIS_PASSWORD:-}" ] && ! is_strong_secret "$REDIS_PASSWORD" 24; then
+  echo "❌ REDIS_PASSWORD must be at least 24 characters and must not be a placeholder"
   MISSING=1
 fi
 if [ -n "${DB_PASSWORD:-}" ] && [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then

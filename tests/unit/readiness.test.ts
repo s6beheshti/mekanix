@@ -38,9 +38,9 @@ describe("production readiness URL and deployment mode", () => {
     vi.resetModules();
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DEPLOYMENT_ENV", "production");
-    vi.stubEnv("DATABASE_URL", "postgresql://mekanix:test-database-password-long-enough@localhost:5432/mekanix");
-    vi.stubEnv("REDIS_URL", "redis://:test-redis-password-long-enough-for-ci@localhost:6379/0");
-    vi.stubEnv("JWT_SECRET", "unit-test-secret-with-at-least-32-characters");
+    vi.stubEnv("DATABASE_URL", "postgresql://mekanix:ci-db-8d3c5a7e9f2b4d6c1a0e8f7b5c3d9a1e@localhost:5432/mekanix");
+    vi.stubEnv("REDIS_URL", "redis://:ci-redis-7c2e9a4d1f6b8c3e5a0d9f2b4c7e1a6d@localhost:6379/0");
+    vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
     vi.stubEnv("APP_URL", "https://mekanix.ir");
     queryRaw.mockResolvedValue([{ count: 1 }]);
     redisAvailable.mockResolvedValue(true);
@@ -118,6 +118,37 @@ describe("production readiness URL and deployment mode", () => {
   it("requires live Redis in staging instead of accepting in-memory fallback", async () => {
     vi.stubEnv("DEPLOYMENT_ENV", "staging");
     redisAvailable.mockResolvedValue(false);
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.redis).toBe(false);
+  });
+
+  it("rejects the long development-only JWT placeholder in production", async () => {
+    vi.stubEnv("JWT_SECRET", "development-only-not-for-production-change-me");
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.jwtSecret).toBe(false);
+  });
+
+  it("rejects a long placeholder PostgreSQL password in production", async () => {
+    vi.stubEnv("DATABASE_URL", "postgresql://mekanix:replace-with-a-long-random-password@localhost:5432/mekanix");
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.databaseProvider).toBe(false);
+  });
+
+  it("rejects a long placeholder Redis password in production", async () => {
+    vi.stubEnv("REDIS_URL", "redis://:replace-with-a-long-random-password@localhost:6379/0");
+    redisAvailable.mockResolvedValue(true);
 
     const response = await getReadyResponse();
     const body = await response.json();

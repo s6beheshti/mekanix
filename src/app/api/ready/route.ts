@@ -5,6 +5,7 @@ import { getPaymentProviderStatus } from "@/lib/payment-provider";
 import { isPublicHttpsOrigin } from "@/lib/url-validation";
 import { isRedisAvailable } from "@/lib/redis";
 import { getUsdIrrRateSnapshot } from "@/lib/exchange-rate";
+import { isStrongSecret } from "@/lib/secret-validation";
 
 // GET /api/ready — readiness check (different from liveness)
 // /api/health = is the process alive? (always 200 if running)
@@ -13,7 +14,7 @@ import { getUsdIrrRateSnapshot } from "@/lib/exchange-rate";
 // Production safety gates:
 //   - Database reachable and migrations applied
 //   - Redis reachable (no in-memory fallback in production/staging)
-//   - JWT_SECRET contains at least 32 characters in production/staging
+//   - JWT_SECRET, PostgreSQL, and Redis credentials meet length and placeholder checks in production/staging
 //   - Production uses PostgreSQL, real SMS/payment providers and a public HTTPS APP_URL
 //   - Local simulator providers are allowed only in explicit staging mode
 //
@@ -42,11 +43,11 @@ export async function GET() {
 
   // Production and staging must never use a short or missing signing secret.
   const requiresStrongJwt = isProduction || process.env.DEPLOYMENT_ENV === "staging";
-  if (!requiresStrongJwt || (process.env.JWT_SECRET || "").length >= 32) {
+  if (!requiresStrongJwt || isStrongSecret(process.env.JWT_SECRET, 32)) {
     ready.checks.jwtSecret = true;
   } else {
     ready.ok = false;
-    ready.errors.push("JWT_SECRET must contain at least 32 characters");
+    ready.errors.push("JWT_SECRET must be at least 32 characters and must not be a placeholder");
   }
 
   // Production and staging require Redis; in-memory fallback is not distributed.
@@ -54,7 +55,7 @@ export async function GET() {
   let redisPasswordIsStrong = false;
   try {
     const redisUrl = new URL(process.env.REDIS_URL || "");
-    redisPasswordIsStrong = decodeURIComponent(redisUrl.password).length >= 24;
+    redisPasswordIsStrong = isStrongSecret(decodeURIComponent(redisUrl.password), 24);
   } catch {
     // Missing or malformed Redis URL is not production-ready.
   }
@@ -62,18 +63,18 @@ export async function GET() {
     ready.checks.redis = true;
   } else {
     ready.ok = false;
-    ready.errors.push("Redis: requires a reachable Redis service with a 24+ character password");
+    ready.errors.push("Redis: requires a reachable service with a strong, non-placeholder 24+ character password");
   }
 
   if (requiresProductionInfra) {
     try {
       const databaseUrl = new URL(process.env.DATABASE_URL || "");
-      const databasePasswordIsStrong = decodeURIComponent(databaseUrl.password).length >= 16;
+      const databasePasswordIsStrong = isStrongSecret(decodeURIComponent(databaseUrl.password), 16);
       if (databaseUrl.protocol === "postgresql:" && databasePasswordIsStrong) {
         ready.checks.databaseProvider = true;
       } else {
         ready.ok = false;
-        ready.errors.push("Database: production/staging requires PostgreSQL and a 16+ character password");
+        ready.errors.push("Database: production/staging requires PostgreSQL and a strong, non-placeholder 16+ character password");
       }
     } catch {
       ready.ok = false;

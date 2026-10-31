@@ -36,11 +36,16 @@ jobs:
 
       - name: Validate shell script syntax
         run: |
+          bash -n scripts/lib/secret-validation.sh
+          bash -n scripts/test-secret-validation.sh
           bash -n scripts/check-hygiene.sh
           bash -n scripts/deploy.sh
           bash -n scripts/deploy-staging.sh
           bash -n scripts/test-backup-restore.sh
           bash -n scripts/db-switch-provider.sh
+      
+      - name: Run deployment secret validation tests
+        run: bash scripts/test-secret-validation.sh
       
       - name: Run ESLint
         run: bun run lint
