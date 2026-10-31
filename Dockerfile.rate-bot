@@ -14,6 +14,9 @@ RUN bunx prisma generate --schema=prisma/schema.prisma
 COPY src/lib/rate-parser.ts ./src/lib/rate-parser.ts
 COPY mini-services/telegram-rate-bot ./mini-services/telegram-rate-bot
 
+RUN chown -R node:node /app
+USER node
+
 ENV NODE_ENV=production
 EXPOSE 3004
 
