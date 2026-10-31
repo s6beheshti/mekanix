@@ -5,6 +5,7 @@
 ### Payments & Security
 - Replaced the client-side card/OTP simulator with bank-hosted payment redirects.
 - Production simulator and unimplemented providers fail closed; Zarinpal and IDPay use server-to-server verification.
+- Production/staging readiness and deploy scripts reject obvious development/example placeholders for JWT, PostgreSQL, and Redis secrets.
 - Payment amounts and payer ownership are resolved server-side for VIP, invoice, and pre-service payments.
 - All operational prices are stored as USD base amounts and converted to IRR for display; gateway requests use a fresh server-side exchange-rate snapshot.
 - The client must acknowledge the exact calculated Rial amount; if the rate changed, the flow refreshes the displayed amount and asks for confirmation before redirecting.

@@ -37,12 +37,8 @@ export function isStrongSecret(
   }
 
   const normalized = value.toLowerCase();
-  const isPlaceholder = PLACEHOLDER_PREFIXES.some(
-    (prefix) =>
-      normalized === prefix ||
-      normalized.startsWith(`${prefix}-`) ||
-      normalized.startsWith(`${prefix}_`) ||
-      normalized.startsWith(`${prefix} `),
+  const isPlaceholder = PLACEHOLDER_PREFIXES.some((prefix) =>
+    normalized.startsWith(prefix),
   );
 
   return !isPlaceholder && !/^(.)\1{7,}$/.test(normalized);

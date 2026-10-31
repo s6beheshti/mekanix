@@ -4,7 +4,7 @@
 is_placeholder_secret() {
   local value="${1,,}"
   case "$value" in
-    replace-with*|replace_with*|replace\ with*|change-me*|change_me*|change\ me*|development-only*|dev-only*|your-secret*|your-password*|your-jwt*|your-db*|your-redis*|password|password-*|password_*|secret|secret-*|secret_*|example|example-*|example_*|test|test-*|test_*|demo|demo-*|admin|admin-*|qwerty*)
+    replace-with*|replace_with*|replace\ with*|change-me*|change_me*|change\ me*|development-only*|dev-only*|your-secret*|your-password*|your-jwt*|your-db*|your-redis*|password*|secret*|example*|test*|demo*|admin*|qwerty*)
       return 0
       ;;
   esac

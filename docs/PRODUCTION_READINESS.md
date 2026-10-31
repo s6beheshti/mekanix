@@ -14,7 +14,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` version pinned at `0.2.1`; release tag pending `git tag v1.0.0` |
+| 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` is version `1.0.0`; Git release tag still needs to be created after final CI and live-provider acceptance |
 | 0.2 | Update `CHANGELOG.md` | ✅ | `CHANGELOG.md` records payment hardening, USD/IRR conversion, dependency remediation, Redis recovery, and remaining live-provider gates |
 | 0.3 | Lock all dependency versions | ✅ | `bun.lock` checked in; all deps pinned to exact semver |
 | 0.4 | Freeze Prisma schema | 🛠️ | Schema remains stable; `20261031140000_unique_pending_gateway_intents` adds partial unique indexes for pending VIP/prepay payments in SQLite and PostgreSQL |
@@ -27,7 +27,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 1.1 | ESLint passes with 0 errors | ✅ | `bun run lint` → exit 0; permissive ruleset in `eslint.config.mjs` |
 | 1.2 | `tsc --noEmit` passes with 0 errors | ✅ | `bunx tsc --noEmit` → exit 0 |
-| 1.3 | Unit + integration tests pass | ✅ | `bun run test` → 216/216 tests pass across 10 files |
+| 1.3 | Unit + integration tests pass | 🛠️ | `bun run test` runs in CI; record the exact pass count from the latest successful head run rather than a stale hard-coded count |
 | 1.4 | CI workflow on PR | 🛠️ | GitHub Actions runs lint, TypeScript, unit/integration, Playwright browser E2E, Docker E2E and PostgreSQL CI; final run on the latest branch head is pending |
 | 1.5 | Pre-commit hooks (lint + tsc) | 🛠️ | Add `husky` install in production repo; commands already verified to pass |
 | 1.6 | Code coverage report | ⚠️ | `vitest run --coverage` configured but thresholds not enforced |
@@ -143,7 +143,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 9.3 | Rate limiting uses Redis when available | ✅ | `rateLimitAsync` falls back to in-memory LRU when `REDIS_URL` not set |
 | 9.4 | Health check reports Redis status | ✅ | `/api/health` returns `services.redis` ("healthy" / "not-configured" / "unhealthy (using in-memory fallback)") |
 | 9.5 | Redis persistence (AOF) | ⬜ | Configure `--appendonly yes` in production compose override |
-| 9.6 | Redis password | ⬜ | Set `REDIS_PASSWORD` in production `REDIS_URL=redis://:pass@host:6379` |
+| 9.6 | Redis password | 🛠️ | Production/staging deploy scripts and `/api/ready` require a 24+ character non-placeholder Redis password; set the real secret at provisioning |
 
 ---
 
@@ -151,7 +151,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 10.1 | Dockerfile (multi-stage, non-root) | ✅ | `Dockerfile` — node:20-slim, OpenSSL installed for Prisma generation/runtime, non-root `nextjs` user, runs `prisma migrate deploy && node server.js` |
+| 10.1 | Dockerfile (multi-stage, non-root) | ✅ | `Dockerfile` — node:20-slim, OpenSSL for Prisma, non-root `nextjs` runtime; the separate migration service runs `prisma migrate deploy`, then the app runs the standalone Next.js server |
 | 10.2 | docker-compose for app + db + redis | ✅ | `docker-compose.yml` (3 services with healthcheck + volumes) |
 | 10.3 | Deploy script | 🛠️ | `scripts/deploy.sh` requires DB/Redis/JWT, public HTTPS APP_URL and real SMS/payment providers; waits for `/api/ready` rather than liveness only |
 | 10.4 | Provision VPS | ⬜ | Needs real server (Hetzner / ArvanCloud / ParsPack) |
@@ -211,7 +211,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 14.3 | `/api/health` returns 503 when DB down | ✅ | `db.$queryRaw\`SELECT 1\`` failure → `ok=false` → 503 |
 | 14.4 | `/api/ready` returns 503 when migrations missing | ✅ | Checks `_prisma_migrations` table count > 0 |
 | 14.5 | Docker liveness and deployment readiness | ✅ | Container healthcheck uses `/api/health`; production and staging deploy scripts poll `/api/ready` before reporting success |
-| 14.6 | Differentiate liveness vs readiness | ✅ | `/api/health` = process + deps status; `/api/ready` = ready-to-serve (DB + migrations only) |
+| 14.6 | Differentiate liveness vs readiness | ✅ | `/api/health` = liveness; `/api/ready` = DB + migrations + Redis + strong secrets, with production-only SMS/payment provider, public HTTPS callback, and trusted fresh FX gates |
 
 ---
 
@@ -277,7 +277,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 19.3 | Admin panel screens | ✅ | `src/components/mek/admin/*` (overview, jobs, technicians, payments, customers, settings) |
 | 19.4 | Splash + onboarding | ✅ | `src/components/mek/onboarding.tsx` + `splash/*` + `public/onboarding/*` |
 | 19.5 | Responsive (mobile-first) | ✅ | Tailwind 4 with `sm`/`md`/`lg` breakpoints throughout |
-| 19.6 | Dark mode default | ✅ | `src/app/globals.css` defines dark-first palette; `theme-provider.tsx` toggles |
+| 19.6 | Light theme default | ✅ | `layout.tsx` sets `defaultTheme="light"`; dark mode remains an optional user setting |
 | 19.7 | Accessibility (WCAG AA) | ⚠️ | Manual audit needed; Radix UI primitives provide baseline ARIA support |
 | 19.8 | Cross-browser testing | ⬜ | Manual; test Chrome / Firefox / Safari post-deploy |
 
@@ -290,7 +290,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 20.1 | i18n module | ✅ | `src/lib/i18n.ts` + `src/lib/use-t.ts` |
 | 20.2 | RTL layout support | ✅ | `src/app/globals.css` includes RTL utilities; `dir="rtl"` settable on root layout |
 | 20.3 | Persian (fa) translation strings | ⚠️ | Skeleton present; full coverage audit needed |
-| 20.4 | Persian font (Vazirmatn / IRANSans) | 🛠️ | Add font file to `public/fonts/` + CSS `@font-face` rule |
+| 20.4 | Brand Persian font (IRANSans) | ⚠️ | Vazirmatn is currently loaded and applied through the shared font token; no licensed IRANSans font file is present in the repo, so final brand-font replacement awaits the approved font asset |
 | 20.5 | Persian SMS templates | ✅ | `sms-provider.ts` MeliPayamak/Farapayamak use `کد تأیید MEKANIX: ${code}` |
 | 20.6 | Persian date formatting | ✅ | `src/lib/format.ts` handles Jalali via date-fns where applicable |
 
@@ -325,7 +325,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 23.1 | DB down → `/api/health` returns 503 | ✅ | `db.$queryRaw\`SELECT 1\`` failure → `ok=false` → 503 |
-| 23.2 | Redis down → app degrades gracefully | ✅ | `isRedisAvailable()` returns false → rate limiting falls back to in-memory LRU |
+| 23.2 | Redis outage behavior | ✅ | Development can fall back to in-memory rate limiting; production/staging require reachable Redis and fail readiness rather than silently using a single-process limiter |
 | 23.3 | SMS provider down → OTP send still succeeds (DB-only) | ✅ | `sendOtp()` failure is non-fatal; OTP record persists first |
 | 23.4 | ETA provider down → falls back to 40 km/h estimate | ✅ | All providers catch errors and return `defaultEtaProvider` |
 | 23.5 | Payment gateway timeout → no double-spend | ✅ | `gateway/verify` checks `log.status === "VERIFIED"` before processing |

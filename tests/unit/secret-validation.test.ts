@@ -19,6 +19,10 @@ describe("isStrongSecret", () => {
     expect(isStrongSecret("your-secret-value-that-is-long-enough", 24)).toBe(false);
   });
 
+  it("rejects long passwords that still use a common placeholder prefix", () => {
+    expect(isStrongSecret("password1234567890123456789012", 24)).toBe(false);
+  });
+
   it("rejects trivially repeated characters", () => {
     expect(isStrongSecret("a".repeat(40), 32)).toBe(false);
   });
