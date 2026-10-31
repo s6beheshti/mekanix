@@ -49,6 +49,15 @@ for file in "${tracked_files[@]}"; do
   fi
 done
 
+# Shell scripts must parse before they are allowed into a release branch.
+for script in scripts/*.sh scripts/lib/*.sh; do
+  [[ -f "$script" ]] || continue
+  if ! bash -n "$script"; then
+    echo "❌ Shell syntax error: $script"
+    errors=$((errors + 1))
+  fi
+done
+
 # Docker must ignore real env files while allowing the safe example template.
 if [[ ! -f .dockerignore ]] ||
    ! grep -Fxq '.env' .dockerignore ||
