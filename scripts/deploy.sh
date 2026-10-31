@@ -34,6 +34,18 @@ for VAR in DB_PASSWORD JWT_SECRET REDIS_PASSWORD APP_URL SMS_PROVIDER PAYMENT_PR
     MISSING=1
   fi
 done
+if [ -n "${JWT_SECRET:-}" ] && [ ${#JWT_SECRET} -lt 32 ]; then
+  echo "❌ JWT_SECRET must contain at least 32 characters"
+  MISSING=1
+fi
+if [ -n "${DB_PASSWORD:-}" ] && [ ${#DB_PASSWORD} -lt 16 ]; then
+  echo "❌ DB_PASSWORD must contain at least 16 characters"
+  MISSING=1
+fi
+if [ -n "${REDIS_PASSWORD:-}" ] && [ ${#REDIS_PASSWORD} -lt 24 ]; then
+  echo "❌ REDIS_PASSWORD must contain at least 24 characters"
+  MISSING=1
+fi
 if [ -n "${APP_URL:-}" ] && [[ "$APP_URL" != https://* ]]; then
   echo "❌ APP_URL must start with https://"
   MISSING=1
