@@ -1,7 +1,7 @@
-// MEKANIX — Redis adapter with in-memory fallback
-// 
-// When REDIS_URL is set, uses Redis for distributed state.
-// Otherwise, falls back to in-memory (single-instance dev mode).
+// MEKANIX — Redis adapter
+//
+// Redis is mandatory in production/staging. In-memory fallback is development/test only.
+// A Redis outage must never silently disable distributed rate limits or idempotency.
 //
 // Used by: rate-limit.ts, auth.ts (idempotency), sync-engine.ts
 
@@ -87,9 +87,15 @@ export async function kvGet(key: string): Promise<string | null> {
   if (client) {
     try {
       return await client.get(key);
-    } catch {
+    } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("Redis GET failed in production", { cause: error });
+      }
       return memGet(key);
     }
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Redis is required in production");
   }
   return memGet(key);
 }
@@ -100,9 +106,14 @@ export async function kvSet(key: string, value: string, ttlMs: number): Promise<
     try {
       await client.set(key, value, "PX", ttlMs);
       return;
-    } catch {
-      // fall through to in-memory
+    } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("Redis SET failed in production", { cause: error });
+      }
     }
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Redis is required in production");
   }
   memSet(key, value, ttlMs);
 }
@@ -113,9 +124,14 @@ export async function kvDel(key: string): Promise<void> {
     try {
       await client.del(key);
       return;
-    } catch {
-      // fall through
+    } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("Redis DEL failed in production", { cause: error });
+      }
     }
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Redis is required in production");
   }
   memDel(key);
 }
@@ -129,9 +145,15 @@ export async function kvIncr(key: string, ttlMs: number): Promise<number> {
       multi.pexpire(key, ttlMs);
       const results = await multi.exec();
       return results[0][1] as number;
-    } catch {
+    } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("Redis INCR failed in production", { cause: error });
+      }
       return memIncr(key, ttlMs);
     }
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Redis is required in production");
   }
   return memIncr(key, ttlMs);
 }
