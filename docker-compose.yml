@@ -48,6 +48,13 @@ services:
   backup-scheduler:
     mem_limit: ${BACKUP_MEM_LIMIT:-512m}
     cpus: ${BACKUP_CPUS:-0.5}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     build:
       context: .
       dockerfile: Dockerfile.backup-scheduler
@@ -80,6 +87,10 @@ services:
   app:
     mem_limit: ${APP_MEM_LIMIT:-1536m}
     cpus: ${APP_CPUS:-2.0}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     build: .
     ports:
       - "127.0.0.1:3000:3000"
