@@ -53,6 +53,16 @@ describe("production readiness URL and deployment mode", () => {
     expect(body.checks.paymentCallbackUrl).toBe(true);
   });
 
+  it("rejects a weak production JWT signing secret", async () => {
+    vi.stubEnv("JWT_SECRET", "short-secret");
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.jwtSecret).toBe(false);
+  });
+
   it("rejects localhost as the production payment callback origin", async () => {
     vi.stubEnv("APP_URL", "https://localhost:3000");
 
