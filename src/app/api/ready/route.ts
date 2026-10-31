@@ -29,6 +29,7 @@ export async function GET() {
       smsProvider: false,
       paymentProvider: false,
       databaseProvider: false,
+      paymentCallbackUrl: false,
     },
     errors: [] as string[],
   };
@@ -90,11 +91,26 @@ export async function GET() {
     } else {
       ready.checks.databaseProvider = true;
     }
+
+    // 3d. Payment callbacks require a stable public HTTPS origin.
+    try {
+      const appUrl = new URL(process.env.APP_URL || "");
+      if (appUrl.protocol === "https:" && appUrl.hostname) {
+        ready.checks.paymentCallbackUrl = true;
+      } else {
+        ready.ok = false;
+        ready.errors.push("Payment callback: APP_URL must be a public HTTPS origin");
+      }
+    } catch {
+      ready.ok = false;
+      ready.errors.push("Payment callback: APP_URL is missing or invalid");
+    }
   } else {
     // Non-production: all providers allowed
     ready.checks.smsProvider = true;
     ready.checks.paymentProvider = true;
     ready.checks.databaseProvider = true;
+    ready.checks.paymentCallbackUrl = true;
   }
 
   const status = ready.ok ? 200 : 503;
