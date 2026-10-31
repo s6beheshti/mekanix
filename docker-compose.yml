@@ -43,6 +43,35 @@ services:
       retries: 5
       start_period: 60s
 
+  backup-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup-scheduler
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
+      - BACKUP_DIR=/backups
+      - BACKUP_SCRIPT=/app/scripts/backup-db.sh
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_INTERVAL_MS=${BACKUP_INTERVAL_MS:-86400000}
+      - BACKUP_ENCRYPTION_REQUIRED=true
+      - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      - BACKUP_ADMIN_TOKEN=${BACKUP_ADMIN_TOKEN:-}
+    volumes:
+      - backupdata:/backups
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3005/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   app:
     build: .
     ports:
@@ -120,3 +149,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  backupdata:
