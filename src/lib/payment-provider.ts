@@ -90,7 +90,7 @@ function createZarinpalProvider(merchantId: string): Provider {
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        if (!res.ok || !data.data?.authority) {
+        if (!res.ok || Number(data.data?.code) !== 100 || !data.data?.authority) {
           return { success: false, error: data.errors?.message || "Zarinpal request failed" };
         }
         const authority = String(data.data.authority);
