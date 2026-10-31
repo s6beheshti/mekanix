@@ -57,6 +57,16 @@ async function getRedisClient(): Promise<any | null> {
       enableOfflineQueue: false,
       connectTimeout: 5000,
     });
+    candidate.on("ready", () => {
+      redisAvailable = true;
+    });
+    candidate.on("close", () => {
+      redisAvailable = false;
+    });
+    candidate.on("end", () => {
+      redisAvailable = false;
+      if (redisClient === candidate) redisClient = null;
+    });
 
     // Cache only a client that has completed a successful health check.
     await candidate.ping();
