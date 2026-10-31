@@ -255,9 +255,20 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
     }
 
     const paymentUrl = new URL(result.paymentUrl);
+    const isProductionGateway =
+      process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging";
+    const allowedGatewayHosts: Record<string, string[]> = {
+      zarinpal: ["www.zarinpal.com", "payment.zarinpal.com"],
+      idpay: ["idpay.ir", "www.idpay.ir"],
+    };
+    const allowedHosts = allowedGatewayHosts[providerStatus.provider] || [];
     if (
       !["https:", "http:"].includes(paymentUrl.protocol) ||
-      (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" && paymentUrl.protocol !== "https:")
+      (isProductionGateway &&
+        (paymentUrl.protocol !== "https:" ||
+          !allowedHosts.includes(paymentUrl.hostname.toLowerCase()) ||
+          Boolean(paymentUrl.username) ||
+          Boolean(paymentUrl.password)))
     ) {
       await db.paymentGatewayLog.update({ where: { id: log.id }, data: { status: "FAILED" } });
       await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "FAILED" } });
