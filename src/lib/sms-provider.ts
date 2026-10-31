@@ -18,6 +18,9 @@ export type SendOtpFn = (phone: string, code: string) => Promise<SmsResult>;
 // ──────────── Console provider (dev mode — just logs) ────────────
 
 const consoleProvider: SendOtpFn = async (phone, code) => {
+  if (process.env.NODE_ENV === "production") {
+    return { success: false, error: "Console SMS provider is disabled in production" };
+  }
   console.log(`📱 [DEV SMS] To: ${phone}, Code: ${code}`);
   return { success: true, messageId: `console_${Date.now()}` };
 };

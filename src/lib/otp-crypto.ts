@@ -32,7 +32,7 @@
 //
 // Both helpers use `node:crypto` (built-in) — no new dependencies.
 
-import { randomInt, createHash } from "node:crypto";
+import { randomInt, createHmac } from "node:crypto";
 
 // Generate a 6-digit numeric OTP code using a CSPRNG.
 // Returns a string of exactly 6 digits ("100000".."999999").
@@ -44,11 +44,20 @@ export function generateOtpCode(): string {
   return String(randomInt(100000, 1000000));
 }
 
-// Hash an OTP code for secure storage using SHA-256.
-// Returns a 64-character lowercase hex string.
-//
-// Idempotent: the same input always produces the same hash, so the verify
-// route can hash the user-supplied code and match it against the stored hash.
+// Hash an OTP code with a server-side HMAC pepper.
+// The 6-digit code has a small search space; an unkeyed SHA-256 digest can
+// be brute-forced offline after a database leak. HMAC keyed by JWT_SECRET
+// prevents that attack unless the application secret is also compromised.
+function getOtpPepper(): string {
+  const pepper = process.env.JWT_SECRET;
+  if (!pepper && process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET is required to protect OTP hashes in production");
+  }
+  return pepper || "mekanix-dev-otp-pepper-change-in-production";
+}
+
 export function hashOtpCode(code: string): string {
-  return createHash("sha256").update(code).digest("hex");
+  return createHmac("sha256", getOtpPepper())
+    .update(`mekanix:otp:${code}`)
+    .digest("hex");
 }

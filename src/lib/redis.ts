@@ -158,7 +158,22 @@ export async function kvIncr(key: string, ttlMs: number): Promise<number> {
       multi.incr(key);
       multi.pexpire(key, ttlMs);
       const results = await multi.exec();
-      return results[0][1] as number;
+      if (!Array.isArray(results) || results.length !== 2) {
+        throw new Error("Redis INCR transaction returned an invalid result");
+      }
+
+      const incrementResult = results[0];
+      const expiryResult = results[1];
+      if (incrementResult?.[0]) throw incrementResult[0];
+      if (typeof incrementResult?.[1] !== "number" || !Number.isFinite(incrementResult[1])) {
+        throw new Error("Redis INCR did not return a numeric counter");
+      }
+      if (expiryResult?.[0]) throw expiryResult[0];
+      if (expiryResult?.[1] !== 1) {
+        throw new Error("Redis PEXPIRE failed to attach the rate-limit window");
+      }
+
+      return incrementResult[1] as number;
     } catch (error) {
       if (process.env.NODE_ENV === "production") {
         throw new Error("Redis INCR failed in production", { cause: error });
