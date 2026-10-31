@@ -12,6 +12,8 @@ function normalizeDigits(value: string): string {
  */
 function htmlToText(html: string): string {
   return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<br\s*\/?\s*>/gi, "\n")
     .replace(/<\/(?:div|p|article|section|li)>/gi, "\n")
     .replace(/<[^>]*>/g, " ")
