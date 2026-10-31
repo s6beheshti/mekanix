@@ -192,7 +192,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 13.1 | Non-root container user | ✅ | `Dockerfile` creates + runs as `nextjs:nodejs` (uid 1001) |
-| 13.2 | Container runs as read-only FS where possible | ⬜ | Needs tmpfs mounts for `.next/cache` — production override |
+| 13.2 | Container runs as read-only FS where possible | 🛠️ | Backup scheduler runs read-only with `/tmp` tmpfs and encrypted `/backups` volume; app remains writable until Next cache/upload paths are explicitly mounted and tested |
 | 13.3 | Resource limits in docker-compose | 🛠️ | Production Compose defines configurable memory/CPU ceilings for app, PostgreSQL, Redis, rate collector and backup scheduler |
 | 13.4 | Fail2ban on SSH | ⬜ | Server-side hardening (post-provision) |
 | 13.5 | Disable root SSH login | ⬜ | `/etc/ssh/sshd_config` on real server |
