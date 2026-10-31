@@ -20,12 +20,31 @@ PROD_URL="${DATABASE_URL:?DATABASE_URL is required}"
 TEST_URL="${TEST_DB_URL:?TEST_DB_URL is required for restore test}"
 BACKUP_FILE="/tmp/mekanix-backup-test-$(date +%s).sql.gz"
 
+# Never allow the destructive restore step to target the production database.
+PROD_TARGET="$(psql "$PROD_URL" -Atc "SELECT current_database() || '|' || COALESCE(inet_server_addr()::text, 'local') || '|' || inet_server_port()")"
+TEST_TARGET="$(psql "$TEST_URL" -Atc "SELECT current_database() || '|' || COALESCE(inet_server_addr()::text, 'local') || '|' || inet_server_port()")"
+PROD_DB="${PROD_TARGET%%|*}"
+TEST_DB="${TEST_TARGET%%|*}"
+if [ "$PROD_TARGET" = "$TEST_TARGET" ]; then
+  echo "❌ Refusing to restore over the source database: source and test targets are identical."
+  exit 1
+fi
+case "${TEST_DB,,}" in
+  *test*|*staging*|*restore*) ;;
+  *)
+    echo "❌ Refusing to drop schema in database '$TEST_DB'. TEST_DB_URL must target a database named with test, staging, or restore."
+    exit 1
+    ;;
+esac
+
 echo "🧪 MEKANIX — Backup/Restore Test"
+echo "   Source DB: $PROD_DB"
+echo "   Restore DB: $TEST_DB"
 echo ""
 
 # Step 1: Backup
 echo "1️⃣  Backing up production DB..."
-pg_dump "$PROD_URL" | gzip > "$BACKUP_FILE"
+pg_dump --no-owner --no-acl "$PROD_URL" | gzip > "$BACKUP_FILE"
 BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
 echo "   ✅ Backup created: $BACKUP_SIZE"
 
