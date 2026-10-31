@@ -38,13 +38,13 @@ function parseLabeledQuote(
   defaultUnit: "rial" | "toman",
 ): ParsedRate | null {
   const labelPattern = label === "sell" ? /(?:فروش|sell)/i : /(?:معامله|trade)/i;
-  for (const line of text.split(/\\r?\\n/)) {
+  for (const line of text.split(/\r?\n/)) {
     const labelMatch = labelPattern.exec(line);
     if (!labelMatch) continue;
 
     const before = line.slice(0, labelMatch.index);
     const after = line.slice(labelMatch.index + labelMatch[0].length);
-    const numberPattern = /([\\d,٬۰-۹٠-٩]+)\\s*(ریال|تومان)?/g;
+    const numberPattern = /([\d,٬۰-۹٠-٩]+)\s*(ریال|تومان)?/g;
     const beforeMatches = [...before.matchAll(numberPattern)];
     const beforeMatch = beforeMatches[beforeMatches.length - 1];
     const afterMatch = after.match(numberPattern);
@@ -55,7 +55,7 @@ function parseLabeledQuote(
     const match = afterDistance < beforeDistance ? afterMatch : beforeMatch;
     if (!match?.[1]) continue;
 
-    const raw = normalizeDigits(match[1]).replace(/[٬,‌\\s]/g, "");
+    const raw = normalizeDigits(match[1]).replace(/[٬,‌\s]/g, "");
     let rate = Number.parseInt(raw, 10);
     if (!Number.isFinite(rate)) continue;
 
