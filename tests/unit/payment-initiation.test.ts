@@ -141,7 +141,7 @@ describe("payment initiation server-side authority", () => {
       trustedForPayments: false,
     });
 
-    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+    const response = await postPayment({ purpose: "vip", planId: "plan-1", expectedAmountIrr: 108_000_000 });
 
     expect(response.status).toBe(503);
     expect(mocks.db.userVipSubscription.create).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe("payment initiation server-side authority", () => {
       paymentUrl: "https://idpay.ir/p/secure-payment",
     });
 
-    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+    const response = await postPayment({ purpose: "vip", planId: "plan-1", expectedAmountIrr: 108_000_000 });
 
     expect(response.status).toBe(200);
   });
@@ -190,7 +190,7 @@ describe("payment initiation server-side authority", () => {
       paymentUrl: "https://evil.example/collect",
     });
 
-    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+    const response = await postPayment({ purpose: "vip", planId: "plan-1", expectedAmountIrr: 108_000_000 });
 
     expect(response.status).toBe(502);
     expect(mocks.db.payment.update).toHaveBeenCalledWith({
