@@ -96,11 +96,11 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 6.1 | Payment provider abstraction | 🛠️ | Zarinpal + IDPay implemented; simulator restricted to non-production; unknown/misconfigured providers fail closed. CI pending. |
 | 6.2 | Auto-init on server boot | 🛠️ | `src/lib/init.ts` now calls `initPaymentProvider()`; provider also initializes lazily at first use. |
-| 6.3 | Authenticated payment initiation | 🛠️ | `gateway/initiate` requires a CUSTOMER session, ignores client-supplied user/amount, and derives amounts from VIP plans, owned invoices, or owned job prepayments. |
+| 6.3 | Authenticated payment initiation + UI redirect | 🛠️ | `payment-initiation.ts` is shared by `/api/gateway/initiate`, `/api/payments`, `/api/prepay`, and `/api/vip/subscribe`; UI redirects to hosted bank pages and never collects card/CVV/OTP. |
 | 6.4 | Zarinpal create + verify callback | 🛠️ | Server-to-server request/verify; callback requires matching stored Authority and accepts provider verification codes 100/101. Live credentials not tested. |
 | 6.5 | IDPay create + verify callback | 🛠️ | Stable `order_id` is persisted as the gateway order code and reused during verify; callback status/order are checked. Live credentials not tested. |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY`, public HTTPS `APP_URL`, and provider sandbox/production acceptance test. |
-| 6.7 | Idempotent fulfillment | 🛠️ | Transactional conditional claim prevents duplicate Payment rows, invoice settlement, VIP activation, and job prepayment; CI/concurrency test pending. |
+| 6.7 | Idempotent fulfillment | 🛠️ | A PENDING Payment is reserved before redirect; conditional callback claim settles it once, then applies invoice/warranty, VIP, or prepay wallet/commission effects transactionally. CI/concurrency test pending. |
 | 6.8 | Payment readiness gate | 🛠️ | `/api/ready` rejects simulator/misconfigured providers and requires HTTPS `APP_URL`; payment status is not yet included in `/api/health`. |
 
 ---
