@@ -27,10 +27,12 @@ cd "$REPO_DIR"
 # Load the deployment .env file for operators who keep secrets there rather
 # than exporting every variable in their shell. Normalize Windows CRLF first.
 if [ -f "$REPO_DIR/.env" ]; then
+  set +u
   set -a
   # shellcheck disable=SC1091
   source <(sed 's/\r$//' "$REPO_DIR/.env")
   set +a
+  set -u
 fi
 
 echo "🚀 MEKANIX Production Deployment"
