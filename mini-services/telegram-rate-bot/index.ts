@@ -5,8 +5,14 @@ import { parseTelegramUsdIrrQuote, TELEGRAM_RATE_MAX_AGE_MS } from "../../src/li
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
 const rateUnit = process.env.TELEGRAM_RATE_UNIT === "rial" ? "rial" : "toman";
-const port = Number(process.env.PORT || 3004);
-const pollIntervalMs = Math.max(30_000, Number(process.env.POLL_INTERVAL_MS || 60_000));
+const configuredPort = Number(process.env.PORT || 3004);
+const port = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65_535
+  ? configuredPort
+  : 3004;
+const configuredPollInterval = Number(process.env.POLL_INTERVAL_MS || 60_000);
+const pollIntervalMs = Number.isFinite(configuredPollInterval)
+  ? Math.max(30_000, configuredPollInterval)
+  : 60_000;
 
 const server = Bun.serve({
   port,
