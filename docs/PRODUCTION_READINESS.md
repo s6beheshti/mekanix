@@ -207,7 +207,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 14.1 | Liveness probe (`/api/health`) | ✅ | `src/app/api/health/route.ts` — DB + Redis + SMS + ETA + migration count; 200/503 |
-| 14.2 | Readiness probe (`/api/ready`) | ✅ | DB reachable + migrations applied; production additionally requires PostgreSQL, a 32+ character JWT secret, real SMS/payment providers and a public HTTPS callback origin; staging is explicitly isolated |
+| 14.2 | Readiness probe (`/api/ready`) | ✅ | DB reachable + migrations applied; production/staging require live Redis and a 32+ character JWT secret; production additionally requires PostgreSQL, real SMS/payment providers and a public HTTPS callback origin; staging is explicitly isolated |
 | 14.3 | `/api/health` returns 503 when DB down | ✅ | `db.$queryRaw\`SELECT 1\`` failure → `ok=false` → 503 |
 | 14.4 | `/api/ready` returns 503 when migrations missing | ✅ | Checks `_prisma_migrations` table count > 0 |
 | 14.5 | Docker liveness and deployment readiness | ✅ | Container healthcheck uses `/api/health`; production and staging deploy scripts poll `/api/ready` before reporting success |
