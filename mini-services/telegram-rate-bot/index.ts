@@ -1,12 +1,13 @@
 // Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
 import { PrismaClient } from "@prisma/client";
-import { parseTelegramUsdIrrRate } from "../../src/lib/rate-parser";
+import { parseFreshTelegramUsdIrrQuote } from "../../src/lib/rate-parser";
 
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
 const rateUnit = process.env.TELEGRAM_RATE_UNIT === "rial" ? "rial" : "toman";
 const port = Number(process.env.PORT || 3004);
 const pollIntervalMs = Math.max(30_000, Number(process.env.POLL_INTERVAL_MS || 60_000));
+const MAX_RATE_AGE_MS = 15 * 60 * 1000;
 
 const server = Bun.serve({
   port,
@@ -28,7 +29,7 @@ const server = Bun.serve({
         rate <= 100_000_000 &&
         ageMs !== null &&
         ageMs >= 0 &&
-        ageMs <= 15 * 60 * 1000;
+        ageMs <= MAX_RATE_AGE_MS;
       return Response.json(
         { ok, rate: Number.isFinite(rate) ? rate : null, source: sourceSetting?.value ?? "unknown", ageMs },
         { status: ok ? 200 : 503 },
@@ -65,22 +66,33 @@ async function fetchAndStoreRate(): Promise<number | null> {
       return await fetchFallbackApi();
     }
     const html = await res.text();
-    const rate = parseTelegramUsdIrrRate(html, rateUnit);
-    if (rate && Number.isSafeInteger(rate) && rate >= 1_000_000 && rate <= 100_000_000) {
+    const quote = parseFreshTelegramUsdIrrQuote(html, rateUnit, Date.now(), MAX_RATE_AGE_MS);
+    if (
+      quote &&
+      Number.isSafeInteger(quote.rate) &&
+      quote.rate >= 1_000_000 &&
+      quote.rate <= 100_000_000
+    ) {
+      const quotedAt = new Date(quote.quotedAt);
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
-        update: { value: String(rate), description: `@${channel}`, updatedAt: new Date() },
-        create: { key: "usd_irr_rate_telegram", value: String(rate), description: `@${channel}` },
+        update: { value: String(quote.rate), description: `@${channel}`, updatedAt: quotedAt },
+        create: {
+          key: "usd_irr_rate_telegram",
+          value: String(quote.rate),
+          description: `@${channel}`,
+          updatedAt: quotedAt,
+        },
       });
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_source" },
         update: { value: "telegram", updatedAt: new Date() },
         create: { key: "usd_irr_rate_source", value: "telegram" },
       });
-      console.log(`✓ Telegram: ${rate.toLocaleString()} IRR/USD`);
-      return rate;
+      console.log(`✓ Telegram: ${quote.rate.toLocaleString()} IRR/USD (quoted ${quotedAt.toISOString()})`);
+      return quote.rate;
     }
-    console.log("⚠️ Parse failed, fallback API");
+    console.log("⚠️ No fresh timestamped Telegram quote, fallback API");
     return await fetchFallbackApi();
   } catch (e: any) {
     console.log(`⚠️ Error: ${e.message}, fallback`);
