@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const REQUEST_ID_HEADER = "x-request-id";
+
 // MEKANIX — Next.js 16 Proxy (formerly `middleware.ts`)
 //
 // Next.js 16 renamed the `middleware.ts` convention to `proxy.ts`.
@@ -12,7 +14,11 @@ import type { NextRequest } from "next/server";
 // unchanged from the previous middleware convention.
 
 export function proxy(req: NextRequest) {
-  const res = NextResponse.next();
+  const requestId = crypto.randomUUID();
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set(REQUEST_ID_HEADER, requestId);
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  res.headers.set("X-Request-ID", requestId);
 
   // Security headers — permissive for preview panel iframe
   res.headers.set("X-Content-Type-Options", "nosniff");
