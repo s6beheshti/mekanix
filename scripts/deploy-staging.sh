@@ -32,6 +32,15 @@ if [ ${#REDIS_PASSWORD} -lt 24 ]; then
   exit 1
 fi
 
+if [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "❌ DB_PASSWORD must use URL-safe characters only (A-Z, a-z, 0-9, _ and -)"
+  exit 1
+fi
+if [[ ! "$REDIS_PASSWORD" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "❌ REDIS_PASSWORD must use URL-safe characters only (A-Z, a-z, 0-9, _ and -)"
+  exit 1
+fi
+
 echo "🚀 MEKANIX Staging Deployment"
 echo "   Port: 3001"
 echo "   DB: mekanix_staging"
