@@ -58,7 +58,7 @@ function parseQuoteFromText(text: string, defaultUnit: "rial" | "toman"): Parsed
       rate *= 10;
     }
 
-    if (rate < 100_000 || rate > 100_000_000) continue;
+    if (rate < 1_000_000 || rate > 100_000_000) continue;
 
     const quoteType: QuoteType = /فروش/.test(match[0])
       ? "sell"
