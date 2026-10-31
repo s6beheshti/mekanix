@@ -232,24 +232,24 @@ describe("Failure Scenarios", () => {
 
   // ── Payment Provider Failure ─────────────────────────────────────────
   describe("Payment Provider Failure", () => {
-    it("should use simulator by default (always succeeds)", async () => {
+    it("should use simulator by default in test mode", async () => {
       const { createPayment } = await import("@/lib/payment-provider");
       const result = await createPayment({
         amount: 100_000,
         description: "Test payment",
         callbackUrl: "https://example.com/callback",
+        orderId: "PG-test",
       });
       expect(result.success).toBe(true);
       expect(result.paymentUrl).toBeDefined();
       expect(result.authority).toMatch(/^sim_/);
     });
 
-    it("should verify simulator payment (returns refId)", async () => {
+    it("should verify only the matching simulator order", async () => {
       const { verifyPayment } = await import("@/lib/payment-provider");
-      const result = await verifyPayment("sim_test_authority", 100_000);
+      const result = await verifyPayment("sim_PG-test", 100_000, "PG-test");
       expect(result.success).toBe(true);
-      expect(result.refId).toBeDefined();
-      expect(result.refId).toContain("sim_test_authority");
+      expect(result.refId).toBe("dev_PG-test");
     });
 
     it("should report provider status as simulator (configured=true)", () => {
