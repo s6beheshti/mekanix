@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 30
     env:
       DB_PASSWORD: test_password
-      JWT_SECRET: test_secret_for_ci
+      JWT_SECRET: ci-staging-secret-with-more-than-32-characters
       REDIS_PASSWORD: test_redis_password
       APP_URL: http://localhost:3000
       DEPLOYMENT_ENV: staging
