@@ -17,7 +17,7 @@
 - Production health/readiness responses hide internal diagnostics; detailed failures remain in server logs.
 - Deployment and backup/restore scripts now validate secrets, use the readiness gate, copy all migrations, and refuse unsafe restore targets.
 - Added payment, callback-origin, Redis recovery, rate-limit, and database-index tests; Playwright browser E2E is wired into CI.
-- Dependency versions and transitive overrides were updated; final lockfile regeneration and clean audit are pending GitHub workflow approval.
+- Regenerated `bun.lock` with Bun 1.4.4; `bun audit` reports no known vulnerabilities across 980 packages (2026-10-31). Full CI rerun against the regenerated lockfile remains pending.
 
 ## [1.0.0] - 2026-09-25
 
