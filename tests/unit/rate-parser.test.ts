@@ -61,6 +61,16 @@ describe("parseFreshTelegramUsdIrrQuote", () => {
     });
   });
 
+  it("rejects future-dated Telegram posts", () => {
+    const html = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-10-31T12:01:00.000Z"></time>
+        <div>دلار تهران: 270,380 فروش</div>
+      </div>
+    `;
+    expect(parseFreshTelegramUsdIrrQuote(html, "toman", now)).toBeNull();
+  });
+
   it("rejects old Telegram posts even when the page was fetched just now", () => {
     const html = `
       <div class="tgme_widget_message_wrap">
