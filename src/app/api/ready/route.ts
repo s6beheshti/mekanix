@@ -27,6 +27,7 @@ export async function GET() {
     checks: {
       database: false,
       migrationsApplied: false,
+      jwtSecret: false,
       smsProvider: false,
       paymentProvider: false,
       databaseProvider: false,
@@ -34,6 +35,15 @@ export async function GET() {
     },
     errors: [] as string[],
   };
+
+  // Production and staging must never use a short or missing signing secret.
+  const requiresStrongJwt = isProduction || process.env.DEPLOYMENT_ENV === "staging";
+  if (!requiresStrongJwt || (process.env.JWT_SECRET || "").length >= 32) {
+    ready.checks.jwtSecret = true;
+  } else {
+    ready.ok = false;
+    ready.errors.push("JWT_SECRET must contain at least 32 characters");
+  }
 
   // ─── 1. Database reachable ───
   try {
