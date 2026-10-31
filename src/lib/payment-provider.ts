@@ -51,9 +51,9 @@ const unavailableVerify = async (): Promise<PaymentVerifyResult> => ({
 
 const simulator: Provider = {
   name: "simulator",
-  configured: process.env.NODE_ENV !== "production",
+  configured: process.env.NODE_ENV !== "production" || process.env.DEPLOYMENT_ENV === "staging",
   create: async (req) => {
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging") {
       return { success: false, error: "شبیه‌ساز پرداخت در محیط عملیاتی غیرفعال است" };
     }
     const authority = `sim_${req.orderId}`;
@@ -64,7 +64,7 @@ const simulator: Provider = {
     return { success: true, paymentUrl: callback.toString(), authority, orderId: req.orderId };
   },
   verify: async (authority, amount, orderId) => {
-    if (process.env.NODE_ENV === "production" || authority !== `sim_${orderId}`) {
+    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging" || authority !== `sim_${orderId}`) {
       return { success: false, error: "تأیید شبیه‌ساز معتبر نیست" };
     }
     return { success: true, refId: `dev_${orderId}`, amount };
