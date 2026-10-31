@@ -1,50 +1,75 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # MEKANIX — Repository Hygiene Check
-# Checks for forbidden artifacts that should not be in git.
+# Reject local databases, real environment files, generated directories,
+# oversized files, and unsafe Docker build-context environment rules.
 
-set -e
+set -euo pipefail
 
 echo "🔍 Checking repository hygiene..."
+errors=0
 
-ERRORS=0
-
-# Check for database files
-if git ls-files | grep -qE "\.db$|\.sqlite$|\.sqlite3$"; then
-  echo "❌ Database files tracked by git:"
-  git ls-files | grep -E "\.db$|\.sqlite$|\.sqlite3$"
-  ERRORS=$((ERRORS + 1))
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "❌ Run this check from inside the Git repository."
+  exit 2
 fi
 
-# Check for .env files (not .env.example)
-if git ls-files | grep -qE "^\.env$"; then
-  echo "❌ .env file tracked by git:"
-  git ls-files | grep -E "^\.env$"
-  ERRORS=$((ERRORS + 1))
-fi
+mapfile -d '' tracked_files < <(git ls-files -z)
 
-# Check for forbidden directories
-for dir in upload download tool-results backups agent-ctx .zscripts; do
-  if git ls-files | grep -q "^${dir}/"; then
-    echo "❌ Forbidden directory tracked: $dir/"
-    git ls-files | grep "^${dir}/" | head -5
-    ERRORS=$((ERRORS + 1))
+# Database files must never be committed.
+for file in "${tracked_files[@]}"; do
+  if [[ "$file" == *.db || "$file" == *.sqlite || "$file" == *.sqlite3 ]]; then
+    echo "❌ Database file tracked by git: $file"
+    errors=$((errors + 1))
   fi
 done
 
-# Check for large binary files (>10MB)
-for file in $(git ls-files); do
-  if [ -f "$file" ]; then
-    size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-    if [ "$size" -gt 10485760 ]; then
-      echo "❌ Large file (>10MB): $file (${size} bytes)"
-      ERRORS=$((ERRORS + 1))
-    fi
+# Only the root .env.example template may be tracked.
+for file in "${tracked_files[@]}"; do
+  if [[ "$file" =~ (^|/)\.env($|\.) ]] && [[ "$file" != ".env.example" ]]; then
+    echo "❌ Environment file tracked by git: $file"
+    errors=$((errors + 1))
   fi
 done
 
-if [ "$ERRORS" -gt 0 ]; then
+# Generated or local-only directories are not allowed in the repository.
+for file in "${tracked_files[@]}"; do
+  if [[ "$file" =~ (^|/)(upload|download|tool-results|backups|agent-ctx|\.zscripts)/ ]]; then
+    echo "❌ Forbidden generated/local path tracked: $file"
+    errors=$((errors + 1))
+  fi
+done
+
+# Reject files larger than 10 MiB.
+for file in "${tracked_files[@]}"; do
+  [[ -f "$file" ]] || continue
+  size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo 0)
+  if [[ "$size" =~ ^[0-9]+$ ]] && ((size > 10485760)); then
+    echo "❌ Large file (>10 MiB): $file ($size bytes)"
+    errors=$((errors + 1))
+  fi
+done
+
+# Shell scripts must parse before they are allowed into a release branch.
+for script in scripts/*.sh scripts/lib/*.sh; do
+  [[ -f "$script" ]] || continue
+  if ! bash -n "$script"; then
+    echo "❌ Shell syntax error: $script"
+    errors=$((errors + 1))
+  fi
+done
+
+# Docker must ignore real env files while allowing the safe example template.
+if [[ ! -f .dockerignore ]] ||
+   ! grep -Fxq '.env' .dockerignore ||
+   ! grep -Fxq '.env.*' .dockerignore ||
+   ! grep -Fxq '!.env.example' .dockerignore; then
+  echo "❌ .dockerignore must exclude .env and .env.* while allowing .env.example"
+  errors=$((errors + 1))
+fi
+
+if ((errors > 0)); then
   echo ""
-  echo "❌ $ERRORS hygiene issue(s) found."
+  echo "❌ $errors hygiene issue(s) found."
   exit 1
 fi
 

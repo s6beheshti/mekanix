@@ -108,5 +108,27 @@ export async function GET() {
   }
 
   const status = health.ok ? 200 : 503;
-  return NextResponse.json(health, { status });
+  if (process.env.NODE_ENV === "production") {
+    if (health.warnings.length > 0) {
+      console.warn("[health] Service diagnostics:", health.warnings);
+    }
+    const productionHealth = {
+      ...health,
+      services: {
+        database: health.services.database,
+        redis: health.services.redis === "healthy" ? "healthy" : health.services.redis === "not-configured" ? "not-configured" : "unhealthy",
+        sms: health.services.sms.startsWith("healthy") ? "healthy" : health.services.sms.startsWith("dev-mode") ? "dev-mode" : "unhealthy",
+        eta: health.services.eta.startsWith("healthy") ? "healthy" : health.services.eta.startsWith("default") ? "default" : "unknown",
+      },
+      warnings: health.warnings.length > 0 ? ["Service diagnostics are available in server logs"] : [],
+    };
+    return NextResponse.json(productionHealth, {
+      status,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+  return NextResponse.json(health, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
 }

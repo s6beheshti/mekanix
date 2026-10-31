@@ -1,67 +1,80 @@
 // MEKANIX — Payment Gateway Abstraction
 //
-// Pluggable payment provider for Iranian Shaparak-compliant gateways.
-// Set PAYMENT_PROVIDER env var to choose:
-//   - "zarinpal"  — set ZARINPAL_MERCHANT_ID
-//   - "idpay"     — set IDPAY_API_KEY
-//   - "nextpay"   — set NEXTPAY_API_KEY
-//   - "simulator" (default) — no real payment (dev mode)
+// Production policy:
+// - Zarinpal and IDPay are the only implemented live providers.
+// - The simulator is available only outside production or in explicit staging.
+// - Unknown, incomplete, and stub providers fail closed (never silently simulate).
 //
-// Usage:
-//   import { createPayment, verifyPayment } from "@/lib/payment-provider";
-//   const result = await createPayment({ amount: 50000, description: "VIP plan", callbackUrl: "https://mekanix.ir/api/gateway/callback" });
-//   if (result.success && result.paymentUrl) redirect(result.paymentUrl);
-//   // On callback: verifyPayment(authority, amount)
+// Amounts passed to this module are IRR (Rial), not Toman.
 
 export interface PaymentRequest {
-  amount: number;        // IRR (Rial — not Toman)
+  amount: number;
   description: string;
   callbackUrl: string;
   mobile?: string;
-  orderId?: string;
+  orderId: string;
 }
 
 export interface PaymentResult {
   success: boolean;
-  paymentUrl?: string;     // URL to redirect user for payment
-  authority?: string;       // Transaction reference (Zarinpal: authority, IDPay: id)
+  paymentUrl?: string;
+  authority?: string;
+  orderId?: string;
   error?: string;
 }
 
 export interface PaymentVerifyResult {
   success: boolean;
-  refId?: string;           // Bank reference ID (traceable in Shaparak)
+  refId?: string;
   amount?: number;
   error?: string;
 }
 
 export type CreatePaymentFn = (req: PaymentRequest) => Promise<PaymentResult>;
-export type VerifyPaymentFn = (authority: string, amount: number) => Promise<PaymentVerifyResult>;
+export type VerifyPaymentFn = (authority: string, amount: number, orderId: string) => Promise<PaymentVerifyResult>;
 
-// ──────────── Simulator (dev mode — mirrors existing Shaparak simulator) ────────────
-
-const simulatorCreate: CreatePaymentFn = async (req) => {
-  const authority = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  return {
-    success: true,
-    paymentUrl: `${req.callbackUrl}?Authority=${authority}&Status=OK&simulator=true`,
-    authority,
-  };
+type Provider = {
+  name: string;
+  configured: boolean;
+  create: CreatePaymentFn;
+  verify: VerifyPaymentFn;
 };
 
-const simulatorVerify: VerifyPaymentFn = async (authority) => {
-  return {
-    success: true,
-    refId: `ref_${authority}`,
-    amount: 0,
-  };
+const unavailable = async (): Promise<PaymentResult> => ({
+  success: false,
+  error: "درگاه پرداخت پیکربندی نشده است",
+});
+const unavailableVerify = async (): Promise<PaymentVerifyResult> => ({
+  success: false,
+  error: "درگاه پرداخت پیکربندی نشده است",
+});
+
+const simulator: Provider = {
+  name: "simulator",
+  configured: process.env.NODE_ENV !== "production" || process.env.DEPLOYMENT_ENV === "staging",
+  create: async (req) => {
+    if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging") {
+      return { success: false, error: "شبیه‌ساز پرداخت در محیط عملیاتی غیرفعال است" };
+    }
+    const authority = `sim_${req.orderId}`;
+    const callback = new URL(req.callbackUrl);
+    callback.searchParams.set("Authority", authority);
+    callback.searchParams.set("Status", "OK");
+    callback.searchParams.set("simulator", "true");
+    return { success: true, paymentUrl: callback.toString(), authority, orderId: req.orderId };
+  },
+  verify: async (authority, amount, orderId) => {
+    if ((process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV !== "staging") || authority !== `sim_${orderId}`) {
+      return { success: false, error: "تأیید شبیه‌ساز معتبر نیست" };
+    }
+    return { success: true, refId: `dev_${orderId}`, amount };
+  },
 };
 
-// ──────────── Zarinpal ────────────
-// https://docs.zarinpal.com/paymentGateway/
-
-function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; verify: VerifyPaymentFn } {
+function createZarinpalProvider(merchantId: string): Provider {
   return {
+    name: "zarinpal",
+    configured: true,
     create: async (req) => {
       try {
         const res = await fetch("https://api.zarinpal.com/pg/v4/payment/request.json", {
@@ -77,16 +90,18 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        if (data.data?.authority) {
-          return {
-            success: true,
-            authority: data.data.authority,
-            paymentUrl: `https://www.zarinpal.com/pg/StartPay/${data.data.authority}`,
-          };
+        if (!res.ok || Number(data.data?.code) !== 100 || !data.data?.authority) {
+          return { success: false, error: data.errors?.message || "Zarinpal request failed" };
         }
-        return { success: false, error: data.errors?.message || "Zarinpal error" };
-      } catch (e) {
-        return { success: false, error: (e as Error).message };
+        const authority = String(data.data.authority);
+        return {
+          success: true,
+          authority,
+          orderId: req.orderId,
+          paymentUrl: `https://www.zarinpal.com/pg/StartPay/${encodeURIComponent(authority)}`,
+        };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : "Zarinpal request failed" };
       }
     },
     verify: async (authority, amount) => {
@@ -94,41 +109,39 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
         const res = await fetch("https://api.zarinpal.com/pg/v4/payment/verify.json", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            merchant_id: merchantId,
-            authority,
-            amount,
-          }),
+          body: JSON.stringify({ merchant_id: merchantId, authority, amount }),
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        if (data.data?.ref_id) {
-          return { success: true, refId: String(data.data.ref_id), amount };
+        const code = Number(data.data?.code);
+        const refId = data.data?.ref_id;
+        const verifiedAmount = data.data?.amount;
+        // 100 = verified; 101 = already verified (safe for callback retries).
+        if (!res.ok || ![100, 101].includes(code) || refId == null) {
+          return { success: false, error: data.errors?.message || "Zarinpal verification failed" };
         }
-        return { success: false, error: data.errors?.message || "Verification failed" };
-      } catch (e) {
-        return { success: false, error: (e as Error).message };
+        if (verifiedAmount != null && Number(verifiedAmount) !== amount) {
+          return { success: false, error: "Zarinpal verified amount does not match the order" };
+        }
+        return { success: true, refId: String(refId), amount: verifiedAmount == null ? amount : Number(verifiedAmount) };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : "Zarinpal verification failed" };
       }
     },
   };
 }
 
-// ──────────── IDPay ────────────
-// https://docs.idpay.ir/
-
-function createIdpayProvider(apiKey: string): { create: CreatePaymentFn; verify: VerifyPaymentFn } {
+function createIdpayProvider(apiKey: string): Provider {
   return {
+    name: "idpay",
+    configured: true,
     create: async (req) => {
       try {
         const res = await fetch("https://api.idpay.ir/v1.3/payment", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-KEY": apiKey,
-            "X-SANDBOX": "0",
-          },
+          headers: { "Content-Type": "application/json", "X-API-KEY": apiKey, "X-SANDBOX": "0" },
           body: JSON.stringify({
-            order_id: req.orderId || `ord_${Date.now()}`,
+            order_id: req.orderId,
             amount: req.amount,
             name: req.description,
             callback: req.callbackUrl,
@@ -137,89 +150,104 @@ function createIdpayProvider(apiKey: string): { create: CreatePaymentFn; verify:
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        if (data.link) {
-          return { success: true, paymentUrl: data.link, authority: data.id };
+        if (!res.ok || !data.link || !data.id) {
+          return { success: false, error: data.error_message || "IDPay request failed" };
         }
-        return { success: false, error: data.error_message || "IDPay error" };
-      } catch (e) {
-        return { success: false, error: (e as Error).message };
+        return {
+          success: true,
+          paymentUrl: String(data.link),
+          authority: String(data.id),
+          orderId: req.orderId,
+        };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : "IDPay request failed" };
       }
     },
-    verify: async (authority, amount) => {
+    verify: async (authority, amount, orderId) => {
       try {
         const res = await fetch("https://api.idpay.ir/v1.3/payment/verify", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-KEY": apiKey,
-          },
-          body: JSON.stringify({ id: authority, order_id: authority }),
+          headers: { "Content-Type": "application/json", "X-API-KEY": apiKey },
+          body: JSON.stringify({ id: authority, order_id: orderId }),
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        // IDPay returns status 100 for successful verify
-        if (data.status === 100) {
-          return { success: true, refId: String(data.track_id), amount };
+        if (!res.ok || Number(data.status) !== 100) {
+          return { success: false, error: data.error_message || "IDPay verification failed" };
         }
-        return { success: false, error: data.error_message || "Verification failed" };
-      } catch (e) {
-        return { success: false, error: (e as Error).message };
+        if (data.amount != null && Number(data.amount) !== amount) {
+          return { success: false, error: "مبلغ تأییدشده با مبلغ سفارش مطابقت ندارد" };
+        }
+        if (data.track_id == null) {
+          return { success: false, error: "IDPay did not return a transaction reference" };
+        }
+        return { success: true, refId: String(data.track_id), amount };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : "IDPay verification failed" };
       }
     },
   };
 }
 
-// ──────────── Initialization ────────────
+function resolveProvider(): Provider {
+  const name = (process.env.PAYMENT_PROVIDER || "simulator").toLowerCase().trim();
+  if (name === "simulator") return simulator;
+  if (name === "zarinpal") {
+    const merchantId = process.env.ZARINPAL_MERCHANT_ID?.trim();
+    return merchantId
+      ? createZarinpalProvider(merchantId)
+      : { name, configured: false, create: unavailable, verify: unavailableVerify };
+  }
+  if (name === "idpay") {
+    const apiKey = process.env.IDPAY_API_KEY?.trim();
+    return apiKey
+      ? createIdpayProvider(apiKey)
+      : { name, configured: false, create: unavailable, verify: unavailableVerify };
+  }
+  // NextPay was previously advertised but never implemented. Do not fall back to a simulator.
+  return { name, configured: false, create: unavailable, verify: unavailableVerify };
+}
 
-let currentCreate = simulatorCreate;
-let currentVerify = simulatorVerify;
-let initialized = false;
+let currentProvider: Provider | null = null;
 
 export function initPaymentProvider(): void {
-  if (initialized) return;
-  initialized = true;
-
-  const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim();
-
-  if (provider === "zarinpal" && process.env.ZARINPAL_MERCHANT_ID) {
-    console.log("💳 Payment provider: Zarinpal");
-    const z = createZarinpalProvider(process.env.ZARINPAL_MERCHANT_ID);
-    currentCreate = z.create;
-    currentVerify = z.verify;
-  } else if (provider === "idpay" && process.env.IDPAY_API_KEY) {
-    console.log("💳 Payment provider: IDPay");
-    const i = createIdpayProvider(process.env.IDPAY_API_KEY);
-    currentCreate = i.create;
-    currentVerify = i.verify;
-  } else if (provider === "nextpay" && process.env.NEXTPAY_API_KEY) {
-    // NextPay provider — stub for now (implementation follows same pattern)
-    // Real wiring requires NEXTPAY_API_KEY + verifying their API contract
-    console.log("💳 Payment provider: NextPay (stub — not yet implemented, falling back to simulator)");
-  } else {
-    if (provider && provider !== "simulator") {
-      console.warn(`⚠️  PAYMENT_PROVIDER=${provider || "unset"} but required credentials missing — using simulator`);
-    }
-    console.log("💳 Payment provider: simulator (dev mode)");
+  if (currentProvider) return;
+  currentProvider = resolveProvider();
+  if (!currentProvider.configured) {
+    console.error(`[payment] Provider "${currentProvider.name}" is unsupported or missing required credentials`);
+    return;
   }
+  console.log(`💳 Payment provider: ${currentProvider.name}`);
+}
+
+function getProvider(): Provider {
+  initPaymentProvider();
+  return currentProvider ?? { name: "unavailable", configured: false, create: unavailable, verify: unavailableVerify };
 }
 
 export async function createPayment(req: PaymentRequest): Promise<PaymentResult> {
-  initPaymentProvider();
-  return currentCreate(req);
+  const provider = getProvider();
+  if (!provider.configured) return { success: false, error: "درگاه پرداخت عملیاتی پیکربندی نشده است" };
+  if (!Number.isSafeInteger(req.amount) || req.amount <= 0 || !req.orderId) {
+    return { success: false, error: "مبلغ یا شناسه سفارش نامعتبر است" };
+  }
+  return provider.create(req);
 }
 
-export async function verifyPayment(authority: string, amount: number): Promise<PaymentVerifyResult> {
-  initPaymentProvider();
-  return currentVerify(authority, amount);
+export async function verifyPayment(
+  authority: string,
+  amount: number,
+  orderId: string
+): Promise<PaymentVerifyResult> {
+  const provider = getProvider();
+  if (!provider.configured) return { success: false, error: "درگاه پرداخت عملیاتی پیکربندی نشده است" };
+  if (!authority || !orderId || !Number.isSafeInteger(amount) || amount <= 0) {
+    return { success: false, error: "اطلاعات تأیید پرداخت نامعتبر است" };
+  }
+  return provider.verify(authority, amount, orderId);
 }
-
-// ──────────── Health-check helper (used by /api/health + security-audit.sh) ────────────
 
 export function getPaymentProviderStatus(): { configured: boolean; provider: string } {
-  const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim() || "simulator";
-  let configured = true;
-  if (provider === "zarinpal" && !process.env.ZARINPAL_MERCHANT_ID) configured = false;
-  if (provider === "idpay" && !process.env.IDPAY_API_KEY) configured = false;
-  if (provider === "nextpay" && !process.env.NEXTPAY_API_KEY) configured = false;
-  return { configured, provider };
+  const provider = resolveProvider();
+  return { configured: provider.configured, provider: provider.name };
 }

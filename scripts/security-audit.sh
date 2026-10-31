@@ -147,9 +147,14 @@ echo "10. Checking dependencies..."
 if command -v bun &> /dev/null; then
   BUN_AUDIT=$(bun audit 2>&1 || true)
   if echo "$BUN_AUDIT" | grep -qi "vulnerabilit"; then
-    echo "⚠️  Dependency vulnerabilities found:"
-    echo "$BUN_AUDIT" | tail -10
-    WARNINGS=$((WARNINGS + 1))
+    echo "⚠️  Dependency vulnerabilities found (full report):"
+    echo "$BUN_AUDIT"
+    if echo "$BUN_AUDIT" | grep -Eqi '^[[:space:]]*(critical|high):|[0-9]+ critical|[0-9]+ high'; then
+      echo "❌ Critical/high dependency vulnerabilities must be fixed before production."
+      ISSUES=$((ISSUES + 1))
+    else
+      WARNINGS=$((WARNINGS + 1))
+    fi
   else
     echo "✅ No known dependency vulnerabilities"
   fi

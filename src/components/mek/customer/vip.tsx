@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { useT } from "@/lib/use-t";
-import { toast } from "sonner";
 import { PaymentGatewayDialog } from "@/components/mek/shared/payment-gateway";
 import { toPersianDigits } from "@/lib/format";
 
@@ -17,7 +16,7 @@ type VipPlan = {
   id: string;
   slug: string;
   name: string;
-  priceIrr: number;
+  priceUsd: number;
   durationDays: number;
   discountPct: number;
   priorityBoost: number;
@@ -49,7 +48,6 @@ export function CustomerVip({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<VipPlan | null>(null);
   const [gatewayOpen, setGatewayOpen] = useState(false);
-  const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -65,27 +63,6 @@ export function CustomerVip({ userId }: { userId: string }) {
   const subscribe = (plan: VipPlan) => {
     setSelectedPlan(plan);
     setGatewayOpen(true);
-  };
-
-  const onPaid = async (paymentId: string) => {
-    if (!selectedPlan) return;
-    setSubscribing(true);
-    try {
-      const res = await authFetch("/api/vip/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, planId: selectedPlan.id, paymentId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setSubscription(data.subscription);
-      toast.success(t("vip.subscribeSuccess"));
-      setGatewayOpen(false);
-    } catch (e: any) {
-      toast.error(e.message ?? t("vip.subscribeFail"));
-    } finally {
-      setSubscribing(false);
-    }
   };
 
   if (loading) {
@@ -155,7 +132,7 @@ export function CustomerVip({ userId }: { userId: string }) {
                   <p className="mt-1 text-[11px] text-muted-foreground">{t(`vip.plan.${plan.slug}Desc`)}</p>
 
                   <div className="mt-4 flex items-baseline gap-1">
-                    <span className="font-display text-2xl font-bold text-foreground">{money(plan.priceIrr)}</span>
+                    <span className="font-display text-2xl font-bold text-foreground">{money(plan.priceUsd)}</span>
                     <span className="text-[11px] text-muted-foreground">
                       / {t("vip.plan.duration").replace("{days}", isFa ? toPersianDigits(plan.durationDays) : String(plan.durationDays))}
                     </span>
@@ -177,7 +154,7 @@ export function CustomerVip({ userId }: { userId: string }) {
 
                   <Button
                     onClick={() => subscribe(plan)}
-                    disabled={isCurrent || subscribing}
+                    disabled={isCurrent}
                     className={`mt-5 w-full ${isCurrent ? "bg-muted text-muted-foreground" : "bg-amber text-black hover:bg-amber/90"}`}
                   >
                     {isCurrent ? <Check className="mr-2 size-4" /> : <Crown className="mr-2 size-4" />}
@@ -198,11 +175,10 @@ export function CustomerVip({ userId }: { userId: string }) {
         <PaymentGatewayDialog
           open={gatewayOpen}
           onOpenChange={setGatewayOpen}
-          amount={selectedPlan.priceIrr}
+          amount={selectedPlan.priceUsd}
           purpose="vip"
-          userId={userId}
+          planId={selectedPlan.id}
           description={t(`vip.plan.${selectedPlan.slug}`)}
-          onSuccess={onPaid}
         />
       )}
     </div>

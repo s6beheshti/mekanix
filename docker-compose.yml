@@ -19,13 +19,89 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Trusted USD/IRR market-rate collector — app startup waits for a fresh Telegram rate.
+  rate-bot:
+    mem_limit: ${RATE_BOT_MEM_LIMIT:-256m}
+    cpus: ${RATE_BOT_CPUS:-0.5}
+    build:
+      context: .
+      dockerfile: Dockerfile.rate-bot
+    environment:
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
+      - TELEGRAM_RATE_CHANNEL=${TELEGRAM_RATE_CHANNEL:-NerkhDollarIRT}
+      - TELEGRAM_RATE_UNIT=${TELEGRAM_RATE_UNIT:-toman}
+      - PORT=3004
+      - POLL_INTERVAL_MS=${RATE_BOT_POLL_INTERVAL_MS:-60000}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3004/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  backup-scheduler:
+    mem_limit: ${BACKUP_MEM_LIMIT:-512m}
+    cpus: ${BACKUP_CPUS:-0.5}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    build:
+      context: .
+      dockerfile: Dockerfile.backup-scheduler
+    environment:
+      - NODE_ENV=production
+      - HOME=/tmp
+      - GNUPGHOME=/tmp/gnupg
+      - BUN_INSTALL_CACHE_DIR=/tmp/bun-cache
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
+      - BACKUP_DIR=/backups
+      - BACKUP_SCRIPT=/app/scripts/backup-db.sh
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_INTERVAL_MS=${BACKUP_INTERVAL_MS:-86400000}
+      - BACKUP_ENCRYPTION_REQUIRED=true
+      - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      - BACKUP_ADMIN_TOKEN=${BACKUP_ADMIN_TOKEN:-}
+      - BACKUP_ALERT_WEBHOOK_URL=${BACKUP_ALERT_WEBHOOK_URL:-}
+    volumes:
+      - backupdata:/backups
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3005/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   app:
+    mem_limit: ${APP_MEM_LIMIT:-1536m}
+    cpus: ${APP_CPUS:-2.0}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     build: .
     ports:
       - "127.0.0.1:3000:3000"
     environment:
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - NODE_ENV=production
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-production}
+      - APP_URL=${APP_URL:-}
       - JWT_SECRET=${JWT_SECRET}
       - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:-}
       - ADMIN_BOOTSTRAP_USERNAME=${ADMIN_BOOTSTRAP_USERNAME:-admin}
@@ -50,7 +126,7 @@ services:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
@@ -60,6 +136,8 @@ services:
       start_period: 15s
 
   db:
+    mem_limit: ${DB_MEM_LIMIT:-1g}
+    cpus: ${DB_CPUS:-1.0}
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=mekanix
@@ -76,13 +154,25 @@ services:
     # No ports: — PostgreSQL is NOT exposed to host
 
   redis:
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    cpus: ${REDIS_CPUS:-0.5}
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes", "--appendfsync", "everysec"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     volumes:
       - redisdata:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     # No ports: — Redis is NOT exposed to host
 
 volumes:
   pgdata:
   redisdata:
+  backupdata:

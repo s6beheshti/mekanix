@@ -1,41 +1,71 @@
-// Telegram rate scraper — reads @NerkhDollarIRT channel and writes rate to DB
-import { PrismaClient } from "/home/z/my-project/node_modules/.prisma/client/index.js";
+// Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
+import { PrismaClient } from "@prisma/client";
+import { parseTelegramUsdIrrQuote, TELEGRAM_RATE_MAX_AGE_MS, TELEGRAM_RATE_MAX_FUTURE_SKEW_MS } from "../../src/lib/rate-parser";
 
-const db = new PrismaClient({
-  datasources: { db: { url: "file:/home/z/my-project/db/custom.db" } },
-});
-const CHANNEL = "NerkhDollarIRT";
-const PORT = 3004;
-const POLL_INTERVAL_MS = 60 * 1000;
+const db = new PrismaClient();
+const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
+const rateUnit = process.env.TELEGRAM_RATE_UNIT === "rial" ? "rial" : "toman";
+const configuredPort = Number(process.env.PORT || 3004);
+const port = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65_535
+  ? configuredPort
+  : 3004;
+const configuredPollInterval = Number(process.env.POLL_INTERVAL_MS || 60_000);
+const pollIntervalMs = Number.isFinite(configuredPollInterval)
+  ? Math.max(30_000, configuredPollInterval)
+  : 60_000;
 
 const server = Bun.serve({
-  port: PORT,
+  port,
   async fetch(req) {
     const url = new URL(req.url);
-    if (url.pathname === "/health") return Response.json({ ok: true, channel: CHANNEL, port: PORT });
+    if (url.pathname === "/health") return Response.json({ ok: true, channel, rateUnit, port });
+    if (url.pathname === "/ready") {
+      const [rateSetting, sourceSetting] = await Promise.all([
+        db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } }),
+        db.platformSetting.findUnique({ where: { key: "usd_irr_rate_source" } }),
+      ]);
+      const rate = Number(rateSetting?.value);
+      const updatedAt = rateSetting?.updatedAt ? new Date(rateSetting.updatedAt).getTime() : null;
+      const ageMs = updatedAt === null ? null : Date.now() - updatedAt;
+      const ok =
+        sourceSetting?.value === "telegram" &&
+        Number.isSafeInteger(rate) &&
+        rate >= 1_000_000 &&
+        rate <= 100_000_000 &&
+        ageMs !== null &&
+        ageMs >= -TELEGRAM_RATE_MAX_FUTURE_SKEW_MS &&
+        ageMs <= TELEGRAM_RATE_MAX_AGE_MS;
+      return Response.json(
+        { ok, rate: Number.isFinite(rate) ? rate : null, source: sourceSetting?.value ?? "unknown", ageMs },
+        { status: ok ? 200 : 503 },
+      );
+    }
     if (url.pathname === "/fetch-now") {
       const rate = await fetchAndStoreRate();
-      return Response.json({ rate, channel: CHANNEL, fetchedAt: new Date().toISOString() });
+      return Response.json({ rate, channel, rateUnit, fetchedAt: new Date().toISOString() });
     }
     if (url.pathname === "/latest") {
       const setting = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_telegram" } });
       const source = await db.platformSetting.findUnique({ where: { key: "usd_irr_rate_source" } });
+      const updatedAt = setting?.updatedAt ? new Date(setting.updatedAt) : null;
       return Response.json({
         rate: setting?.value ? parseFloat(setting.value) : null,
-        source: source?.value ?? "telegram",
-        channel: CHANNEL,
-        updatedAt: setting?.updatedAt,
+        source: source?.value ?? "unknown",
+        channel,
+        rateUnit,
+        updatedAt: updatedAt?.toISOString() ?? null,
+        ageMs: updatedAt ? Date.now() - updatedAt.getTime() : null,
       });
     }
     return new Response("Not found", { status: 404 });
   },
 });
 
-console.log(`📡 Telegram rate scraper on port ${PORT} — reading @${CHANNEL} every 1 min`);
+console.log(`[rate-bot] listening on ${port}; polling @${channel} every ${pollIntervalMs}ms`);
 
 async function fetchAndStoreRate(): Promise<number | null> {
   try {
-    const res = await fetch(`https://t.me/s/${CHANNEL}`, {
+    const res = await fetch(`https://t.me/s/${channel}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; MekanixBot/1.0)" },
       signal: AbortSignal.timeout(15000),
     });
@@ -44,22 +74,33 @@ async function fetchAndStoreRate(): Promise<number | null> {
       return await fetchFallbackApi();
     }
     const html = await res.text();
-    const rate = parseRateFromHtml(html);
-    if (rate && rate > 100000 && rate < 10000000) {
+    const quote = parseTelegramUsdIrrQuote(html, rateUnit, Date.now());
+    if (
+      quote &&
+      Number.isSafeInteger(quote.rate) &&
+      quote.rate >= 1_000_000 &&
+      quote.rate <= 100_000_000
+    ) {
+      const quotedAt = quote.postedAt;
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
-        update: { value: String(rate), description: `@${CHANNEL}`, updatedAt: new Date() },
-        create: { key: "usd_irr_rate_telegram", value: String(rate), description: `@${CHANNEL}` },
+        update: { value: String(quote.rate), description: `@${channel}`, updatedAt: quotedAt },
+        create: {
+          key: "usd_irr_rate_telegram",
+          value: String(quote.rate),
+          description: `@${channel}`,
+          updatedAt: quotedAt,
+        },
       });
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_source" },
         update: { value: "telegram", updatedAt: new Date() },
         create: { key: "usd_irr_rate_source", value: "telegram" },
       });
-      console.log(`✓ Telegram: ${rate.toLocaleString()} IRR/USD`);
-      return rate;
+      console.log(`✓ Telegram: ${quote.rate.toLocaleString()} IRR/USD (${quote.quoteType}; quoted ${quotedAt.toISOString()})`);
+      return quote.rate;
     }
-    console.log("⚠️ Parse failed, fallback API");
+    console.log("⚠️ No fresh timestamped Telegram quote, fallback API");
     return await fetchFallbackApi();
   } catch (e: any) {
     console.log(`⚠️ Error: ${e.message}, fallback`);
@@ -67,30 +108,12 @@ async function fetchAndStoreRate(): Promise<number | null> {
   }
 }
 
-function parseRateFromHtml(html: string): number | null {
-  const patterns = [
-    /دلار[^0-9۰-۹]*([\d,٬۰-۹\s]+)\s*(ریال|تومان)?/i,
-    /USD[^0-9]*([\d,۰-۹]+)/i,
-    /dollar[^0-9]*([\d,۰-۹]+)/i,
-  ];
-  for (const p of patterns) {
-    const m = html.match(p);
-    if (m && m[1]) {
-      let raw = m[1].trim().replace(/[۰-۹٠-٩]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩".indexOf(d) % 10));
-      raw = raw.replace(/[٬,‌\s]/g, "");
-      const rate = parseInt(raw, 10);
-      if (!isNaN(rate) && rate > 100000 && rate < 10000000) return rate;
-    }
-  }
-  return null;
-}
-
 async function fetchFallbackApi(): Promise<number | null> {
   try {
     const res = await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(10000) });
     const data = await res.json();
     const rate = data?.rates?.IRR;
-    if (rate && rate > 100000) {
+    if (rate && rate > 1_000_000) {
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
         update: { value: String(rate), description: "open.er-api.com", updatedAt: new Date() },
@@ -111,4 +134,16 @@ async function fetchFallbackApi(): Promise<number | null> {
 }
 
 fetchAndStoreRate();
-setInterval(fetchAndStoreRate, POLL_INTERVAL_MS);
+const pollTimer = setInterval(fetchAndStoreRate, pollIntervalMs);
+
+
+async function shutdown(signal: string) {
+  console.log(`[rate-bot] ${signal} received; shutting down`);
+  clearInterval(pollTimer);
+  server.stop();
+  await db.$disconnect();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

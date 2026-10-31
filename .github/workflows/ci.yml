@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "fix/payment-provider-production-wiring", "fix/auth-otp-redis-hardening"]
   pull_request:
     branches: [main]
 
@@ -18,16 +19,34 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.4
       
       - name: Install dependencies
         run: bun install --frozen-lockfile
       
       - name: Generate Prisma Client
         run: bunx prisma generate
+
+      - name: Apply SQLite migrations for tests
+        run: bunx prisma migrate deploy
+        env:
+          DATABASE_URL: "file:./test.db"
       
       - name: Check for forbidden artifacts
         run: bash scripts/check-hygiene.sh
+
+      - name: Validate shell script syntax
+        run: |
+          bash -n scripts/lib/secret-validation.sh
+          bash -n scripts/test-secret-validation.sh
+          bash -n scripts/check-hygiene.sh
+          bash -n scripts/deploy.sh
+          bash -n scripts/deploy-staging.sh
+          bash -n scripts/test-backup-restore.sh
+          bash -n scripts/db-switch-provider.sh
+      
+      - name: Run deployment secret validation tests
+        run: bash scripts/test-secret-validation.sh
       
       - name: Run ESLint
         run: bun run lint
@@ -39,3 +58,69 @@ jobs:
         run: bun run test
         env:
           DATABASE_URL: "file:./test.db"
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run browser E2E
+        run: bun run test:e2e
+        env:
+          CI: "true"
+          DATABASE_URL: "file:./test.db"
+          JWT_SECRET: "ci-browser-test-secret-only"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  dependency-remediation-preview:
+    name: Refresh and commit patched dependency lockfile
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Refresh lockfile and apply compatible security fixes
+        run: |
+          bun install
+          bun audit fix || true
+          bun audit > dependency-audit-after-fix.txt 2>&1 || true
+      - name: Commit lockfile security updates to the PR branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if ! git diff --quiet -- bun.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add bun.lock
+            git commit -m "chore(deps): apply compatible security updates"
+            git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            git push origin "HEAD:refs/heads/${HEAD_REF}"
+          else
+            echo "No lockfile changes to commit."
+          fi
+      - name: Upload dependency remediation result
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-preview
+          path: |
+            package.json
+            bun.lock
+            dependency-audit-after-fix.txt
+          if-no-files-found: error
+          retention-days: 7

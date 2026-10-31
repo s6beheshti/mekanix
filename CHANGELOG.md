@@ -1,5 +1,34 @@
 # Changelog
 
+- OTP codes are stored as keyed HMAC-SHA256 digests; verification claims them atomically, rate-limits per phone, and fails closed when production session persistence or SMS delivery fails.
+- Redis rate-limit increments now validate both `INCR` and `PEXPIRE` transaction results so Redis command errors cannot silently bypass limits.
+
+## [Unreleased]
+
+### Payments & Security
+- Replaced the client-side card/OTP simulator with bank-hosted payment redirects.
+- Production simulator and unimplemented providers fail closed; Zarinpal and IDPay use server-to-server verification.
+- Production/staging readiness and deploy scripts reject obvious development/example placeholders for JWT, PostgreSQL, and Redis secrets.
+- Payment amounts and payer ownership are resolved server-side for VIP, invoice, and pre-service payments.
+- All operational prices are stored as USD base amounts and converted to IRR for display; gateway requests use a fresh server-side exchange-rate snapshot.
+- The client must acknowledge the exact calculated Rial amount; if the rate changed, the flow refreshes the displayed amount and asks for confirmation before redirecting.
+- Renamed VIP plan `priceIrr` to `priceUsd` with SQLite and PostgreSQL migrations.
+- Added a configurable Telegram rate collector that treats unitless NerkhDollarIRT quotes as Toman, prefers sell quotes, normalizes to Rial, and blocks production collection unless a fresh Telegram-sourced quote is available.
+- Payment-rate freshness is measured from the original Telegram post timestamp (not scrape time); stale quotes cannot authorize production payment collection.
+- Pending hosted bank redirects are persisted and reused for up to 24 hours; abandoned initialization reservations expire after five minutes so customers can retry without generating duplicate charges.
+- Added idempotent payment settlement, pending payment reservations, callback handling, and post-payment VIP/invoice/wallet fulfillment.
+- Legacy `/api/payments`, `/api/prepay`, and `/api/vip/subscribe` endpoints now delegate to the gateway flow instead of simulating success.
+- Live bank acceptance testing remains pending until gateway credentials and public HTTPS `APP_URL` are configured.
+- Added SQLite/PostgreSQL partial unique indexes to prevent concurrent pending VIP/prepayment intents per customer.
+- Production payment redirects are restricted to official Zarinpal/IDPay hosts; callback origins must be public HTTPS origins.
+- Staging is explicitly isolated and may use the simulator; production cannot.
+- Production/staging readiness requires live Redis, PostgreSQL, a 24+ character Redis password, a 16+ character database password, and a 32+ character JWT secret.
+- Redis failures now fail closed for distributed rate limiting/idempotency instead of silently switching to per-instance memory; connection recovery is retried.
+- Production health/readiness responses hide internal diagnostics; detailed failures remain in server logs.
+- Deployment and backup/restore scripts now validate secrets, use the readiness gate, copy all migrations, and refuse unsafe restore targets.
+- Added payment, callback-origin, Redis recovery, rate-limit, and database-index tests; Playwright browser E2E is wired into CI.
+- Regenerated `bun.lock` with Bun 1.4.4; `bun audit` reports no known vulnerabilities across 980 packages (2026-10-31). Full CI rerun against the regenerated lockfile remains pending.
+
 ## [1.0.0] - 2026-09-25
 
 ### Added
@@ -15,7 +44,7 @@
 - Unified Service facade (read + write)
 - Offline mode with queue, sync, and idempotency
 - Lite API responses (?lite=true for weak internet)
-- Payment gateway abstraction (Zarinpal, IDPay, NextPay)
+- Payment gateway abstraction (Zarinpal, IDPay; development-only simulator)
 - SMS provider abstraction (Kavenegar, MeliPayamak, Farapayamak)
 - ETA provider abstraction (Neshan, Google Maps, OSRM)
 - Redis adapter for distributed rate limiting and idempotency
@@ -77,3 +106,6 @@
 - Load test execution (k6 script ready)
 - Playwright browser E2E
 - OWASP ZAP scan
+
+- Added production GPG-encrypted backup streaming, encrypted restore support, a private daily backup-scheduler service, and optional HTTPS failure alerts.
+- Enabled Redis AOF persistence in production/staging Compose, added configurable container memory/CPU ceilings, and propagated request IDs through the Next.js 16 proxy.

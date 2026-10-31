@@ -1,8 +1,9 @@
 name: Docker E2E
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "fix/payment-provider-production-wiring", "fix/auth-otp-redis-hardening"]
   pull_request:
     branches: [main]
 
@@ -12,8 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DB_PASSWORD: test_password
-      JWT_SECRET: test_secret_for_ci
+      DB_PASSWORD: ci_test_database_password_long_enough
+      JWT_SECRET: ci-staging-secret-with-more-than-32-characters
+      REDIS_PASSWORD: ci_test_redis_password_long_enough
+      APP_URL: http://localhost:3000
+      DEPLOYMENT_ENV: staging
+      SMS_PROVIDER: console
+      PAYMENT_PROVIDER: simulator
+      BACKUP_ENCRYPTION_PASSPHRASE: ci_backup_encryption_passphrase_32_characters
     
     steps:
       - uses: actions/checkout@v4
@@ -29,11 +36,8 @@ jobs:
             ./ /tmp/mekanix-build/
           
           rm -rf /tmp/mekanix-build/prisma/migrations
-          mkdir -p /tmp/mekanix-build/prisma/migrations/20260925000000_init
-          cp prisma/migrations-postgresql/20260925000000_init/migration.sql \
-             /tmp/mekanix-build/prisma/migrations/20260925000000_init/
-          cp prisma/migrations-postgresql/migration_lock.toml \
-             /tmp/mekanix-build/prisma/migrations/
+          mkdir -p /tmp/mekanix-build/prisma/migrations
+          cp -a prisma/migrations-postgresql/. /tmp/mekanix-build/prisma/migrations/
           
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
             /tmp/mekanix-build/prisma/schema.prisma
@@ -72,6 +76,36 @@ jobs:
           docker compose -f /tmp/mekanix-build/docker-compose.yml logs
           exit 1
       
+      - name: Verify application readiness
+        run: |
+          READY=$(curl -sS http://localhost:3000/api/ready)
+          echo "$READY" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d.get('ok') is True, f'Application is not ready: {d}'
+          assert d['checks']['database'] is True
+          assert d['checks']['migrationsApplied'] is True
+          assert d['checks']['redis'] is True
+          assert d['checks']['jwtSecret'] is True
+          assert d['checks']['paymentCallbackUrl'] is True
+          assert d['checks']['exchangeRateTrusted'] is True
+          print('✅ Application readiness checks passed')
+          "
+
+      - name: Verify encrypted database backup
+        run: |
+          cd /tmp/mekanix-build
+          for i in $(seq 1 60); do
+            if docker compose exec -T backup-scheduler bash -lc 'set -e; FILE=$(find /backups -maxdepth 1 -type f -name "*.sql.gz.gpg" -print -quit); test -n "$FILE"; gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --decrypt "$FILE" 3<<<"$BACKUP_ENCRYPTION_PASSPHRASE" | gzip -t'; then
+              echo "✅ Encrypted backup exists and decrypts to a valid gzip stream"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs backup-scheduler
+          echo "❌ Encrypted backup was not created or could not be decrypted"
+          exit 1
+
       - name: Verify database is PostgreSQL
         run: |
           HEALTH=$(curl -s http://localhost:3000/api/health)

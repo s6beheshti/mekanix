@@ -1,9 +1,9 @@
 // MEKANIX — Server initialization
-// This module initializes runtime providers (ETA, SMS, Redis, etc.)
-// Import this once in the server entry point or API middleware.
+// Initialize runtime providers once for every server process.
 
 import { initEtaProvider } from "./eta-provider";
 import { initSmsProvider } from "./sms-provider";
+import { initPaymentProvider } from "./payment-provider";
 
 let initialized = false;
 
@@ -11,15 +11,12 @@ export function initServer(): void {
   if (initialized) return;
   initialized = true;
 
-  // Initialize ETA provider from env (Neshan/Google/OSRM/default)
   initEtaProvider();
-
-  // Initialize SMS provider from env (Kavenegar/MeliPayamak/Farapayamak/console)
   initSmsProvider();
+  initPaymentProvider();
 
-  // Redis is lazy-loaded in src/lib/redis.ts — no init needed here
+  // Redis is lazy-loaded in src/lib/redis.ts.
   console.log("🚀 MEKANIX server initialized");
 }
 
-// Auto-initialize on first import (for API routes)
 initServer();

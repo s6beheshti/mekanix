@@ -1,0 +1,23 @@
+FROM node:20-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN npm install -g bun@1.4.4
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY prisma ./prisma
+RUN bunx prisma generate --schema=prisma/schema.prisma
+
+COPY src/lib/rate-parser.ts ./src/lib/rate-parser.ts
+COPY mini-services/telegram-rate-bot ./mini-services/telegram-rate-bot
+
+RUN chown -R node:node /app
+USER node
+
+ENV NODE_ENV=production
+EXPOSE 3004
+
+CMD ["bun", "run", "mini-services/telegram-rate-bot/index.ts"]

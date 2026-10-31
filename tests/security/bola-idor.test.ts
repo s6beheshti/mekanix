@@ -7,7 +7,7 @@
 //   - State-machine tampering (role-based transition gates)
 //   - Mass assignment (server-authoritative fields like role/balance/rating
 //     cannot be set by client)
-//   - OTP crypto (CSPRNG + SHA-256 — not Math.random + plaintext)
+//   - OTP crypto (CSPRNG + keyed HMAC-SHA256 — not Math.random + plaintext)
 //
 // Mock strategy:
 //   - Each BOLA helper in `@/lib/auth` / `@/lib/care-auth` reads from a
@@ -566,9 +566,9 @@ describe("BOLA / IDOR Security Tests", () => {
       }
     });
 
-    it("should hash OTP codes with SHA-256 (64 hex chars)", () => {
+    it("should store OTP codes as keyed HMAC-SHA256 digests (64 hex chars)", () => {
       const hash = hashOtpCode("123456");
-      // SHA-256 hex digest → 64 lowercase hex chars
+      // Keyed HMAC-SHA256 digest → 64 lowercase hex chars
       expect(hash).toHaveLength(64);
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
     });

@@ -1,91 +1,104 @@
-#!/bin/bash
-# MEKANIX — Database Backup Script (SQLite dev + PostgreSQL prod)
+#!/usr/bin/env bash
+# MEKANIX — encrypted database backup (PostgreSQL production + SQLite development)
 #
-# Creates a compressed backup of the database.
-# Auto-detects database type from DATABASE_URL:
-#   - PostgreSQL (postgresql://...) → pg_dump | gzip
-#   - SQLite       (file:...)        → cp + gzip (fallback if pg_dump missing)
-#
-# Usage:
-#   bash scripts/backup-db.sh
-#
-# Environment:
-#   DATABASE_URL              — connection string (sqlite or postgresql)
-#   BACKUP_DIR                — directory for backups (default: ./backups)
-#   BACKUP_RETENTION_DAYS     — days to keep backups (default: 30)
+# Production requires BACKUP_ENCRYPTION_PASSPHRASE. Backups are encrypted as
+# they are streamed, so plaintext dumps are never written to the backup volume.
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-$REPO_DIR/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="$BACKUP_DIR/mekanix_${TIMESTAMP}.sql.gz"
-
-mkdir -p "$BACKUP_DIR"
-
+if ! [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] || [[ "$RETENTION_DAYS" -lt 1 ]]; then
+  echo "❌ BACKUP_RETENTION_DAYS must be a positive integer"
+  exit 1
+fi
 DB_URL="${DATABASE_URL:-file:$REPO_DIR/db/custom.db}"
+PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
+ENCRYPTION_REQUIRED="${BACKUP_ENCRYPTION_REQUIRED:-false}"
+TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+if [[ "$ENCRYPTION_REQUIRED" == "true" || "${NODE_ENV:-}" == "production" ]]; then
+  if [[ -z "$PASSPHRASE" || ${#PASSPHRASE} -lt 32 ]]; then
+    echo "❌ Production backups require BACKUP_ENCRYPTION_PASSPHRASE (32+ characters)"
+    exit 1
+  fi
+fi
+
+if [[ -n "$PASSPHRASE" ]]; then
+  if ! command -v gpg >/dev/null 2>&1; then
+    echo "❌ gpg is required when backup encryption is enabled"
+    exit 1
+  fi
+  BACKUP_FILE="$BACKUP_DIR/mekanix_${TIMESTAMP}.sql.gz.gpg"
+else
+  BACKUP_FILE="$BACKUP_DIR/mekanix_${TIMESTAMP}.sql.gz"
+fi
+BACKUP_TMP="$BACKUP_FILE.tmp"
+trap 'rm -f "$BACKUP_TMP"' EXIT
+
+encrypt_stream() {
+  gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+    --symmetric --cipher-algo AES256 --output "$BACKUP_TMP" 3<<<"$PASSPHRASE"
+}
 
 echo "📦 Creating database backup..."
-echo "   Source: $DB_URL"
 echo "   Target: $BACKUP_FILE"
 
-# ─── Detect database type ───
 case "$DB_URL" in
   postgresql://*|postgres://*)
-    echo "   Type:   PostgreSQL"
-    if ! command -v pg_dump &> /dev/null; then
-      echo "❌ pg_dump not installed — install postgresql-client or run inside docker"
+    echo "   Type: PostgreSQL"
+    if ! command -v pg_dump >/dev/null 2>&1; then
+      echo "❌ pg_dump not installed"
       exit 1
     fi
-    pg_dump "$DB_URL" | gzip > "$BACKUP_FILE"
+    if [[ -n "$PASSPHRASE" ]]; then
+      pg_dump --clean --if-exists "$DB_URL" | gzip -c | encrypt_stream
+    else
+      pg_dump --clean --if-exists "$DB_URL" | gzip -c > "$BACKUP_TMP"
+    fi
     ;;
   file:*)
-    echo "   Type:   SQLite"
+    echo "   Type: SQLite"
     SQLITE_PATH="${DB_URL#file:}"
-    if [ ! -f "$SQLITE_PATH" ]; then
+    [[ "$SQLITE_PATH" = /* ]] || SQLITE_PATH="$REPO_DIR/$SQLITE_PATH"
+    if [[ ! -f "$SQLITE_PATH" ]]; then
       echo "❌ SQLite file not found: $SQLITE_PATH"
       exit 1
     fi
-    # Use sqlite3 .dump if available, else plain file copy
-    if command -v sqlite3 &> /dev/null; then
-      sqlite3 "$SQLITE_PATH" .dump | gzip > "$BACKUP_FILE"
+    if command -v sqlite3 >/dev/null 2>&1; then
+      if [[ -n "$PASSPHRASE" ]]; then
+        sqlite3 "$SQLITE_PATH" .dump | gzip -c | encrypt_stream
+      else
+        sqlite3 "$SQLITE_PATH" .dump | gzip -c > "$BACKUP_TMP"
+      fi
     else
-      # Fallback: copy the binary file and gzip it
-      cp "$SQLITE_PATH" "$BACKUP_FILE.tmp"
-      gzip -f "$BACKUP_FILE.tmp"
-      mv "$BACKUP_FILE.tmp.gz" "$BACKUP_FILE"
+      if [[ -n "$PASSPHRASE" ]]; then
+        gzip -c "$SQLITE_PATH" | encrypt_stream
+      else
+        gzip -c "$SQLITE_PATH" > "$BACKUP_TMP"
+      fi
     fi
     ;;
   *)
-    echo "❌ Unsupported DATABASE_URL scheme: $DB_URL"
-    echo "   Expected: postgresql://... or file:..."
+    echo "❌ Unsupported DATABASE_URL scheme; expected postgresql://, postgres://, or file:"
     exit 1
     ;;
 esac
 
-BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-echo "✅ Backup created: $BACKUP_FILE ($BACKUP_SIZE)"
-
-# ─── Clean up old backups ───
-echo "🧹 Cleaning up backups older than $RETENTION_DAYS days..."
-find "$BACKUP_DIR" -name "mekanix_*.sql.gz" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
-# Also clean up legacy .db backup naming
-find "$BACKUP_DIR" -name "mekanix_db_*.db" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
-echo "✅ Old backups cleaned"
-
-# ─── List recent backups ───
-echo ""
-echo "📋 Recent backups:"
-ls -lh "$BACKUP_DIR"/mekanix_*.sql.gz 2>/dev/null | tail -5 || true
-# Also list legacy .db backups for backward compat
-ls -lh "$BACKUP_DIR"/mekanix_db_*.db 2>/dev/null | tail -3 || true
-
-# ─── Verify backup is not empty ───
-if [ ! -s "$BACKUP_FILE" ]; then
-  echo "❌ Backup file is empty!"
+if [[ ! -s "$BACKUP_TMP" ]]; then
+  echo "❌ Backup file is empty"
   exit 1
 fi
+chmod 600 "$BACKUP_TMP"
+mv "$BACKUP_TMP" "$BACKUP_FILE"
+BACKUP_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
+echo "✅ Backup created: $BACKUP_FILE ($BACKUP_SIZE)"
 
-echo ""
+echo "🧹 Cleaning backups older than $RETENTION_DAYS days..."
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "mekanix_*.sql.gz*" -mtime "+$RETENTION_DAYS" -delete
+echo "📋 Recent backups:"
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "mekanix_*.sql.gz*" -print | sort -r | head -5 || true
 echo "✅ Backup verified (non-empty)"

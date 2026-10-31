@@ -136,9 +136,9 @@ async function main() {
 
   // ── VIP Plans ──
   const vipPlans = [
-    { slug: "silver", name: "Silver", priceIrr: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
-    { slug: "gold", name: "Gold", priceIrr: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
-    { slug: "platinum", name: "Platinum", priceIrr: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
+    { slug: "silver", name: "Silver", priceUsd: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
+    { slug: "gold", name: "Gold", priceUsd: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
+    { slug: "platinum", name: "Platinum", priceUsd: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
   ];
   for (const p of vipPlans) {
     await db.vipPlan.create({ data: p });

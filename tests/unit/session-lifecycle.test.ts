@@ -4,7 +4,7 @@
 // Verifies the Session DB lifecycle wiring added to `src/lib/auth.ts`:
 //   - createSession writes a Session row (tokenHash is SHA-256 hex, NEVER the raw JWT)
 //   - verifySession honours the DB record (revoked / expired / missing → null)
-//   - verifySession falls back to JWT-only auth if the DB throws (backward compat)
+//   - verifySession falls back to JWT-only auth only in development/test; production fails closed
 //   - revokeSession marks `revokedAt = now` and is idempotent
 //   - revokeAllUserSessions scopes by userId and is idempotent
 //   - logout endpoint returns 200, calls revokeSession, clears the cookie
@@ -12,7 +12,7 @@
 //
 // We use the `node` environment (not jsdom) because we mint real JWTs via
 // jose's `SignJWT`. See `tests/integration/auth.test.ts` for the rationale.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ──────────── Mocks (hoisted) ────────────
 const mockSessionCreate = vi.fn().mockResolvedValue({});
@@ -89,6 +89,11 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
 // ──────────── createSession ────────────
 describe("createSession — DB record creation", () => {
   it("returns a string JWT (signing still works)", async () => {
@@ -147,6 +152,16 @@ describe("createSession — DB record creation", () => {
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
     expect(expiresAt).toBeGreaterThanOrEqual(before + thirtyDaysMs - 1000);
     expect(expiresAt).toBeLessThanOrEqual(after + thirtyDaysMs + 1000);
+  });
+
+  it("denies login when Session persistence fails in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
+    mockSessionCreate.mockRejectedValueOnce(new Error("DB down"));
+
+    await expect(createSession(PAYLOAD)).rejects.toThrow(
+      "Session persistence is required in production",
+    );
   });
 
   it("still returns the JWT even if the DB create throws (backward compat)", async () => {
@@ -213,6 +228,15 @@ describe("verifySession — DB revocation checks", () => {
     expect(mockSessionFindUnique).not.toHaveBeenCalled();
   });
 
+  it("fails closed when the Session DB is unavailable in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockRejectedValueOnce(new Error("DB down"));
+
+    await expect(verifySession(token)).resolves.toBeNull();
+  });
+
   it("falls back to JWT-only auth when the DB throws (backward compat)", async () => {
     const token = await createSession(PAYLOAD);
     mockSessionFindUnique.mockRejectedValueOnce(new Error("Session table missing"));
@@ -258,6 +282,14 @@ describe("revokeSession — single-token revocation", () => {
     expect(mockSessionUpdateMany.mock.calls[1][0].where.revokedAt).toBeNull();
   });
 
+  it("throws when session revocation cannot be persisted in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
+    await expect(revokeSession("some.jwt.token")).rejects.toThrow(
+      "Session revocation failed in production",
+    );
+  });
+
   it("does NOT throw if the DB throws (graceful failure)", async () => {
     mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
     await expect(revokeSession("some.jwt.token")).resolves.toBeUndefined();
@@ -273,6 +305,14 @@ describe("revokeAllUserSessions — user-wide revocation", () => {
     expect(args.where.userId).toBe("user_abc");
     expect(args.where.revokedAt).toBeNull();
     expect(args.data.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it("throws when user-wide revocation cannot be persisted in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
+    await expect(revokeAllUserSessions("user_abc")).rejects.toThrow(
+      "User session revocation failed in production",
+    );
   });
 
   it("does NOT throw if the DB throws (graceful failure)", async () => {
@@ -323,6 +363,23 @@ describe("POST /api/auth/logout — endpoint", () => {
     const setCookie = res.headers.get("set-cookie");
     expect(setCookie).toContain("mekanix-token=");
     expect(setCookie?.toLowerCase()).toMatch(/expires|max-age.*0/);
+  });
+
+  it("returns 503 and clears the cookie if revocation fails in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "ci-jwt-9f2b8c4d7e1a6b3c5d0f8a2e4c6b1d9f");
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
+    mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
+
+    const req = new Request("https://mekanix.test/api/auth/logout", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const res = await logoutPOST(req);
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("set-cookie")?.toLowerCase()).toMatch(/expires|max-age.*0/);
   });
 
   it("works with cookie-based auth too (not just Bearer)", async () => {

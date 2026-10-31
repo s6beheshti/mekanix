@@ -41,9 +41,71 @@ export function LeafletMap({
   const pointsRef = useRef(points);
   const routeRef = useRef(route);
   const centerRef = useRef(center);
-  pointsRef.current = points;
-  routeRef.current = route;
-  centerRef.current = center;
+  useEffect(() => {
+    pointsRef.current = points;
+    routeRef.current = route;
+    centerRef.current = center;
+  }, [points, route, center]);
+
+  function updateMarkersAndBounds(L: any, map: any) {
+    updateMarkersOnly(L, map, true);
+  }
+
+  function updateMarkersOnly(L: any, map: any, fitBounds: boolean) {
+    // Clear existing markers (those we added — keep search markers)
+    if (!map._mekMarkers) map._mekMarkers = [];
+    map._mekMarkers.forEach((m: any) => map.removeLayer(m));
+    map._mekMarkers = [];
+
+    const allPoints = pointsRef.current ?? [];
+    const bounds: [number, number][] = [];
+
+    allPoints.forEach((p) => {
+      const color =
+        p.kind === "customer" ? "#F5A524"
+        : p.kind === "technician" ? "#10b981"
+        : p.kind === "active-job" ? "#8b5cf6"
+        : "#3b82f6";
+
+      const icon = L.divIcon({
+        className: "mek-map-marker",
+        html: `
+          <div style="position: relative; display: grid; place-items: center;">
+            ${p.kind === "technician" ? `<span style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background: ${color}33; animation: mek-map-pulse 2s infinite;"></span>` : ""}
+            ${p.kind === "customer" ? `<span style="position: absolute; width: 24px; height: 24px; border-radius: 50%; background: ${color}1a;"></span>` : ""}
+            <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background: ${color}; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4);"></div>
+          </div>
+        `,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      });
+
+      const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
+      if (p.label) marker.bindPopup(p.label);
+      map._mekMarkers.push(marker);
+      bounds.push([p.lat, p.lng]);
+    });
+
+    // Draw route
+    const r = routeRef.current;
+    if (r && r.length > 1) {
+      const latlngs = r.map((pt) => [pt.lat, pt.lng] as [number, number]);
+      const polyline = L.polyline(latlngs, {
+        color: "#F5A524", weight: 4, opacity: 0.8, dashArray: "6 8",
+      }).addTo(map);
+      map._mekMarkers.push(polyline);
+      bounds.push(...latlngs);
+    }
+
+    // Only fit bounds on initial load (not on every marker update)
+    if (fitBounds) {
+      if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+      } else if (bounds.length === 1) {
+        map.setView(bounds[0], 14);
+      }
+    }
+  }
 
   // Initialize map ONCE on mount.
   useEffect(() => {
@@ -114,66 +176,6 @@ export function LeafletMap({
     if (!L || !map) return;
     updateMarkersOnly(L, map, false);
   }, [points, route]);
-
-  function updateMarkersAndBounds(L: any, map: any) {
-    updateMarkersOnly(L, map, true);
-  }
-
-  function updateMarkersOnly(L: any, map: any, fitBounds: boolean) {
-    // Clear existing markers (those we added — keep search markers)
-    if (!map._mekMarkers) map._mekMarkers = [];
-    map._mekMarkers.forEach((m: any) => map.removeLayer(m));
-    map._mekMarkers = [];
-
-    const allPoints = pointsRef.current ?? [];
-    const bounds: [number, number][] = [];
-
-    allPoints.forEach((p) => {
-      const color =
-        p.kind === "customer" ? "#F5A524"
-        : p.kind === "technician" ? "#10b981"
-        : p.kind === "active-job" ? "#8b5cf6"
-        : "#3b82f6";
-
-      const icon = L.divIcon({
-        className: "mek-map-marker",
-        html: `
-          <div style="position: relative; display: grid; place-items: center;">
-            ${p.kind === "technician" ? `<span style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background: ${color}33; animation: mek-map-pulse 2s infinite;"></span>` : ""}
-            ${p.kind === "customer" ? `<span style="position: absolute; width: 24px; height: 24px; border-radius: 50%; background: ${color}1a;"></span>` : ""}
-            <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background: ${color}; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4);"></div>
-          </div>
-        `,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
-      });
-
-      const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-      if (p.label) marker.bindPopup(p.label);
-      map._mekMarkers.push(marker);
-      bounds.push([p.lat, p.lng]);
-    });
-
-    // Draw route
-    const r = routeRef.current;
-    if (r && r.length > 1) {
-      const latlngs = r.map((pt) => [pt.lat, pt.lng] as [number, number]);
-      const polyline = L.polyline(latlngs, {
-        color: "#F5A524", weight: 4, opacity: 0.8, dashArray: "6 8",
-      }).addTo(map);
-      map._mekMarkers.push(polyline);
-      bounds.push(...latlngs);
-    }
-
-    // Only fit bounds on initial load (not on every marker update)
-    if (fitBounds) {
-      if (bounds.length > 1) {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-      } else if (bounds.length === 1) {
-        map.setView(bounds[0], 14);
-      }
-    }
-  }
 
   // Geocoding search via Nominatim (free, works in Iran)
   const search = async () => {

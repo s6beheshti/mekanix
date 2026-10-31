@@ -1,50 +1,53 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
+import { verifyAndFulfillGatewayCallback } from "@/lib/payment-fulfillment";
+import { rateLimitAsync } from "@/lib/rate-limit";
 
-// Verify a payment (simulate Shaparak OTP verify).
-// In production: would call Zarinpal/IDPay verify API with the authority.
-// Here: any non-empty OTP succeeds; we mark the log as VERIFIED and create a Payment.
+/**
+ * Compatibility endpoint for clients that complete the return flow themselves.
+ * A bank-card OTP is never accepted here: only a provider callback reference
+ * followed by server-to-server verification can confirm a payment.
+ */
 export async function POST(req: Request) {
-  const { code, otp, purpose, userId } = await req.json();
-  if (!code) return NextResponse.json({ error: "code is required" }, { status: 400 });
-  if (!otp || otp.length < 4) {
-    return NextResponse.json({ error: "Invalid OTP" }, { status: 400 });
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  const limited = await rateLimitAsync("payment:verify:user:" + session.userId, 5, 60_000);
+  if (!limited.success) {
+    return NextResponse.json({ error: "تعداد درخواست‌های تأیید پرداخت بیش از حد مجاز است" }, {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(limited.resetMs / 1000)) },
+    });
+  }
+
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  const code = typeof body?.code === "string" ? body.code.trim() : "";
+  const authority = typeof body?.authority === "string" ? body.authority.trim() : "";
+  const status = typeof body?.status === "string" ? body.status.trim() : "";
+
+  if (!code || !authority || !status) {
+    return NextResponse.json(
+      { error: "برای تأیید پرداخت، شناسه درگاه و وضعیت بازگشت معتبر لازم است؛ رمز یک‌بارمصرف بانکی قابل قبول نیست." },
+      { status: 400 }
+    );
   }
 
   const log = await db.paymentGatewayLog.findUnique({ where: { code } });
-  if (!log) return NextResponse.json({ error: "Payment log not found" }, { status: 404 });
-  if (log.status === "VERIFIED") return NextResponse.json({ error: "Already verified" }, { status: 400 });
-
-  // Resolve userId: prefer explicit from client, else log.userId, else error
-  const payerUserId = userId ?? log.userId;
-  if (!payerUserId) {
-    return NextResponse.json({ error: "userId required for payment record" }, { status: 400 });
+  if (!log) return NextResponse.json({ error: "تراکنش یافت نشد" }, { status: 404 });
+  if (log.userId !== session.userId) {
+    return NextResponse.json({ error: "دسترسی به این تراکنش مجاز نیست" }, { status: 403 });
   }
 
-  // Simulate success (any 4+ digit OTP succeeds in demo mode)
-  const verified = await db.paymentGatewayLog.update({
-    where: { id: log.id },
-    data: { status: "VERIFIED", verifiedAt: new Date() },
-  });
-
-  // Create a Payment record linked to the user
-  const payment = await db.payment.create({
-    data: {
-      code: `PAY-${Math.floor(8000 + Math.random() * 1000)}`,
-      invoiceId: null, // gateway payments are standalone (not tied to invoice)
-      userId: payerUserId,
-      amount: log.amount,
-      currency: "IRR",
-      method: "card",
-      status: "SUCCEEDED",
-    },
-  });
-
-  // Link the gateway log to the payment
-  await db.paymentGatewayLog.update({
-    where: { id: log.id },
-    data: { paymentId: payment.id },
-  });
-
-  return NextResponse.json({ ok: true, paymentId: payment.id, amount: log.amount, purpose: log.purpose });
+  try {
+    const result = await verifyAndFulfillGatewayCallback(code, authority, status, {
+      status,
+      order_id: code,
+      ...(log.gateway === "SHAPARAK_SIM" ? { simulator: "true" } : {}),
+    });
+    return NextResponse.json({ ok: true, paymentId: result.paymentId, alreadyProcessed: result.alreadyProcessed });
+  } catch (error) {
+    console.error("[payment] Authenticated verification failed:", error);
+    return NextResponse.json({ error: "تأیید تراکنش از سوی درگاه انجام نشد" }, { status: 409 });
+  }
 }
