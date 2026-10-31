@@ -216,6 +216,7 @@ export async function initiatePayment(req: Request, bodyOverride?: Record<string
         error: "نرخ تبدیل به‌روزرسانی شده است؛ مبلغ جدید را بررسی و دوباره تأیید کنید",
         code: "AMOUNT_CHANGED",
         gatewayAmountIrr: amount,
+        amountUsd,
         exchangeRate,
       },
       { status: 409 },
