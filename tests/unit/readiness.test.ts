@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { queryRaw } = vi.hoisted(() => ({
+const { queryRaw, redisAvailable } = vi.hoisted(() => ({
   queryRaw: vi.fn(async () => [{ count: 1 }]),
+  redisAvailable: vi.fn(async () => true),
 }));
 
 vi.mock("@/lib/db", () => ({
   db: { $queryRaw: queryRaw },
+}));
+
+vi.mock("@/lib/redis", () => ({
+  isRedisAvailable: redisAvailable,
 }));
 
 vi.mock("@/lib/sms-provider", () => ({
@@ -32,6 +37,7 @@ describe("production readiness URL and deployment mode", () => {
     vi.stubEnv("JWT_SECRET", "unit-test-secret-with-at-least-32-characters");
     vi.stubEnv("APP_URL", "https://mekanix.ir");
     queryRaw.mockResolvedValue([{ count: 1 }]);
+    redisAvailable.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -51,6 +57,17 @@ describe("production readiness URL and deployment mode", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.checks.paymentCallbackUrl).toBe(true);
+  });
+
+  it("requires live Redis in staging instead of accepting in-memory fallback", async () => {
+    vi.stubEnv("DEPLOYMENT_ENV", "staging");
+    redisAvailable.mockResolvedValue(false);
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.redis).toBe(false);
   });
 
   it("rejects a weak production JWT signing secret", async () => {
