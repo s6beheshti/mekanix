@@ -127,6 +127,46 @@ describe("payment initiation server-side authority", () => {
     });
   });
 
+  it("accepts a production redirect only from the configured gateway host", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://mekanix.ir");
+    mocks.getPaymentProviderStatus.mockReturnValue({ configured: true, provider: "idpay" });
+    mocks.createPayment.mockResolvedValue({
+      success: true,
+      authority: "idpay-authority",
+      paymentUrl: "https://idpay.ir/p/secure-payment",
+    });
+
+    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects a production redirect to an untrusted host", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+    vi.stubEnv("APP_URL", "https://mekanix.ir");
+    mocks.getPaymentProviderStatus.mockReturnValue({ configured: true, provider: "idpay" });
+    mocks.createPayment.mockResolvedValue({
+      success: true,
+      authority: "idpay-authority",
+      paymentUrl: "https://evil.example/collect",
+    });
+
+    const response = await postPayment({ purpose: "vip", planId: "plan-1" });
+
+    expect(response.status).toBe(502);
+    expect(mocks.db.payment.update).toHaveBeenCalledWith({
+      where: { id: "payment-1" },
+      data: { status: "FAILED" },
+    });
+    expect(mocks.db.userVipSubscription.update).toHaveBeenCalledWith({
+      where: { id: "subscription-1" },
+      data: { status: "CANCELLED" },
+    });
+  });
+
   it("blocks a second pending VIP subscription before reserving another payment", async () => {
     mocks.db.userVipSubscription.findFirst.mockResolvedValue({ id: "pending-subscription" });
 
