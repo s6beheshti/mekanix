@@ -62,7 +62,7 @@ export async function fulfillVerifiedPayment(
     let invoiceId: string | null = null;
     if (metadata.kind === "invoice") {
       const invoice = await tx.invoice.findUnique({ where: { id: metadata.invoiceId } });
-      if (!invoice || ["PAID", "DRAFT"].includes(invoice.status) || Math.round(Number(invoice.total)) !== Number(log.amount)) {
+      if (!invoice || (invoice.status === "PAID" || invoice.status === "DRAFT") || Math.round(Number(invoice.total)) !== Number(log.amount)) {
         throw new Error("Invoice is unavailable or its amount changed");
       }
       invoiceId = invoice.id;
