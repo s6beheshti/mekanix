@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { db } from "@/lib/db";
+import { PrismaClient } from "@prisma/client";
+
+const db = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL ?? "file:./test.db" });
 
 const indexName = "PaymentGatewayLog_pending_user_purpose_key";
 
