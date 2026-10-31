@@ -61,7 +61,7 @@ describe("production readiness URL and deployment mode", () => {
     expect(response.status).toBe(503);
     expect(body.ok).toBe(false);
     expect(body.checks.paymentCallbackUrl).toBe(false);
-    expect(body.errors.join(" ")).toContain("public HTTPS origin");
+    expect(body.errors.join(" ")).toContain("inspect server logs");
   });
 
   it("rejects APP_URL values containing paths or credentials", async () => {
