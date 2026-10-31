@@ -57,6 +57,7 @@ services:
       - BACKUP_ENCRYPTION_REQUIRED=true
       - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
       - BACKUP_ADMIN_TOKEN=${BACKUP_ADMIN_TOKEN:-}
+      - BACKUP_ALERT_WEBHOOK_URL=${BACKUP_ALERT_WEBHOOK_URL:-}
     volumes:
       - backupdata:/backups
     depends_on:
