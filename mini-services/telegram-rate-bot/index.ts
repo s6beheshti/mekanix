@@ -1,13 +1,12 @@
 // Telegram rate scraper — stores a fresh USD/IRR market rate in the shared database.
 import { PrismaClient } from "@prisma/client";
-import { parseTelegramUsdIrrQuote } from "../../src/lib/rate-parser";
+import { parseTelegramUsdIrrQuote, TELEGRAM_RATE_MAX_AGE_MS, TELEGRAM_RATE_MAX_FUTURE_SKEW_MS } from "../../src/lib/rate-parser";
 
 const db = new PrismaClient();
 const channel = process.env.TELEGRAM_RATE_CHANNEL || "NerkhDollarIRT";
 const rateUnit = process.env.TELEGRAM_RATE_UNIT === "rial" ? "rial" : "toman";
 const port = Number(process.env.PORT || 3004);
 const pollIntervalMs = Math.max(30_000, Number(process.env.POLL_INTERVAL_MS || 60_000));
-const MAX_RATE_AGE_MS = 15 * 60 * 1000;
 
 const server = Bun.serve({
   port,
@@ -28,8 +27,8 @@ const server = Bun.serve({
         rate >= 100_000 &&
         rate <= 100_000_000 &&
         ageMs !== null &&
-        ageMs >= 0 &&
-        ageMs <= MAX_RATE_AGE_MS;
+        ageMs >= -TELEGRAM_RATE_MAX_FUTURE_SKEW_MS &&
+        ageMs <= TELEGRAM_RATE_MAX_AGE_MS;
       return Response.json(
         { ok, rate: Number.isFinite(rate) ? rate : null, source: sourceSetting?.value ?? "unknown", ageMs },
         { status: ok ? 200 : 503 },
@@ -66,14 +65,14 @@ async function fetchAndStoreRate(): Promise<number | null> {
       return await fetchFallbackApi();
     }
     const html = await res.text();
-    const quote = parseFreshTelegramUsdIrrQuote(html, rateUnit, Date.now(), MAX_RATE_AGE_MS);
+    const quote = parseTelegramUsdIrrQuote(html, rateUnit, Date.now());
     if (
       quote &&
       Number.isSafeInteger(quote.rate) &&
       quote.rate >= 100_000 &&
       quote.rate <= 100_000_000
     ) {
-      const quotedAt = new Date(quote.postedAt);
+      const quotedAt = quote.postedAt;
       await db.platformSetting.upsert({
         where: { key: "usd_irr_rate_telegram" },
         update: { value: String(quote.rate), description: `@${channel}`, updatedAt: quotedAt },
