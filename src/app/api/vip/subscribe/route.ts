@@ -8,5 +8,9 @@ export async function POST(req: Request) {
   if (!body || typeof body.planId !== "string" || !body.planId.trim()) {
     return NextResponse.json({ error: "planId الزامی است" }, { status: 400 });
   }
-  return initiatePayment(req, { purpose: "vip", planId: body.planId });
+  return initiatePayment(req, {
+    purpose: "vip",
+    planId: body.planId,
+    expectedAmountIrr: typeof body.expectedAmountIrr === "number" ? body.expectedAmountIrr : undefined,
+  });
 }
