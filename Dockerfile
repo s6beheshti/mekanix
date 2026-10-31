@@ -11,7 +11,8 @@ RUN bun install --frozen-lockfile
 # ─── Stage 2: Build application ───
 FROM node:20-slim AS builder
 WORKDIR /app
-RUN npm install -g bun
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN npm install -g bun@1.4.4
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bunx prisma generate
