@@ -27,10 +27,8 @@ elif [ "$TARGET" = "postgresql" ]; then
   echo "✅ Schema provider set to postgresql"
   echo ""
   echo "To apply PostgreSQL migrations:"
-  echo "  rm -rf prisma/migrations"
-  echo "  mkdir -p prisma/migrations/20260925000000_init"
-  echo "  cp prisma/migrations-postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/"
-  echo "  cp prisma/migrations-postgresql/migration_lock.toml prisma/migrations/"
+  echo "  rm -rf prisma/migrations && mkdir -p prisma/migrations"
+  echo "  cp -a prisma/migrations-postgresql/. prisma/migrations/"
   echo "  export DATABASE_URL=postgresql://user:pass@host:5432/mekanix"
   echo "  bunx prisma migrate deploy"
 
