@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { queryRaw, redisAvailable } = vi.hoisted(() => ({
+const { queryRaw, redisAvailable, exchangeRateSnapshot } = vi.hoisted(() => ({
   queryRaw: vi.fn(async () => [{ count: 1 }]),
   redisAvailable: vi.fn(async () => true),
+  exchangeRateSnapshot: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -11,6 +12,10 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/redis", () => ({
   isRedisAvailable: redisAvailable,
+}));
+
+vi.mock("@/lib/exchange-rate", () => ({
+  getUsdIrrRateSnapshot: exchangeRateSnapshot,
 }));
 
 vi.mock("@/lib/sms-provider", () => ({
@@ -39,6 +44,16 @@ describe("production readiness URL and deployment mode", () => {
     vi.stubEnv("APP_URL", "https://mekanix.ir");
     queryRaw.mockResolvedValue([{ count: 1 }]);
     redisAvailable.mockResolvedValue(true);
+    exchangeRateSnapshot.mockResolvedValue({
+      rate: 6_000_000,
+      baseRate: 6_000_000,
+      multiplier: 1,
+      source: "telegram",
+      fetchedAt: Date.now(),
+      rateUpdatedAt: Date.now(),
+      ageMs: 0,
+      trustedForPayments: true,
+    });
   });
 
   afterEach(() => {
@@ -58,6 +73,25 @@ describe("production readiness URL and deployment mode", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.checks.paymentCallbackUrl).toBe(true);
+  });
+
+  it("requires a fresh trusted Telegram rate for production payments", async () => {
+    exchangeRateSnapshot.mockResolvedValue({
+      rate: 6_000_000,
+      baseRate: 6_000_000,
+      multiplier: 1,
+      source: "mekanix-internal",
+      fetchedAt: Date.now(),
+      rateUpdatedAt: null,
+      ageMs: null,
+      trustedForPayments: false,
+    });
+
+    const response = await getReadyResponse();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.exchangeRateTrusted).toBe(false);
   });
 
   it("rejects weak PostgreSQL credentials in production", async () => {
