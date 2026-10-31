@@ -19,6 +19,7 @@ jobs:
       DEPLOYMENT_ENV: staging
       SMS_PROVIDER: console
       PAYMENT_PROVIDER: simulator
+      BACKUP_ENCRYPTION_PASSPHRASE: ci_backup_encryption_passphrase_32_characters
     
     steps:
       - uses: actions/checkout@v4
