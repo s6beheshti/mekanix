@@ -11,15 +11,15 @@
 1. Initialize the payment provider in src/lib/init.ts.
 2. Prevent production from silently falling back to a successful payment simulator when the configured provider is missing or unsupported.
 3. Mark NextPay as unsupported until its actual create/verify integration is implemented.
-4. Disable the legacy simulated /api/gateway/initiate and /api/gateway/verify handlers in production. In development they remain available for local UI testing only.
-5. Keep /api/ready blocked until the real gateway create → redirect → callback → verify → idempotent settlement flow is connected to the customer payment UI.
+4. Disable all simulated settlement paths in production: /api/gateway/initiate, /api/gateway/verify, and /api/payments. In development they remain available for local UI testing only.
+5. Hide card/CVV collection in the production payment dialog and keep /api/ready blocked until the real gateway create → redirect → callback → verify → idempotent settlement flow is connected to the customer payment UI.
 6. Require PostgreSQL URL format in production readiness.
 7. Treat missing MeliPayamak/Farapayamak sender IDs as provider misconfiguration.
 8. Require production secrets and explicit production SMS/payment providers in Docker Compose; enable Redis AOF.
 9. Make scripts/deploy.sh validate strong secrets/provider credentials and poll both liveness and production readiness.
 10. Avoid returning raw dependency error messages from the public health endpoint.
 11. Reconcile the checklist: 204 rows = 100 Done, 33 Prepared, 65 Pending, 6 Partial. The former 137-item summary was inconsistent.
-12. Add v1.0.1 unreleased notes and clarify development-only placeholders in .env.example.
+12. Add regression tests for all three production payment blocks. Add v1.0.1 unreleased notes and clarify development-only placeholders in .env.example.
 
 ## Critical findings still open
 - Payment is not launch-ready: the payment abstraction is not wired into the current customer-facing gateway routes. The legacy fake flow is blocked in production; the real callback, amount verification, ownership binding, idempotency, and settlement transaction still need implementation and provider sandbox testing.
