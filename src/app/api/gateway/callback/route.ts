@@ -195,8 +195,7 @@ async function handleCallback(req: NextRequest) {
       if (!["SENT", "APPROVED", "OVERDUE"].includes(invoice.status)) {
         throw new Error("Invoice is no longer payable");
       }
-      if (invoice.status !== "PAID") {
-        await tx.invoice.update({ where: { id: invoice.id }, data: { status: "PAID" } });
+      await tx.invoice.update({ where: { id: invoice.id }, data: { status: "PAID" } });
         await tx.job.update({
           where: { id: invoice.jobId },
           data: { status: "COMPLETED", completedAt: new Date() },
@@ -230,8 +229,6 @@ async function handleCallback(req: NextRequest) {
             },
           });
         }
-      }
-
       await tx.paymentGatewayLog.update({
         where: { id: log.id },
         data: {
