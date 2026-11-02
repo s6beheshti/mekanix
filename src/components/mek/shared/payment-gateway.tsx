@@ -25,6 +25,8 @@ export function PaymentGatewayDialog({
   purpose,
   description,
   userId,
+  planId,
+  invoiceId,
   onSuccess,
 }: {
   open: boolean;
@@ -33,6 +35,8 @@ export function PaymentGatewayDialog({
   purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
   description?: string;
   userId?: string;
+  planId?: string;
+  invoiceId?: string;
   onSuccess?: (paymentId: string, amount: number) => void;
 }) {
   const { t, isFa, money } = useT();
@@ -105,6 +109,27 @@ export function PaymentGatewayDialog({
     }
   };
 
+  const initiateRealCheckout = async () => {
+    if (!planId && !invoiceId) {
+      toast.error(isFa ? "شناسه طرح یا فاکتور برای پرداخت مشخص نیست" : "Missing plan or invoice reference");
+      return;
+    }
+    setStage("processing");
+    try {
+      const res = await authFetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(planId ? { planId } : { invoiceId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.redirectUrl) throw new Error(data.error || t("pay.gateway.failed"));
+      window.location.assign(data.redirectUrl);
+    } catch (e: any) {
+      toast.error(e.message ?? t("pay.gateway.failed"));
+      setStage("failed");
+    }
+  };
+
   const verify = async () => {
     if (otp.length < 4) {
       toast.error(t("pay.gateway.otp"));
@@ -155,15 +180,20 @@ export function PaymentGatewayDialog({
           {stage === "form" && process.env.NODE_ENV === "production" && (
             <div className="space-y-3 rounded-lg border border-amber/30 bg-amber/5 p-4 text-center">
               <ShieldCheck className="mx-auto size-8 text-amber" />
-              <h3 className="font-semibold">{isFa ? "درگاه پرداخت در حال راه‌اندازی است" : "Payment gateway is being configured"}</h3>
+              <h3 className="font-semibold">{isFa ? "پرداخت امن بانکی" : "Secure bank payment"}</h3>
               <p className="text-sm text-muted-foreground">
                 {isFa
-                  ? "برای حفظ امنیت، دریافت اطلاعات کارت و پرداخت آزمایشی در نسخه عملیاتی غیرفعال است. پس از اتصال درگاه بانکی، پرداخت فعال خواهد شد."
-                  : "For your security, card collection and simulated payments are disabled in production. Payments will be enabled after the bank gateway is integrated."}
+                  ? "پس از ادامه، به درگاه بانکی معتبر منتقل می‌شوید. اطلاعات کارت فقط در صفحه رسمی بانک وارد می‌شود."
+                  : "Continue to the verified bank gateway. Card details are entered only on the bank's official page."}
               </p>
-              <Button onClick={close} variant="outline" className="w-full">
-                {t("common.close")}
-              </Button>
+              {(planId || invoiceId) ? (
+                <Button onClick={initiateRealCheckout} className="w-full bg-amber text-black hover:bg-amber/90">
+                  <Lock className="mr-2 size-4" /> {isFa ? "ادامه به درگاه بانکی" : "Continue to bank"}
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">{isFa ? "این نوع پرداخت هنوز به فرایند پرداخت واقعی متصل نشده است." : "This payment type is not yet connected to the live checkout flow."}</p>
+              )}
+              <Button onClick={close} variant="outline" className="w-full">{t("common.close")}</Button>
             </div>
           )}
           {stage === "form" && process.env.NODE_ENV !== "production" && (
