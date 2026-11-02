@@ -14,6 +14,7 @@
 - Require authentication and a matching successful payment for the VIP subscription API.
 - Keep sandbox mode configurable for staging and reject sandbox mode in production readiness/deployment.
 - Make deployment verify /api/ready after liveness instead of treating /api/health alone as proof of readiness.
+- Add an isolated staging profile that permits sandbox gateway credentials and console OTP only under APP_ENV=staging; add docs/STAGING_RUNBOOK.md.
 - Avoid returning raw internal dependency errors from the public health endpoint.
 - Correct the production readiness checklist totals and mark the existing changelog and payment-provider startup work accurately.
 - Record the remaining local IRANSans font asset requirement; current runtime font is Vazirmatn.
