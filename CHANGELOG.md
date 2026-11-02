@@ -5,13 +5,15 @@
 ### Security and release hardening
 - Initialize the configured payment provider during server startup.
 - Fail closed in production when the payment provider is missing, unsupported, or not configured; simulator fallback is development-only.
-- Block legacy simulated gateway initiate/verify endpoints in production until the real callback and settlement flow is integrated.
+- Block all simulated payment/settlement endpoints (/api/gateway/initiate, /api/gateway/verify, /api/payments) in production until the real callback and settlement flow is integrated.
 - Require a real PostgreSQL connection string, configured SMS sender credentials, and a verified payment integration before production readiness can pass.
 - Require production secrets and real provider configuration in the production Docker Compose deployment.
 - Enable Redis AOF persistence in the production Compose stack.
+- Hide card/CVV collection in the production payment dialog while the real bank gateway is unavailable.
 - Make deployment verify /api/ready after liveness instead of treating /api/health alone as proof of readiness.
 - Avoid returning raw internal dependency errors from the public health endpoint.
 - Correct the production readiness checklist totals and mark the existing changelog and payment-provider startup work accurately.
+- Record the remaining local IRANSans font asset requirement; current runtime font is Vazirmatn.
 
 ### Known release blockers
 - Wire the production gateway create → redirect → callback → verify → idempotent settlement flow to the existing customer payment UI.
