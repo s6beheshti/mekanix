@@ -5,6 +5,13 @@ import { db } from "@/lib/db";
 // In production: would call Zarinpal/IDPay verify API with the authority.
 // Here: any non-empty OTP succeeds; we mark the log as VERIFIED and create a Payment.
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "درگاه آزمایشی غیرفعال است؛ اتصال درگاه عملیاتی باید تکمیل شود" },
+      { status: 503 }
+    );
+  }
+
   const { code, otp, purpose, userId } = await req.json();
   if (!code) return NextResponse.json({ error: "code is required" }, { status: 400 });
   if (!otp || otp.length < 4) {
