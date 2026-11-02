@@ -171,6 +171,15 @@ function createIdpayProvider(apiKey: string): { create: CreatePaymentFn; verify:
 
 // ──────────── Initialization ────────────
 
+const unavailableCreate: CreatePaymentFn = async () => ({
+  success: false,
+  error: "درگاه پرداخت عملیاتی پیکربندی نشده است",
+});
+const unavailableVerify: VerifyPaymentFn = async () => ({
+  success: false,
+  error: "درگاه پرداخت عملیاتی پیکربندی نشده است",
+});
+
 let currentCreate = simulatorCreate;
 let currentVerify = simulatorVerify;
 let initialized = false;
@@ -191,15 +200,16 @@ export function initPaymentProvider(): void {
     const i = createIdpayProvider(process.env.IDPAY_API_KEY);
     currentCreate = i.create;
     currentVerify = i.verify;
-  } else if (provider === "nextpay" && process.env.NEXTPAY_API_KEY) {
-    // NextPay provider — stub for now (implementation follows same pattern)
-    // Real wiring requires NEXTPAY_API_KEY + verifying their API contract
-    console.log("💳 Payment provider: NextPay (stub — not yet implemented, falling back to simulator)");
+  } else if (process.env.NODE_ENV === "production") {
+    // Never silently fall back to a successful simulator in production.
+    currentCreate = unavailableCreate;
+    currentVerify = unavailableVerify;
+    console.error(`❌ Payment provider unavailable in production (configured provider: ${provider || "unset"})`);
   } else {
     if (provider && provider !== "simulator") {
-      console.warn(`⚠️  PAYMENT_PROVIDER=${provider || "unset"} but required credentials missing — using simulator`);
+      console.warn(`⚠️  PAYMENT_PROVIDER=${provider} is unavailable — using simulator in development only`);
     }
-    console.log("💳 Payment provider: simulator (dev mode)");
+    console.log("💳 Payment provider: simulator (development only)");
   }
 }
 
@@ -217,9 +227,9 @@ export async function verifyPayment(authority: string, amount: number): Promise<
 
 export function getPaymentProviderStatus(): { configured: boolean; provider: string } {
   const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim() || "simulator";
-  let configured = true;
+  let configured = provider === "zarinpal" || provider === "idpay";
   if (provider === "zarinpal" && !process.env.ZARINPAL_MERCHANT_ID) configured = false;
   if (provider === "idpay" && !process.env.IDPAY_API_KEY) configured = false;
-  if (provider === "nextpay" && !process.env.NEXTPAY_API_KEY) configured = false;
+  // NextPay is intentionally unsupported until its create/verify contract is implemented.
   return { configured, provider };
 }
