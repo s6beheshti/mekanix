@@ -22,8 +22,8 @@
 12. Add regression tests for production payment guards and provider create/verify contracts. Add v1.0.1 notes and document APP_URL and gateway sandbox settings.
 
 ## Critical findings still open
-- Invoice payment code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs, with server-derived invoice amount, authenticated ownership checks, provider callback verification, and transactional idempotent settlement. It is **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
-- No CI result exists yet for this branch: a PR to main is required to run the repository workflows.
+- Invoice and VIP checkout code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs. Amount and plan are server-derived, user ownership comes from the authenticated session, callbacks are verified server-to-server, and settlement/benefit activation is transactional. VIP activation now requires a matching verified payment; the former free-activation endpoint is closed. These flows are **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
+- CI is configured on the release PR. The latest revision's four workflows are running; only completed green checks count as validated.
 - No staging environment has been deployed: PostgreSQL migration, Redis persistence, production image, backup/restore, and full workflow need an actual host.
 - External integrations are not verified: real OTP delivery, payment sandbox/live transaction, and routing provider require credentials and test accounts.
 - Operational security is not verified: branch protection is disabled on main; no release exists; OWASP ZAP, penetration test, load test, monitoring/alerts, and restore drill need execution.
@@ -34,8 +34,8 @@
 **NO-GO for public production release.** The code changes above reduce the risk of accidental fake payments and make deployment fail closed, but they do not replace the missing real payment integration or live staging verification.
 
 ## Required sequence to reach GO
-1. Run the new provider contract tests in CI, then perform real Zarinpal or IDPay sandbox transactions and verify callback delivery, amount matching, repeat-callback idempotency, and failed/cancelled flows.
-2. Pass all release PR checks.
+1. Pass all provider contract tests in CI, then perform real Zarinpal or IDPay sandbox transactions and verify callback delivery, amount matching, repeat-callback idempotency, and failed/cancelled flows.
+2. Pass all release PR checks, including PostgreSQL migration and Docker E2E.
 3. Deploy to isolated staging with PostgreSQL and Redis; verify migrations, OTP, payments, admin, customer/technician flows, backup/restore.
 4. Run OWASP ZAP, dependency audit, load test, and mobile/browser QA; resolve all critical/high findings.
 5. Provision production secrets and infrastructure; execute deployment and require /api/ready = 200.
