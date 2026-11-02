@@ -36,7 +36,7 @@ export async function GET() {
   } catch (e) {
     health.services.database = "unhealthy";
     health.ok = false;
-    health.warnings.push(`Database: ${(e as Error).message}`);
+    health.warnings.push("Database: connection failed");
   }
 
   // ─── 2. Redis ───
@@ -57,7 +57,7 @@ export async function GET() {
     }
   } catch (e) {
     health.services.redis = "unhealthy (using in-memory fallback)";
-    health.warnings.push(`Redis: ${(e as Error).message} — using in-memory fallback`);
+    health.warnings.push("Redis: connection failed — using in-memory fallback");
   }
 
   // ─── 3. SMS Provider ───
@@ -74,7 +74,7 @@ export async function GET() {
     }
   } catch (e) {
     health.services.sms = "unknown";
-    health.warnings.push(`SMS: ${(e as Error).message}`);
+    health.warnings.push("SMS: provider status could not be read");
   }
 
   // ─── 4. ETA Provider ───
