@@ -64,7 +64,8 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
   return {
     create: async (req) => {
       try {
-        const res = await fetch("https://api.zarinpal.com/pg/v4/payment/request.json", {
+        const apiBase = process.env.ZARINPAL_SANDBOX === "true" ? "https://sandbox.zarinpal.com" : "https://api.zarinpal.com";
+        const res = await fetch(apiBase + "/pg/v4/payment/request.json", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -92,7 +93,8 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
     },
     verify: async (authority, amount) => {
       try {
-        const res = await fetch("https://api.zarinpal.com/pg/v4/payment/verify.json", {
+        const apiBase = process.env.ZARINPAL_SANDBOX === "true" ? "https://sandbox.zarinpal.com" : "https://api.zarinpal.com";
+        const res = await fetch(apiBase + "/pg/v4/payment/verify.json", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
