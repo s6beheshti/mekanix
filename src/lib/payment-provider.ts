@@ -91,7 +91,7 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
         return { success: false, error: (e as Error).message };
       }
     },
-    verify: async (authority, amount, orderId) => {
+    verify: async (authority, amount) => {
       try {
         const apiBase = process.env.ZARINPAL_SANDBOX === "true" ? "https://sandbox.zarinpal.com" : "https://api.zarinpal.com";
         const res = await fetch(apiBase + "/pg/v4/payment/verify.json", {
