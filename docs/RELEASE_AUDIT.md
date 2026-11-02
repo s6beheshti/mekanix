@@ -11,8 +11,8 @@
 1. Initialize the payment provider in src/lib/init.ts.
 2. Prevent production from silently falling back to a successful payment simulator when the configured provider is missing or unsupported.
 3. Mark NextPay as unsupported until its actual create/verify integration is implemented.
-4. Disable legacy simulator endpoints in production; replace invoice checkout with an authenticated real-provider request that derives invoice amount and payer from the database/session.
-5. Implement the real invoice create → redirect → callback → server verification → idempotent settlement path for Zarinpal and IDPay, including the customer invoice redirect.
+4. Disable legacy simulator endpoints in production; use authenticated real-provider requests for invoice, pre-service, and VIP checkout, deriving amounts and payer identity from the database/session.
+5. Implement real invoice, pre-service, and VIP create → redirect → callback → server verification → idempotent settlement paths for Zarinpal and IDPay, including the customer result redirect.
 6. Require PostgreSQL URL format in production readiness.
 7. Treat missing MeliPayamak/Farapayamak sender IDs as provider misconfiguration.
 8. Require production secrets and explicit production SMS/payment providers in Docker Compose; enable Redis AOF. Separate staging mode from live production so only staging can use console OTP and provider sandbox credentials.
@@ -24,7 +24,7 @@
 - Add an isolated staging profile with sandbox-only gateway settings, console OTP, HTTPS callback origin, and a step-by-step staging verification runbook. Staging must use a real sandbox provider, never the successful payment simulator.
 
 ## Critical findings still open
-- Invoice and VIP checkout code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs. Amount and plan are server-derived, user ownership comes from the authenticated session, callbacks are verified server-to-server, and settlement/benefit activation is transactional. VIP activation now requires a matching verified payment; the former free-activation endpoint is closed. These flows are **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
+- Invoice, pre-service, and VIP checkout code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs. Amount and plan are server-derived, user ownership comes from the authenticated session, callbacks are verified server-to-server, and invoice settlement, technician prepay wallet credit, and VIP activation are transactional. VIP activation now requires a matching verified payment; the former free-activation endpoint is closed. These flows are **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
 - CI is configured on the release PR. The latest revision's four workflows are running; only completed green checks count as validated.
 - No staging environment has been deployed: PostgreSQL migration, Redis persistence, production image, backup/restore, and full workflow need an actual host.
 - External integrations are not verified: real OTP delivery, payment sandbox/live transaction, and routing provider require credentials and test accounts.
