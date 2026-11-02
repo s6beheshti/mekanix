@@ -11,7 +11,7 @@ import { getPaymentProviderStatus } from "@/lib/payment-provider";
 //   - Database must be reachable (PostgreSQL, not SQLite in production)
 //   - Migrations must be applied
 //   - SMS provider must NOT be "console" in production
-//   - Payment provider must NOT be "simulator" in production
+//   - Payment provider must be a configured live provider; sandbox is forbidden in production
 //   - DATABASE_URL must start with "postgresql://" in production
 //
 // Returns 200 if ready, 503 if not ready.
@@ -79,10 +79,23 @@ export async function GET() {
       ready.ok = false;
       ready.errors.push(`Payment: ${payStatus.provider} provider misconfigured`);
     } else {
-      // The legacy /api/gateway/* endpoints are intentionally blocked in production
-      // until they are connected to createPayment()/verifyPayment() and a verified callback.
-      ready.ok = false;
-      ready.errors.push("Payment: provider credentials exist, but production gateway/callback flow is not yet integrated");
+      // Real invoice checkout + verified callback are implemented. Do not permit sandbox
+      // credentials or an insecure/missing public callback base in production.
+      const appUrl = process.env.APP_URL || "";
+      const sandboxEnabled = process.env.IDPAY_SANDBOX === "true" || process.env.ZARINPAL_SANDBOX === "true";
+      let secureAppUrl = false;
+      try {
+        secureAppUrl = new URL(appUrl).protocol === "https:";
+      } catch {}
+      if (sandboxEnabled) {
+        ready.ok = false;
+        ready.errors.push("Payment: sandbox mode must be disabled in production");
+      } else if (!secureAppUrl) {
+        ready.ok = false;
+        ready.errors.push("Payment: APP_URL must be a valid HTTPS origin for bank callbacks");
+      } else {
+        ready.checks.paymentProvider = true;
+      }
     }
 
     // 3c. Database must be PostgreSQL in production (not SQLite)
