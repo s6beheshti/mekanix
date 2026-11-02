@@ -30,6 +30,19 @@ async function startVipCheckout(planId: string, userId: string, providerName: st
     return NextResponse.json({ error: "APP_URL معتبر نیست" }, { status: 503 });
   }
 
+  const activeCheckout = await db.paymentGatewayLog.findFirst({
+    where: {
+      userId,
+      purpose: "vip",
+      description: "VIP_PLAN:" + plan.id,
+      status: "REDIRECTED",
+      initiatedAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+    },
+  });
+  if (activeCheckout) {
+    return NextResponse.json({ error: "یک پرداخت برای این طرح در حال انجام است؛ ابتدا نتیجه آن را بررسی کنید" }, { status: 409 });
+  }
+
   const code = "PG-" + randomUUID();
   const paymentCode = "PAY-" + randomUUID();
   const gateway = providerName === "zarinpal" ? "ZARINPAL" : "IDPAY";
