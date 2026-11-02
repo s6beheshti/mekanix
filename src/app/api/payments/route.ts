@@ -95,8 +95,9 @@ async function startVipCheckout(planId: string, userId: string, providerName: st
 export async function POST(req: Request) {
   const provider = getPaymentProviderStatus();
   const isProduction = process.env.NODE_ENV === "production";
+  const isLiveProduction = isProduction && process.env.APP_ENV !== "staging";
   const sandboxEnabled = process.env.IDPAY_SANDBOX === "true" || process.env.ZARINPAL_SANDBOX === "true";
-  if (!provider.configured || (provider.provider === "simulator" && isProduction) || (isProduction && sandboxEnabled)) {
+  if (!provider.configured || (provider.provider === "simulator" && isProduction) || (isLiveProduction && sandboxEnabled)) {
     return NextResponse.json(
       { error: "درگاه پرداخت واقعی پیکربندی نشده است" },
       { status: 503 }
