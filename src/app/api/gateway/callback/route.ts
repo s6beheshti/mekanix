@@ -46,7 +46,6 @@ async function handleCallback(req: NextRequest) {
   const log = isZarinpal
     ? await db.paymentGatewayLog.findFirst({
         where: { referenceId: authority, gateway: "ZARINPAL" },
-        include: { },
       })
     : orderId
       ? await db.paymentGatewayLog.findUnique({ where: { code: orderId } })
