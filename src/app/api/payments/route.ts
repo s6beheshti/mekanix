@@ -93,9 +93,6 @@ async function startVipCheckout(planId: string, userId: string, providerName: st
 }
 
 export async function POST(req: Request) {
-  const session = await requireAuth(req);
-  if (session instanceof NextResponse) return session;
-
   const provider = getPaymentProviderStatus();
   const isProduction = process.env.NODE_ENV === "production";
   const sandboxEnabled = process.env.IDPAY_SANDBOX === "true" || process.env.ZARINPAL_SANDBOX === "true";
@@ -105,6 +102,9 @@ export async function POST(req: Request) {
       { status: 503 }
     );
   }
+
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
 
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(
