@@ -22,9 +22,11 @@ async function readFields(req: NextRequest): Promise<CallbackFields> {
   }
   const contentType = req.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    const body = await req.json().catch(() => ({}));
-    for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
-      if (typeof value === "string" || typeof value === "number") fields[key] = String(value);
+    const body: unknown = await req.json().catch(() => ({}));
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+        if (typeof value === "string" || typeof value === "number") fields[key] = String(value);
+      }
     }
     return fields;
   }
