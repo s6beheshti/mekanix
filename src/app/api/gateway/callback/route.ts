@@ -6,9 +6,9 @@ export const runtime = "nodejs";
 
 type CallbackFields = Record<string, string>;
 
-function resultRedirect(req: NextRequest, result: "success" | "failed", ref?: string) {
+function resultRedirect(req: NextRequest, result: "success" | "failed" | "pending", ref?: string) {
   const base = process.env.APP_URL || req.nextUrl.origin;
-  const url = new URL("/", base);
+  const url = new URL("/payment/result", base);
   url.searchParams.set("payment", result);
   if (ref) url.searchParams.set("ref", ref.slice(0, 80));
   return NextResponse.redirect(url, 303);
@@ -76,7 +76,7 @@ async function handleCallback(req: NextRequest) {
   if (!isZarinpal && callbackStatus === "10") {
     // IDPay status 10 means the transaction is still waiting for payer action.
     // Do not mark it failed or settle it; the verified callback may arrive later.
-    return resultRedirect(req, "failed");
+    return resultRedirect(req, "pending");
   }
   if (!isZarinpal && !["100", "101"].includes(callbackStatus || "")) {
     await db.paymentGatewayLog.update({
