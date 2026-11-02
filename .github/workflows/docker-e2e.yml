@@ -12,8 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DB_PASSWORD: test_password
-      JWT_SECRET: test_secret_for_ci
+      DB_PASSWORD: test_password_for_docker_ci_only_123456
+      JWT_SECRET: test_secret_for_docker_ci_only_12345678901234567890
+      REDIS_PASSWORD: test_redis_password_for_docker_ci_only_123456
+      ADMIN_BOOTSTRAP_PASSWORD: test_admin_password_for_docker_ci_only_123456
+      SMS_PROVIDER: console
+      PAYMENT_PROVIDER: simulator
     
     steps:
       - uses: actions/checkout@v4
