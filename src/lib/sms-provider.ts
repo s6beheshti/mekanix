@@ -171,6 +171,7 @@ export function getSmsProviderStatus(): { configured: boolean; provider: string;
     }
     if (!process.env.MELIPAYAMAK_SENDER) {
       warnings.push("MELIPAYAMAK_SENDER not set — SMS will fail");
+      configured = false;
     }
   } else if (provider === "farapayamak") {
     if (!process.env.FARAPAYAMAK_USERNAME || !process.env.FARAPAYAMAK_PASSWORD) {
@@ -179,6 +180,7 @@ export function getSmsProviderStatus(): { configured: boolean; provider: string;
     }
     if (!process.env.FARAPAYAMAK_SENDER) {
       warnings.push("FARAPAYAMAK_SENDER not set — SMS will fail");
+      configured = false;
     }
   }
 
