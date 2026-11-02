@@ -444,13 +444,13 @@ The phase table contains **204 individual checklist rows**. The status counts be
 
 | Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial | Total |
 |-------------|--------|-------------|-----------|-----------|-------|
-| 0-4 (Build + config) | 19 | 10 | 1 | 2 | 32 |
-| 5-9 (External services) | 24 | 2 | 9 | 0 | 35 |
+| 0-4 (Build + config) | 20 | 10 | 0 | 2 | 32 |
+| 5-9 (External services) | 25 | 1 | 9 | 0 | 35 |
 | 10-14 (Infra + readiness) | 18 | 4 | 11 | 0 | 33 |
 | 15-19 (Observability + QA) | 15 | 1 | 15 | 2 | 33 |
 | 20-25 (Staging + rollback) | 20 | 6 | 8 | 2 | 36 |
 | 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
-| **TOTAL** | **100** | **33** | **65** | **6** | **204** |
+| **TOTAL** | **102** | **32** | **64** | **6** | **204** |
 
 **Important release gate (2026-11-02):** the application is **not production-ready yet**. The old /api/gateway/initiate and /api/gateway/verify handlers implement a fake payment flow and are now blocked in production. The payment provider abstraction exists, but the production create → redirect → callback → verify → idempotent settlement flow is not yet wired into those handlers. /api/ready therefore deliberately remains 503 until that integration is completed, even when provider credentials are present.
 
