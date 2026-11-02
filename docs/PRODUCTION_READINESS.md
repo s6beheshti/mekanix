@@ -71,7 +71,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 4.3 | `NODE_ENV=production` enforced | ✅ | `Dockerfile` sets `NODE_ENV=production`; `package.json start` script sets it too |
 | 4.4 | Strong `JWT_SECRET` required | 🛠️ | `scripts/deploy.sh` exits 1 if `JWT_SECRET` env var missing |
 | 4.5 | `DB_PASSWORD` required | 🛠️ | `scripts/deploy.sh` exits 1 if `DB_PASSWORD` env var missing |
-| 4.6 | Payment provider config | 🛠️ | `PAYMENT_PROVIDER` + `ZARINPAL_MERCHANT_ID` / `IDPAY_API_KEY` / `NEXTPAY_API_KEY` consumed by `src/lib/payment-provider.ts` |
+| 4.6 | Payment provider config | 🛠️ | `PAYMENT_PROVIDER` + `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY`; NextPay is intentionally unsupported until its contract is implemented |
 | 4.7 | SMS provider config | 🛠️ | `SMS_PROVIDER` + Kavenegar/MeliPayamak/Farapayamak credentials consumed by `src/lib/sms-provider.ts` |
 | 4.8 | ETA provider config | 🛠️ | `NESHAN_API_KEY` / `GOOGLE_MAPS_API_KEY` / `OSRM_API_URL` consumed by `src/lib/eta-provider.ts` |
 
@@ -96,11 +96,11 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 6.1 | Payment provider abstraction | ✅ | `src/lib/payment-provider.ts` (Zarinpal + IDPay + simulator dev) |
 | 6.2 | Auto-init on server boot | ✅ | src/lib/init.ts initializes initPaymentProvider(); verified on hardening branch |
-| 6.3 | Simulator flow live | ✅ | `src/app/api/gateway/initiate/route.ts` + `verify/route.ts` write `PaymentGatewayLog` rows; existing UI uses Shaparak simulator |
-| 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` calls `api.zarinpal.com/pg/v4/payment/request.json` + `verify.json` |
-| 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` calls `api.idpay.ir/v1.3/payment` + `verify` |
+| 6.3 | Development simulator flow | ✅ | Simulator is restricted to local development; legacy `/api/gateway/initiate` and `/verify` are blocked in production |
+| 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` implements v4 request/verify, live and sandbox hosts; invoice/VIP checkout uses server callback verification |
+| 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` implements v1.1 request/verify with matching `order_id`, amount check, and optional sandbox header |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY` + sandbox card |
-| 6.7 | Idempotent verify (no double-spend) | ✅ | `gateway/verify` checks `log.status === "VERIFIED"` and rejects re-verify |
+| 6.7 | Idempotent verify (no double-spend) | ✅ | `/api/gateway/callback` verifies the stored authority/order and amount, then settles payment + invoice/VIP entitlement in one transaction; repeated callbacks cannot settle twice |
 | 6.8 | Payment status surfaced in `/api/health` | 🛠️ | `getPaymentProviderStatus()` exported; TODO: surface in `/api/health` response |
 
 ---
@@ -452,6 +452,6 @@ The phase table contains **204 individual checklist rows**. The status counts be
 | 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
 | **TOTAL** | **102** | **31** | **64** | **7** | **204** |
 
-**Important release gate (2026-11-02):** the application is **not production-ready yet**. The old /api/gateway/initiate and /api/gateway/verify handlers implement a fake payment flow and are now blocked in production. The payment provider abstraction exists, but the production create → redirect → callback → verify → idempotent settlement flow is not yet wired into those handlers. /api/ready therefore deliberately remains 503 until that integration is completed, even when provider credentials are present.
+**Important release gate (2026-11-02):** the application is **not production-ready yet**. Invoice and VIP create → redirect → callback → server verification → transactional settlement are now implemented for Zarinpal v4 and IDPay v1.1; legacy simulator endpoints remain blocked in production. The integration has not yet been exercised with real provider sandbox credentials and registered callback domains. `/api/ready` allows a properly configured isolated staging environment, but live production readiness requires non-sandbox credentials, real SMS, HTTPS `APP_URL`, PostgreSQL, and applied migrations.
 
-The checklist is a project tracker, not a substitute for CI or a live staging test. Any item requiring real SMS, payment, DNS, server access, security scanning, or post-launch observation must remain pending until it has been exercised against the actual service.
+The isolated staging deployment profile and `docs/STAGING_RUNBOOK.md` are now available. The checklist is a project tracker, not a substitute for CI or a live staging test. Any item requiring real SMS, payment, DNS, server access, security scanning, or post-launch observation must remain pending until it has been exercised against the actual service.
