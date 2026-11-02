@@ -50,7 +50,20 @@ export async function POST(req: Request) {
     const result = await db.$transaction((tx) =>
       settlePrepay(tx, body.jobId as string, session.userId, Math.round(Number(log.amount)))
     );
-    return NextResponse.json({ ok: true, ...result });
+    const updatedJob = await db.job.findUnique({
+      where: { id: body.jobId },
+      include: {
+        request: { include: { vehicle: true, customer: { include: { user: true } } } },
+        technician: { include: { user: true, specialties: true } },
+        parts: true,
+        diagnosisRecords: true,
+        invoice: true,
+        reviews: true,
+        messages: { include: { fromUser: true }, orderBy: { createdAt: "asc" } },
+        tracking: { orderBy: { ts: "asc" } },
+      },
+    });
+    return NextResponse.json({ ok: true, ...result, job: updatedJob });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "خطا در ثبت پرداخت پیش‌خدمت" },
