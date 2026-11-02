@@ -79,7 +79,10 @@ export async function GET() {
       ready.ok = false;
       ready.errors.push(`Payment: ${payStatus.provider} provider misconfigured`);
     } else {
-      ready.checks.paymentProvider = true;
+      // The legacy /api/gateway/* endpoints are intentionally blocked in production
+      // until they are connected to createPayment()/verifyPayment() and a verified callback.
+      ready.ok = false;
+      ready.errors.push("Payment: provider credentials exist, but production gateway/callback flow is not yet integrated");
     }
 
     // 3c. Database must be PostgreSQL in production (not SQLite)
