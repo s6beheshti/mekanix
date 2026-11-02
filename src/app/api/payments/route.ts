@@ -37,7 +37,6 @@ async function startVipCheckout(planId: string, userId: string, providerName: st
       purpose: "vip",
       description: "VIP_PLAN:" + plan.id,
       status: "REDIRECTED",
-      initiatedAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
     },
   });
   if (activeCheckout) {
