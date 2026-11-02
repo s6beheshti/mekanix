@@ -31,7 +31,7 @@ export function PaymentGatewayDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  amount: number; // USD
+  amount: number; // IRR
   purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
   description?: string;
   userId?: string;
