@@ -16,7 +16,7 @@ require_var() {
 
 echo "MEKANIX production preflight"
 
-for name in DB_PASSWORD JWT_SECRET REDIS_PASSWORD SMS_PROVIDER PAYMENT_PROVIDER; do
+for name in DB_PASSWORD JWT_SECRET REDIS_PASSWORD SMS_PROVIDER PAYMENT_PROVIDER APP_URL; do
   require_var "$name"
 done
 
@@ -44,6 +44,10 @@ case "$PAYMENT_PROVIDER" in
   idpay) require_var IDPAY_API_KEY ;;
   *) fail "PAYMENT_PROVIDER must be zarinpal or idpay (simulator/NextPay are not production-ready)" ;;
 esac
+
+[[ "$APP_URL" == https://* ]] || fail "APP_URL must be a public HTTPS origin for bank callbacks"
+[[ "${ZARINPAL_SANDBOX:-false}" != "true" ]] || fail "ZARINPAL_SANDBOX must be false in production"
+[[ "${IDPAY_SANDBOX:-false}" != "true" ]] || fail "IDPAY_SANDBOX must be false in production"
 
 [[ -n "${ADMIN_BOOTSTRAP_PASSWORD:-}" ]] || fail "ADMIN_BOOTSTRAP_PASSWORD is required for the initial admin account"
 [[ ${#ADMIN_BOOTSTRAP_PASSWORD} -ge 16 ]] || fail "ADMIN_BOOTSTRAP_PASSWORD must be at least 16 characters"
