@@ -100,7 +100,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` implements v4 request/verify, live and sandbox hosts; invoice/VIP checkout uses server callback verification |
 | 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` implements v1.1 request/verify with matching `order_id`, amount check, and optional sandbox header |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY` + sandbox card |
-| 6.7 | Idempotent verify (no double-spend) | ✅ | `/api/gateway/callback` verifies the stored authority/order and amount, then settles payment + invoice/VIP entitlement in one transaction; repeated callbacks cannot settle twice |
+| 6.7 | Idempotent verify (no double-spend) | ✅ | `/api/gateway/callback` verifies authority/order and amount, then settles invoice, pre-service wallet credit, or VIP entitlement transactionally; repeated callbacks cannot settle twice |
 | 6.8 | Payment status surfaced in `/api/health` | 🛠️ | `getPaymentProviderStatus()` exported; TODO: surface in `/api/health` response |
 
 ---
@@ -452,6 +452,6 @@ The phase table contains **204 individual checklist rows**. The status counts be
 | 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
 | **TOTAL** | **102** | **31** | **64** | **7** | **204** |
 
-**Important release gate (2026-11-02):** the application is **not production-ready yet**. Invoice and VIP create → redirect → callback → server verification → transactional settlement are now implemented for Zarinpal v4 and IDPay v1.1; legacy simulator endpoints remain blocked in production. The integration has not yet been exercised with real provider sandbox credentials and registered callback domains. `/api/ready` allows a properly configured isolated staging environment, but live production readiness requires non-sandbox credentials, real SMS, HTTPS `APP_URL`, PostgreSQL, and applied migrations.
+**Important release gate (2026-11-02):** the application is **not production-ready yet**. Invoice, pre-service, and VIP create → redirect → callback → server verification → transactional settlement are now implemented for Zarinpal v4 and IDPay v1.1; legacy simulator endpoints remain blocked in production. The integration has not yet been exercised with real provider sandbox credentials and registered callback domains. Wallet top-up remains disabled until a ledger and funding policy are defined. `/api/ready` allows a properly configured isolated staging environment, but live production readiness requires non-sandbox credentials, real SMS, HTTPS `APP_URL`, PostgreSQL, and applied migrations.
 
 The isolated staging deployment profile and `docs/STAGING_RUNBOOK.md` are now available. The checklist is a project tracker, not a substitute for CI or a live staging test. Any item requiring real SMS, payment, DNS, server access, security scanning, or post-launch observation must remain pending until it has been exercised against the actual service.
