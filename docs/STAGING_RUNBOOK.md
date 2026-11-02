@@ -54,13 +54,14 @@ Expected: `/api/health` returns 200 and `/api/ready` returns 200 with database, 
 3. Create a service request and verify technician matching, acceptance, status changes, and notifications.
 4. Issue an invoice from the technician flow. Verify the customer cannot change the invoice amount or pay another customer's invoice.
 5. Start invoice checkout. Confirm the browser leaves MEKANIX for the official provider checkout page; card data must never be entered into MEKANIX.
-6. Complete a provider sandbox transaction. Confirm callback delivery, server-to-server verification, exact amount match, one successful Payment record, invoice status PAID, job completion, warranty creation, and notifications.
-7. Replay the same callback. Confirm there is no second settlement, duplicate warranty, or duplicate VIP entitlement.
-8. Test cancelled and still-pending callbacks. Confirm neither can mark an invoice paid.
-9. Purchase a VIP plan through the sandbox. Confirm the subscription activates only after provider verification and matches the purchased plan and amount.
-10. Call `/api/vip/subscribe` without a verified payment and with a mismatched plan/payment pair. Both must be rejected.
-11. Verify duplicate checkout attempts are rejected while an active checkout exists.
-12. Test invalid credentials, provider timeout, wrong amount, invalid order ID, and database interruption during callback settlement. No failed/unknown transaction may grant an entitlement.
+6. Complete an invoice sandbox transaction. Confirm callback delivery, server-to-server verification, exact amount match, one successful Payment record, invoice status PAID, job completion, warranty creation, and notifications.
+7. Complete a pre-service inspection/travel fee payment. Confirm `job.prepayPaid` changes only after callback verification, technician pending wallet balance increases by the net amount, commission is recorded, and chat unlocks.
+8. Replay the same callback. Confirm there is no second settlement, duplicate wallet transaction, duplicate warranty, or duplicate VIP entitlement.
+9. Test cancelled and still-pending callbacks. Confirm neither can mark an invoice paid or unlock pre-service chat.
+10. Purchase a VIP plan through the sandbox. Confirm the subscription activates only after provider verification and matches the purchased plan and amount.
+11. Call `/api/vip/subscribe` without a verified payment and with a mismatched plan/payment pair. Both must be rejected.
+12. Verify duplicate checkout attempts are rejected while an active checkout exists.
+13. Test invalid credentials, provider timeout, wrong amount, invalid order ID, and database interruption during callback settlement. No failed/unknown transaction may grant an entitlement or credit a wallet.
 
 ## 4. Data recovery and operations
 
