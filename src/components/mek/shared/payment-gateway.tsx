@@ -27,6 +27,7 @@ export function PaymentGatewayDialog({
   userId,
   planId,
   invoiceId,
+  jobId,
   onSuccess,
 }: {
   open: boolean;
@@ -37,6 +38,7 @@ export function PaymentGatewayDialog({
   userId?: string;
   planId?: string;
   invoiceId?: string;
+  jobId?: string;
   onSuccess?: (paymentId: string, amount: number) => void;
 }) {
   const { t, isFa, money } = useT();
@@ -93,6 +95,7 @@ export function PaymentGatewayDialog({
           amount,
           purpose,
           planId: planId ?? null,
+          jobId: jobId ?? null,
           description,
           mobile,
           cardNumber: card,
@@ -111,7 +114,7 @@ export function PaymentGatewayDialog({
   };
 
   const initiateRealCheckout = async () => {
-    if (!planId && !invoiceId) {
+    if (!planId && !invoiceId && !jobId) {
       toast.error(isFa ? "شناسه طرح یا فاکتور برای پرداخت مشخص نیست" : "Missing plan or invoice reference");
       return;
     }
@@ -120,7 +123,7 @@ export function PaymentGatewayDialog({
       const res = await authFetch("/api/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(planId ? { planId } : { invoiceId }),
+        body: JSON.stringify(planId ? { planId } : invoiceId ? { invoiceId } : { jobId }),
       });
       const data = await res.json();
       if (!res.ok || !data.redirectUrl) throw new Error(data.error || t("pay.gateway.failed"));
@@ -187,7 +190,7 @@ export function PaymentGatewayDialog({
                   ? "پس از ادامه، به درگاه بانکی معتبر منتقل می‌شوید. اطلاعات کارت فقط در صفحه رسمی بانک وارد می‌شود."
                   : "Continue to the verified bank gateway. Card details are entered only on the bank's official page."}
               </p>
-              {(planId || invoiceId) ? (
+              {(planId || invoiceId || jobId) ? (
                 <Button onClick={initiateRealCheckout} className="w-full bg-amber text-black hover:bg-amber/90">
                   <Lock className="mr-2 size-4" /> {isFa ? "ادامه به درگاه بانکی" : "Continue to bank"}
                 </Button>
