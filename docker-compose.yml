@@ -13,7 +13,7 @@ services:
       context: .
       target: migrator
     environment:
-      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/mekanix
     depends_on:
       db:
         condition: service_healthy
@@ -26,11 +26,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - NODE_ENV=production
-      - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET}
+      - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:?Set ADMIN_BOOTSTRAP_PASSWORD}
       - ADMIN_BOOTSTRAP_USERNAME=${ADMIN_BOOTSTRAP_USERNAME:-admin}
       - ADMIN_BOOTSTRAP_EMAIL=${ADMIN_BOOTSTRAP_EMAIL:-admin@mekanix.ir}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379
       - SMS_PROVIDER=${SMS_PROVIDER:?Set SMS_PROVIDER to a configured production SMS provider}
       - KAVENEGAR_API_KEY=${KAVENEGAR_API_KEY:-}
       - KAVENEGAR_TEMPLATE=${KAVENEGAR_TEMPLATE:-}
@@ -63,7 +63,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=mekanix
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?Set DB_PASSWORD}
       - POSTGRES_DB=mekanix
     volumes:
       - pgdata:/var/lib/postgresql/data
