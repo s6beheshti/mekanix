@@ -10,6 +10,8 @@
 - Require production secrets and real provider configuration in the production Docker Compose deployment.
 - Enable Redis AOF persistence in the production Compose stack.
 - Implement Zarinpal v4 and IDPay v1.1 create/verify requests, bank callback handling, amount verification, and transactional invoice settlement.
+- Connect VIP plan checkout to the same verified payment flow; activate subscriptions only after server-side gateway verification.
+- Require authentication and a matching successful payment for the VIP subscription API.
 - Keep sandbox mode configurable for staging and reject sandbox mode in production readiness/deployment.
 - Make deployment verify /api/ready after liveness instead of treating /api/health alone as proof of readiness.
 - Avoid returning raw internal dependency errors from the public health endpoint.
