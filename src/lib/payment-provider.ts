@@ -227,7 +227,9 @@ export async function verifyPayment(authority: string, amount: number): Promise<
 
 export function getPaymentProviderStatus(): { configured: boolean; provider: string } {
   const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim() || "simulator";
-  let configured = provider === "zarinpal" || provider === "idpay";
+  let configured = provider === "simulator"
+    ? process.env.NODE_ENV !== "production"
+    : provider === "zarinpal" || provider === "idpay";
   if (provider === "zarinpal" && !process.env.ZARINPAL_MERCHANT_ID) configured = false;
   if (provider === "idpay" && !process.env.IDPAY_API_KEY) configured = false;
   // NextPay is intentionally unsupported until its create/verify contract is implemented.
