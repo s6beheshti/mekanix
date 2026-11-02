@@ -57,7 +57,7 @@ async function handleCallback(req: NextRequest) {
   if (!isZarinpal && log.referenceId !== authority) {
     return resultRedirect(req, "failed");
   }
-  if (log.purpose !== "invoice" || !log.paymentId) {
+  if (!["invoice", "vip"].includes(log.purpose) || !log.paymentId) {
     return resultRedirect(req, "failed");
   }
   if (log.status === "VERIFIED") return resultRedirect(req, "success", log.referenceId || undefined);
@@ -110,7 +110,55 @@ async function handleCallback(req: NextRequest) {
       }
 
       const payment = await tx.payment.findUnique({ where: { id: log.paymentId! } });
-      if (!payment?.invoiceId) throw new Error("Invoice payment record is missing");
+      if (!payment || payment.userId !== log.userId || Math.round(Number(payment.amount)) !== expectedAmount) {
+        throw new Error("Payment owner or amount does not match gateway order");
+      }
+
+      if (log.purpose === "vip") {
+        const planId = log.description?.startsWith("VIP_PLAN:") ? log.description.slice("VIP_PLAN:".length) : "";
+        if (!planId) throw new Error("VIP plan reference is missing");
+        const plan = await tx.vipPlan.findUnique({ where: { id: planId } });
+        if (!plan || !plan.active) throw new Error("VIP plan is no longer active");
+        const existingSubscription = await tx.userVipSubscription.findFirst({
+          where: { paymentId: payment.id },
+          include: { plan: true },
+        });
+        if (!existingSubscription) {
+          const startedAt = new Date();
+          const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+          await tx.userVipSubscription.updateMany({
+            where: { userId: payment.userId, status: "ACTIVE" },
+            data: { status: "CANCELLED" },
+          });
+          await tx.userVipSubscription.create({
+            data: {
+              userId: payment.userId,
+              planId: plan.id,
+              status: "ACTIVE",
+              startedAt,
+              expiresAt,
+              paymentId: payment.id,
+            },
+          });
+          await tx.notification.create({
+            data: {
+              userId: payment.userId,
+              type: "vip_activated",
+              title: "VIP activated",
+              body: "Your " + plan.name + " plan is active until " + expiresAt.toLocaleDateString(),
+              category: "system",
+              link: "customer/settings",
+            },
+          });
+        }
+        await tx.paymentGatewayLog.update({
+          where: { id: log.id },
+          data: { status: "VERIFIED", verifiedAt: new Date(), callbackPayload: JSON.stringify(fields) },
+        });
+        return;
+      }
+
+      if (!payment.invoiceId) throw new Error("Invoice payment record is missing");
       const invoice = await tx.invoice.findUnique({
         where: { id: payment.invoiceId },
         include: { job: { include: { technician: true, request: { include: { customer: true } } } } },
