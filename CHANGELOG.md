@@ -5,11 +5,12 @@
 ### Security and release hardening
 - Initialize the configured payment provider during server startup.
 - Fail closed in production when the payment provider is missing, unsupported, or not configured; simulator fallback is development-only.
-- Block all simulated payment/settlement endpoints (/api/gateway/initiate, /api/gateway/verify, /api/payments) in production until the real callback and settlement flow is integrated.
+- Keep legacy simulator endpoints blocked in production; route invoice payments through authenticated Zarinpal/IDPay checkout.
 - Require a real PostgreSQL connection string, configured SMS sender credentials, and a verified payment integration before production readiness can pass.
 - Require production secrets and real provider configuration in the production Docker Compose deployment.
 - Enable Redis AOF persistence in the production Compose stack.
-- Hide card/CVV collection in the production payment dialog while the real bank gateway is unavailable.
+- Implement Zarinpal v4 and IDPay v1.1 create/verify requests, bank callback handling, amount verification, and transactional invoice settlement.
+- Keep sandbox mode configurable for staging and reject sandbox mode in production readiness/deployment.
 - Make deployment verify /api/ready after liveness instead of treating /api/health alone as proof of readiness.
 - Avoid returning raw internal dependency errors from the public health endpoint.
 - Correct the production readiness checklist totals and mark the existing changelog and payment-provider startup work accurately.
@@ -20,7 +21,8 @@
 - Complete provider-specific callback verification and test with provider sandbox credentials.
 - Run CI on the release pull request and resolve any failures.
 - Run a full PostgreSQL staging smoke test, OWASP ZAP scan, and cross-browser/mobile QA.
-- Activate real SMS, payment, domain, TLS, monitoring, backups, and alerts only when production credentials and infrastructure are supplied.
+- Activate real SMS, payment credentials, domain, TLS, monitoring, backups, and alerts only when production credentials and infrastructure are supplied.
+- Complete real provider sandbox transactions before marking payment integration as production-verified.
 
 ## [1.0.0] - 2026-09-25
 
