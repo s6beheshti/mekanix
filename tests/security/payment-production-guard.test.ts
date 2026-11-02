@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as invoicePaymentPOST } from "@/app/api/payments/route";
 import { POST as gatewayInitiatePOST } from "@/app/api/gateway/initiate/route";
 import { POST as gatewayVerifyPOST } from "@/app/api/gateway/verify/route";
+import { POST as vipSubscribePOST } from "@/app/api/vip/subscribe/route";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -28,6 +29,29 @@ describe("production payment safety gates", () => {
       body: JSON.stringify({ userId: "user_test", amount: 1000 }),
     }));
     expect(response.status).toBe(503);
+  });
+
+  it("rejects sandbox credentials in live production checkout", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PAYMENT_PROVIDER", "idpay");
+    vi.stubEnv("IDPAY_API_KEY", "test-key");
+    vi.stubEnv("IDPAY_SANDBOX", "true");
+    const response = await invoicePaymentPOST(new Request("https://mekanix.test/api/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoiceId: "inv_test" }),
+    }));
+    expect(response.status).toBe(503);
+  });
+
+  it("rejects unauthenticated direct VIP activation", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = await vipSubscribePOST(new Request("https://mekanix.test/api/vip/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "user_attacker", planId: "vip_plan", paymentId: "fake_payment" }),
+    }));
+    expect(response.status).toBe(401);
   });
 
   it("blocks legacy simulated gateway verification in production", async () => {
