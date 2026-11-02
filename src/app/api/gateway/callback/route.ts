@@ -85,12 +85,10 @@ async function handleCallback(req: NextRequest) {
   const expectedAmount = Math.round(Number(log.amount));
   const verified = await verifyPayment(authority, expectedAmount, log.code);
   if (!verified.success || !verified.refId || Number(verified.amount) !== expectedAmount) {
-    await db.paymentGatewayLog.update({
-      where: { id: log.id },
-      data: { status: "FAILED", callbackPayload: JSON.stringify(fields) },
-    });
-    await db.payment.updateMany({ where: { id: log.paymentId, status: "PENDING" }, data: { status: "FAILED" } });
-    return resultRedirect(req, "failed");
+    // Keep the order pending so a transient provider/network failure can be retried.
+    // Never mark it failed or settle it based only on callback parameters.
+    console.error("Gateway verification pending for order", log.code, verified.error || "amount/reference mismatch");
+    return NextResponse.json({ error: "تأیید پرداخت موقتاً انجام نشد؛ callback قابل تکرار است" }, { status: 503 });
   }
 
   try {
@@ -213,7 +211,7 @@ async function handleCallback(req: NextRequest) {
     return resultRedirect(req, "success", verified.refId);
   } catch (error) {
     console.error("Payment callback settlement failed", error);
-    return resultRedirect(req, "failed");
+    return NextResponse.json({ error: "ثبت نهایی پرداخت موقتاً ناموفق بود؛ callback قابل تکرار است" }, { status: 503 });
   }
 }
 
