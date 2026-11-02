@@ -29,6 +29,7 @@ export type Job = Prisma.JobGetPayload<{
 }>;
 export type Invoice = Prisma.InvoiceGetPayload<{ include: { job: true; payment: true } }>;
 export type Payment = PaymentModel;
+export type PaymentCheckoutResult = Payment | { ok: true; paymentId: string; redirectUrl: string; amount: number; currency: string };
 export type Review = Prisma.ReviewGetPayload<{ include: { fromUser: true } }>;
 export type Message = Prisma.MessageGetPayload<{ include: { fromUser: true } }>;
 export type Notification = NotificationModel;
@@ -105,7 +106,7 @@ export const api = {
   updateInvoice: (id: string, data: any) =>
     req<Invoice>(`/api/invoices/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   payInvoice: (invoiceId: string, method: string) =>
-    req<Payment>(`/api/payments`, { method: "POST", body: JSON.stringify({ invoiceId, method }) }),
+    req<PaymentCheckoutResult>(`/api/payments`, { method: "POST", body: JSON.stringify({ invoiceId, method }) }),
   createReview: (data: { jobId: string; technicianId: string; rating: number; comment?: string }) =>
     req<Review>(`/api/reviews`, { method: "POST", body: JSON.stringify(data) }),
   listMessages: (jobId: string) => req<Message[]>(`/api/messages?jobId=${jobId}`),
