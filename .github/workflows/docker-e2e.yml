@@ -18,6 +18,9 @@ jobs:
       ADMIN_BOOTSTRAP_PASSWORD: test_admin_password_for_docker_ci_only_123456
       SMS_PROVIDER: console
       PAYMENT_PROVIDER: simulator
+      APP_URL: https://mekanix.test
+      ZARINPAL_SANDBOX: false
+      IDPAY_SANDBOX: false
     
     steps:
       - uses: actions/checkout@v4
