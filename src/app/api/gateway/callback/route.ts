@@ -59,7 +59,7 @@ async function handleCallback(req: NextRequest) {
   if (!isZarinpal && log.referenceId !== authority) {
     return resultRedirect(req, "failed");
   }
-  if (!["invoice", "vip"].includes(log.purpose) || !log.paymentId) {
+  if (!["invoice", "vip"].includes(log.purpose) || !log.paymentId || log.currency !== "IRR") {
     return resultRedirect(req, "failed");
   }
   if (log.status === "VERIFIED") return resultRedirect(req, "success", log.referenceId || undefined);
@@ -90,6 +90,7 @@ async function handleCallback(req: NextRequest) {
   }
 
   const expectedAmount = Math.round(Number(log.amount));
+  if (!Number.isSafeInteger(expectedAmount) || expectedAmount <= 0) return resultRedirect(req, "failed");
   const verified = await verifyPayment(authority, expectedAmount, log.code);
   if (!verified.success || !verified.refId || Number(verified.amount) !== expectedAmount) {
     // Keep the order pending so a transient provider/network failure can be retried.
@@ -123,7 +124,9 @@ async function handleCallback(req: NextRequest) {
         const planId = log.description?.startsWith("VIP_PLAN:") ? log.description.slice("VIP_PLAN:".length) : "";
         if (!planId) throw new Error("VIP plan reference is missing");
         const plan = await tx.vipPlan.findUnique({ where: { id: planId } });
-        if (!plan || !plan.active) throw new Error("VIP plan is no longer active");
+        if (!plan || !plan.active || !Number.isInteger(plan.durationDays) || plan.durationDays <= 0) {
+          throw new Error("VIP plan is no longer active or valid");
+        }
         const existingSubscription = await tx.userVipSubscription.findFirst({
           where: { paymentId: payment.id },
           include: { plan: true },
@@ -169,6 +172,15 @@ async function handleCallback(req: NextRequest) {
         include: { job: { include: { technician: true, request: { include: { customer: true } } } } },
       });
       if (!invoice) throw new Error("Invoice not found");
+      if (invoice.currency !== "IRR" || Math.round(Number(invoice.total)) !== expectedAmount) {
+        throw new Error("Invoice total changed after checkout; manual reconciliation required");
+      }
+      if (invoice.status === "PAID") {
+        throw new Error("Invoice was paid by another process; manual reconciliation required");
+      }
+      if (!["SENT", "APPROVED", "OVERDUE"].includes(invoice.status)) {
+        throw new Error("Invoice is no longer payable");
+      }
       if (invoice.status !== "PAID") {
         await tx.invoice.update({ where: { id: invoice.id }, data: { status: "PAID" } });
         await tx.job.update({
