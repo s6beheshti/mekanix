@@ -15,7 +15,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` version pinned at `0.2.1`; release tag pending `git tag v1.0.0` |
-| 0.2 | Update `CHANGELOG.md` | ⬜ | Not yet authored — track in release tag |
+| 0.2 | Update `CHANGELOG.md` | ✅ | CHANGELOG.md already exists; v1.0.0 notes are present |
 | 0.3 | Lock all dependency versions | ✅ | `bun.lock` checked in; all deps pinned to exact semver |
 | 0.4 | Freeze Prisma schema | ✅ | `prisma/schema.prisma` is stable; migration `20260925000000_init` committed for both SQLite and PostgreSQL |
 
@@ -95,7 +95,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 6.1 | Payment provider abstraction | ✅ | `src/lib/payment-provider.ts` (Zarinpal + IDPay + simulator dev) |
-| 6.2 | Auto-init on server boot | 🛠️ | `initPaymentProvider()` exists; TODO: wire into `src/lib/init.ts` once the existing `/api/gateway/*` simulator flow is migrated |
+| 6.2 | Auto-init on server boot | ✅ | src/lib/init.ts initializes initPaymentProvider(); verified on hardening branch |
 | 6.3 | Simulator flow live | ✅ | `src/app/api/gateway/initiate/route.ts` + `verify/route.ts` write `PaymentGatewayLog` rows; existing UI uses Shaparak simulator |
 | 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` calls `api.zarinpal.com/pg/v4/payment/request.json` + `verify.json` |
 | 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` calls `api.idpay.ir/v1.3/payment` + `verify` |
@@ -438,16 +438,20 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 ---
 
-## Summary
+## Summary (reconciled 2026-11-02)
 
-| Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial |
-|-------------|--------|-------------|-----------|-----------|
-| 0-4 (Build + config) | 12 | 11 | 4 | 1 |
-| 5-9 (External services) | 9 | 5 | 8 | 0 |
-| 10-14 (Infra + readiness) | 11 | 5 | 6 | 0 |
-| 15-19 (Observability + QA) | 6 | 1 | 9 | 2 |
-| 20-25 (Staging + rollback) | 5 | 6 | 11 | 1 |
-| 26-31 (Launch) | 1 | 7 | 16 | 0 |
-| **TOTAL** | **44** | **35** | **54** | **4** |
+The phase table contains **204 individual checklist rows**. The status counts below are recalculated from those rows; the former summary (137 items) did not match the checklist and has been replaced.
 
-**Readiness gate:** Phases 0–14 (build, security, config, infra, health) are largely ✅/🛠️. Phases 15–31 require a real production server or external services (SMS, payment, monitoring, DNS). All code and scripts needed to flip ⬜ items to ✅ are committed to this repo.
+| Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial | Total |
+|-------------|--------|-------------|-----------|-----------|-------|
+| 0-4 (Build + config) | 19 | 10 | 1 | 2 | 32 |
+| 5-9 (External services) | 24 | 2 | 9 | 0 | 35 |
+| 10-14 (Infra + readiness) | 18 | 4 | 11 | 0 | 33 |
+| 15-19 (Observability + QA) | 15 | 1 | 15 | 2 | 33 |
+| 20-25 (Staging + rollback) | 20 | 6 | 8 | 2 | 36 |
+| 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
+| **TOTAL** | **100** | **33** | **65** | **6** | **204** |
+
+**Important release gate (2026-11-02):** the application is **not production-ready yet**. The old /api/gateway/initiate and /api/gateway/verify handlers implement a fake payment flow and are now blocked in production. The payment provider abstraction exists, but the production create → redirect → callback → verify → idempotent settlement flow is not yet wired into those handlers. /api/ready therefore deliberately remains 503 until that integration is completed, even when provider credentials are present.
+
+The checklist is a project tracker, not a substitute for CI or a live staging test. Any item requiring real SMS, payment, DNS, server access, security scanning, or post-launch observation must remain pending until it has been exercised against the actual service.
