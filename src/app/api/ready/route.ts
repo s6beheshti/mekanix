@@ -10,19 +10,21 @@ import { getPaymentProviderStatus } from "@/lib/payment-provider";
 // Production safety gates:
 //   - Database must be reachable (PostgreSQL, not SQLite in production)
 //   - Migrations must be applied
-//   - SMS provider must NOT be "console" in production
-//   - Payment provider must NOT be "simulator" in production
+//   - Live production requires real SMS and a live payment provider
+//   - Staging may use console SMS and gateway sandbox credentials, but never the payment simulator
 //   - DATABASE_URL must start with "postgresql://" in production
 //
 // Returns 200 if ready, 503 if not ready.
 
 export async function GET() {
   const isProduction = process.env.NODE_ENV === "production";
+  const isStaging = isProduction && process.env.APP_ENV === "staging";
+  const isLiveProduction = isProduction && !isStaging;
   
   const ready = {
     ok: true,
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
+    environment: process.env.APP_ENV || process.env.NODE_ENV || "development",
     checks: {
       database: false,
       migrationsApplied: false,
@@ -60,7 +62,10 @@ export async function GET() {
   if (isProduction) {
     // 3a. SMS must NOT be console in production
     const smsStatus = getSmsProviderStatus();
-    if (smsStatus.provider === "console") {
+    if (smsStatus.provider === "console" && isStaging) {
+      // Staging may log OTPs to the isolated test environment; production may not.
+      ready.checks.smsProvider = true;
+    } else if (smsStatus.provider === "console" && isLiveProduction) {
       ready.ok = false;
       ready.errors.push("SMS: console provider not allowed in production — set SMS_PROVIDER to kavenegar/melipayamak/farapayamak");
     } else if (!smsStatus.configured) {
@@ -79,14 +84,30 @@ export async function GET() {
       ready.ok = false;
       ready.errors.push(`Payment: ${payStatus.provider} provider misconfigured`);
     } else {
-      ready.checks.paymentProvider = true;
+      // Real invoice checkout + verified callback are implemented. Do not permit sandbox
+      // credentials or an insecure/missing public callback base in production.
+      const appUrl = process.env.APP_URL || "";
+      const sandboxEnabled = process.env.IDPAY_SANDBOX === "true" || process.env.ZARINPAL_SANDBOX === "true";
+      let secureAppUrl = false;
+      try {
+        secureAppUrl = new URL(appUrl).protocol === "https:";
+      } catch {}
+      if (sandboxEnabled && isLiveProduction) {
+        ready.ok = false;
+        ready.errors.push("Payment: sandbox mode must be disabled in production");
+      } else if (!secureAppUrl) {
+        ready.ok = false;
+        ready.errors.push("Payment: APP_URL must be a valid HTTPS origin for bank callbacks");
+      } else {
+        ready.checks.paymentProvider = true;
+      }
     }
 
     // 3c. Database must be PostgreSQL in production (not SQLite)
     const dbUrl = process.env.DATABASE_URL || "";
-    if (dbUrl.startsWith("file:")) {
+    if (!dbUrl.startsWith("postgresql://") && !dbUrl.startsWith("postgres://")) {
       ready.ok = false;
-      ready.errors.push("Database: SQLite (file:) not allowed in production — use PostgreSQL (postgresql://)");
+      ready.errors.push("Database: production requires a PostgreSQL DATABASE_URL");
     } else {
       ready.checks.databaseProvider = true;
     }

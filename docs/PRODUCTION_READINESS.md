@@ -15,7 +15,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` version pinned at `0.2.1`; release tag pending `git tag v1.0.0` |
-| 0.2 | Update `CHANGELOG.md` | ⬜ | Not yet authored — track in release tag |
+| 0.2 | Update `CHANGELOG.md` | ✅ | CHANGELOG.md already exists; v1.0.0 notes are present |
 | 0.3 | Lock all dependency versions | ✅ | `bun.lock` checked in; all deps pinned to exact semver |
 | 0.4 | Freeze Prisma schema | ✅ | `prisma/schema.prisma` is stable; migration `20260925000000_init` committed for both SQLite and PostgreSQL |
 
@@ -71,7 +71,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 4.3 | `NODE_ENV=production` enforced | ✅ | `Dockerfile` sets `NODE_ENV=production`; `package.json start` script sets it too |
 | 4.4 | Strong `JWT_SECRET` required | 🛠️ | `scripts/deploy.sh` exits 1 if `JWT_SECRET` env var missing |
 | 4.5 | `DB_PASSWORD` required | 🛠️ | `scripts/deploy.sh` exits 1 if `DB_PASSWORD` env var missing |
-| 4.6 | Payment provider config | 🛠️ | `PAYMENT_PROVIDER` + `ZARINPAL_MERCHANT_ID` / `IDPAY_API_KEY` / `NEXTPAY_API_KEY` consumed by `src/lib/payment-provider.ts` |
+| 4.6 | Payment provider config | 🛠️ | `PAYMENT_PROVIDER` + `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY`; NextPay is intentionally unsupported until its contract is implemented |
 | 4.7 | SMS provider config | 🛠️ | `SMS_PROVIDER` + Kavenegar/MeliPayamak/Farapayamak credentials consumed by `src/lib/sms-provider.ts` |
 | 4.8 | ETA provider config | 🛠️ | `NESHAN_API_KEY` / `GOOGLE_MAPS_API_KEY` / `OSRM_API_URL` consumed by `src/lib/eta-provider.ts` |
 
@@ -95,12 +95,12 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 6.1 | Payment provider abstraction | ✅ | `src/lib/payment-provider.ts` (Zarinpal + IDPay + simulator dev) |
-| 6.2 | Auto-init on server boot | 🛠️ | `initPaymentProvider()` exists; TODO: wire into `src/lib/init.ts` once the existing `/api/gateway/*` simulator flow is migrated |
-| 6.3 | Simulator flow live | ✅ | `src/app/api/gateway/initiate/route.ts` + `verify/route.ts` write `PaymentGatewayLog` rows; existing UI uses Shaparak simulator |
-| 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` calls `api.zarinpal.com/pg/v4/payment/request.json` + `verify.json` |
-| 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` calls `api.idpay.ir/v1.3/payment` + `verify` |
+| 6.2 | Auto-init on server boot | ✅ | src/lib/init.ts initializes initPaymentProvider(); verified on hardening branch |
+| 6.3 | Development simulator flow | ✅ | Simulator is restricted to local development; legacy `/api/gateway/initiate` and `/verify` are blocked in production |
+| 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` implements v4 request/verify, live and sandbox hosts; invoice/VIP checkout uses server callback verification |
+| 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` implements v1.1 request/verify with matching `order_id`, amount check, and optional sandbox header |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY` + sandbox card |
-| 6.7 | Idempotent verify (no double-spend) | ✅ | `gateway/verify` checks `log.status === "VERIFIED"` and rejects re-verify |
+| 6.7 | Idempotent verify (no double-spend) | ✅ | `/api/gateway/callback` verifies authority/order and amount, then settles invoice, pre-service wallet credit, or VIP entitlement transactionally; repeated callbacks cannot settle twice |
 | 6.8 | Payment status surfaced in `/api/health` | 🛠️ | `getPaymentProviderStatus()` exported; TODO: surface in `/api/health` response |
 
 ---
@@ -277,7 +277,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 19.3 | Admin panel screens | ✅ | `src/components/mek/admin/*` (overview, jobs, technicians, payments, customers, settings) |
 | 19.4 | Splash + onboarding | ✅ | `src/components/mek/onboarding.tsx` + `splash/*` + `public/onboarding/*` |
 | 19.5 | Responsive (mobile-first) | ✅ | Tailwind 4 with `sm`/`md`/`lg` breakpoints throughout |
-| 19.6 | Dark mode default | ✅ | `src/app/globals.css` defines dark-first palette; `theme-provider.tsx` toggles |
+| 19.6 | Light theme default | ✅ | `src/app/layout.tsx` sets defaultTheme=light; `:root` tokens in globals.css define white/light surfaces |
 | 19.7 | Accessibility (WCAG AA) | ⚠️ | Manual audit needed; Radix UI primitives provide baseline ARIA support |
 | 19.8 | Cross-browser testing | ⬜ | Manual; test Chrome / Firefox / Safari post-deploy |
 
@@ -290,7 +290,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 20.1 | i18n module | ✅ | `src/lib/i18n.ts` + `src/lib/use-t.ts` |
 | 20.2 | RTL layout support | ✅ | `src/app/globals.css` includes RTL utilities; `dir="rtl"` settable on root layout |
 | 20.3 | Persian (fa) translation strings | ⚠️ | Skeleton present; full coverage audit needed |
-| 20.4 | Persian font (Vazirmatn / IRANSans) | 🛠️ | Add font file to `public/fonts/` + CSS `@font-face` rule |
+| 20.4 | Preferred Persian font (IRANSans) | ⚠️ | Current layout loads Vazirmatn via next/font/google; no licensed local IRANSans font files are present in public/fonts |
 | 20.5 | Persian SMS templates | ✅ | `sms-provider.ts` MeliPayamak/Farapayamak use `کد تأیید MEKANIX: ${code}` |
 | 20.6 | Persian date formatting | ✅ | `src/lib/format.ts` handles Jalali via date-fns where applicable |
 
@@ -438,16 +438,20 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 ---
 
-## Summary
+## Summary (reconciled 2026-11-02)
 
-| Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial |
-|-------------|--------|-------------|-----------|-----------|
-| 0-4 (Build + config) | 12 | 11 | 4 | 1 |
-| 5-9 (External services) | 9 | 5 | 8 | 0 |
-| 10-14 (Infra + readiness) | 11 | 5 | 6 | 0 |
-| 15-19 (Observability + QA) | 6 | 1 | 9 | 2 |
-| 20-25 (Staging + rollback) | 5 | 6 | 11 | 1 |
-| 26-31 (Launch) | 1 | 7 | 16 | 0 |
-| **TOTAL** | **44** | **35** | **54** | **4** |
+The phase table contains **204 individual checklist rows**. The status counts below are recalculated from those rows; the former summary (137 items) did not match the checklist and has been replaced.
 
-**Readiness gate:** Phases 0–14 (build, security, config, infra, health) are largely ✅/🛠️. Phases 15–31 require a real production server or external services (SMS, payment, monitoring, DNS). All code and scripts needed to flip ⬜ items to ✅ are committed to this repo.
+| Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial | Total |
+|-------------|--------|-------------|-----------|-----------|-------|
+| 0-4 (Build + config) | 20 | 10 | 0 | 2 | 32 |
+| 5-9 (External services) | 25 | 1 | 9 | 0 | 35 |
+| 10-14 (Infra + readiness) | 18 | 4 | 11 | 0 | 33 |
+| 15-19 (Observability + QA) | 15 | 1 | 15 | 2 | 33 |
+| 20-25 (Staging + rollback) | 20 | 5 | 8 | 3 | 36 |
+| 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
+| **TOTAL** | **102** | **31** | **64** | **7** | **204** |
+
+**Important release gate (2026-11-02):** the application is **not production-ready yet**. Invoice, pre-service, and VIP create → redirect → callback → server verification → transactional settlement are now implemented for Zarinpal v4 and IDPay v1.1; legacy simulator endpoints remain blocked in production. The integration has not yet been exercised with real provider sandbox credentials and registered callback domains. Wallet top-up remains disabled until a ledger and funding policy are defined. `/api/ready` allows a properly configured isolated staging environment, but live production readiness requires non-sandbox credentials, real SMS, HTTPS `APP_URL`, PostgreSQL, and applied migrations.
+
+The isolated staging deployment profile and `docs/STAGING_RUNBOOK.md` are now available. The checklist is a project tracker, not a substitute for CI or a live staging test. Any item requiring real SMS, payment, DNS, server access, security scanning, or post-launch observation must remain pending until it has been exercised against the actual service.

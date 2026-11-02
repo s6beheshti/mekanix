@@ -15,9 +15,9 @@ import { toast } from "sonner";
 
 type Stage = "form" | "otp" | "processing" | "done" | "failed";
 
-// Iranian payment gateway simulator (Shaparak-style).
-// Used for VIP subscription + pre-service payment + wallet top-up.
-// In production: replace the fetch calls with Zarinpal/IDPay API.
+// Iranian payment dialog.
+// Local development uses the simulator; live production VIP/invoice checkout redirects to the configured Zarinpal/IDPay provider.
+// Pre-service payment is server-settled after verified callback; wallet top-up remains disabled until its ledger flow is implemented.
 export function PaymentGatewayDialog({
   open,
   onOpenChange,
@@ -25,14 +25,20 @@ export function PaymentGatewayDialog({
   purpose,
   description,
   userId,
+  planId,
+  invoiceId,
+  jobId,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  amount: number; // USD
+  amount: number; // IRR
   purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
   description?: string;
   userId?: string;
+  planId?: string;
+  invoiceId?: string;
+  jobId?: string;
   onSuccess?: (paymentId: string, amount: number) => void;
 }) {
   const { t, isFa, money } = useT();
@@ -88,6 +94,8 @@ export function PaymentGatewayDialog({
           userId: userId ?? null,
           amount,
           purpose,
+          planId: planId ?? null,
+          jobId: jobId ?? null,
           description,
           mobile,
           cardNumber: card,
@@ -99,6 +107,27 @@ export function PaymentGatewayDialog({
       setRef(data.referenceId);
       setStage("otp");
       toast.success(t("pay.gateway.otpSent").replace("{mobile}", mobile || "•••"));
+    } catch (e: any) {
+      toast.error(e.message ?? t("pay.gateway.failed"));
+      setStage("failed");
+    }
+  };
+
+  const initiateRealCheckout = async () => {
+    if (!planId && !invoiceId && !jobId) {
+      toast.error(isFa ? "شناسه طرح یا فاکتور برای پرداخت مشخص نیست" : "Missing plan or invoice reference");
+      return;
+    }
+    setStage("processing");
+    try {
+      const res = await authFetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(planId ? { planId } : invoiceId ? { invoiceId } : { jobId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.redirectUrl) throw new Error(data.error || t("pay.gateway.failed"));
+      window.location.assign(data.redirectUrl);
     } catch (e: any) {
       toast.error(e.message ?? t("pay.gateway.failed"));
       setStage("failed");
@@ -152,7 +181,26 @@ export function PaymentGatewayDialog({
         </div>
 
         <AnimatePresence mode="wait">
-          {stage === "form" && (
+          {stage === "form" && process.env.NODE_ENV === "production" && (
+            <div className="space-y-3 rounded-lg border border-amber/30 bg-amber/5 p-4 text-center">
+              <ShieldCheck className="mx-auto size-8 text-amber" />
+              <h3 className="font-semibold">{isFa ? "پرداخت امن بانکی" : "Secure bank payment"}</h3>
+              <p className="text-sm text-muted-foreground">
+                {isFa
+                  ? "پس از ادامه، به درگاه بانکی معتبر منتقل می‌شوید. اطلاعات کارت فقط در صفحه رسمی بانک وارد می‌شود."
+                  : "Continue to the verified bank gateway. Card details are entered only on the bank's official page."}
+              </p>
+              {(planId || invoiceId || jobId) ? (
+                <Button onClick={initiateRealCheckout} className="w-full bg-amber text-black hover:bg-amber/90">
+                  <Lock className="mr-2 size-4" /> {isFa ? "ادامه به درگاه بانکی" : "Continue to bank"}
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">{isFa ? "این نوع پرداخت هنوز به فرایند پرداخت واقعی متصل نشده است." : "This payment type is not yet connected to the live checkout flow."}</p>
+              )}
+              <Button onClick={close} variant="outline" className="w-full">{t("common.close")}</Button>
+            </div>
+          )}
+          {stage === "form" && process.env.NODE_ENV !== "production" && (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               <div>
                 <Label className="text-xs">{t("pay.gateway.bank")}</Label>

@@ -4,6 +4,7 @@
 
 import { initEtaProvider } from "./eta-provider";
 import { initSmsProvider } from "./sms-provider";
+import { initPaymentProvider } from "./payment-provider";
 
 let initialized = false;
 
@@ -16,6 +17,9 @@ export function initServer(): void {
 
   // Initialize SMS provider from env (Kavenegar/MeliPayamak/Farapayamak/console)
   initSmsProvider();
+
+  // Initialize payment provider from environment (Zarinpal / IDPay / dev simulator)
+  initPaymentProvider();
 
   // Redis is lazy-loaded in src/lib/redis.ts — no init needed here
   console.log("🚀 MEKANIX server initialized");

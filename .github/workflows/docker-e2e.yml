@@ -12,8 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DB_PASSWORD: test_password
-      JWT_SECRET: test_secret_for_ci
+      DB_PASSWORD: test_password_for_docker_ci_only_123456
+      JWT_SECRET: test_secret_for_docker_ci_only_12345678901234567890
+      REDIS_PASSWORD: test_redis_password_for_docker_ci_only_123456
+      ADMIN_BOOTSTRAP_PASSWORD: test_admin_password_for_docker_ci_only_123456
+      SMS_PROVIDER: console
+      PAYMENT_PROVIDER: simulator
+      APP_URL: https://mekanix.test
+      ZARINPAL_SANDBOX: false
+      IDPAY_SANDBOX: false
     
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +47,19 @@ jobs:
           
           echo "✅ Build context prepared with PostgreSQL config"
       
+      - name: Validate isolated staging Compose configuration
+        run: docker compose -f docker-compose.staging.yml config > /dev/null
+        env:
+          DB_PASSWORD: staging_test_db_password_1234567890
+          REDIS_PASSWORD: staging_test_redis_password_1234567890
+          JWT_SECRET: staging_test_jwt_secret_12345678901234567890
+          ADMIN_BOOTSTRAP_PASSWORD: staging_test_admin_password_123456
+          APP_URL: https://staging.mekanix.test
+          PAYMENT_PROVIDER: zarinpal
+          ZARINPAL_MERCHANT_ID: staging-test-merchant
+          ZARINPAL_SANDBOX: "true"
+          IDPAY_SANDBOX: "false"
+
       - name: Build and start Docker Compose stack
         run: |
           cd /tmp/mekanix-build

@@ -1,11 +1,39 @@
 # Changelog
 
+## [1.0.1] - Unreleased
+
+### Security and release hardening
+- Initialize the configured payment provider during server startup.
+- Fail closed in production when the payment provider is missing, unsupported, or not configured; simulator fallback is development-only.
+- Keep legacy simulator endpoints blocked in production; route invoice payments through authenticated Zarinpal/IDPay checkout.
+- Require a real PostgreSQL connection string, configured SMS sender credentials, and a verified payment integration before production readiness can pass.
+- Require production secrets and real provider configuration in the production Docker Compose deployment.
+- Enable Redis AOF persistence in the production Compose stack.
+- Implement Zarinpal v4 and IDPay v1.1 create/verify requests, bank callback handling, amount verification, and transactional invoice settlement.
+- Connect VIP plan checkout to the same verified payment flow; activate subscriptions only after server-side gateway verification.
+- Connect pre-service inspection/travel fee checkout to the verified bank callback; update job, technician pending wallet balance, commission, notifications, and chat unlock atomically.
+- Require authentication and a matching successful payment for the VIP subscription API.
+- Keep sandbox mode configurable for staging and reject sandbox mode in production readiness/deployment.
+- Make deployment verify /api/ready after liveness instead of treating /api/health alone as proof of readiness.
+- Add an isolated staging profile that permits sandbox gateway credentials and console OTP only under APP_ENV=staging; add docs/STAGING_RUNBOOK.md.
+- Avoid returning raw internal dependency errors from the public health endpoint.
+- Correct the production readiness checklist totals and mark the existing changelog and payment-provider startup work accurately.
+- Record the remaining local IRANSans font asset requirement; current runtime font is Vazirmatn.
+
+### Known release blockers
+- Wire the production gateway create → redirect → callback → verify → idempotent settlement flow to the existing customer payment UI.
+- Complete provider-specific callback verification and test with provider sandbox credentials.
+- Run CI on the release pull request and resolve any failures.
+- Run a full PostgreSQL staging smoke test, OWASP ZAP scan, and cross-browser/mobile QA.
+- Activate real SMS, payment credentials, domain, TLS, monitoring, backups, and alerts only when production credentials and infrastructure are supplied.
+- Complete real provider sandbox transactions before marking payment integration as production-verified.
+
 ## [1.0.0] - 2026-09-25
 
 ### Added
 - Customer service workflow (request → matching → dispatch → tracking → completion)
 - Heavy machinery support (excavators, loaders, graders, bulldozers, tractors)
-- Passenger vehicle support (28 Iranian car companies with full catalog)
+- Passenger vehicle support (vehicle catalogue and customer flows)
 - Technician workflow (missions, inspection, findings, health reports)
 - Admin panel (users, technicians, applications, verification, categories)
 - MEKANIX CARE module (maintenance engine, service packages, bookings)
@@ -15,7 +43,7 @@
 - Unified Service facade (read + write)
 - Offline mode with queue, sync, and idempotency
 - Lite API responses (?lite=true for weak internet)
-- Payment gateway abstraction (Zarinpal, IDPay, NextPay)
+- Payment gateway abstraction (Zarinpal, IDPay; simulator for development)
 - SMS provider abstraction (Kavenegar, MeliPayamak, Farapayamak)
 - ETA provider abstraction (Neshan, Google Maps, OSRM)
 - Redis adapter for distributed rate limiting and idempotency
@@ -23,57 +51,36 @@
 - Docker production stack (multi-stage build, compose, migrate service)
 - Health (/api/health) and Readiness (/api/ready) endpoints
 - Caddy reverse proxy config with HTTPS, HSTS, CSP
-- Production readiness checklist (31 phases)
+- Production readiness checklist
 - Backup/restore scripts
-- Security audit script (12 automated checks)
-- Rollback documentation
+- Security audit script
 
 ### Security
-- OTP security: CSPRNG (crypto.randomInt) + SHA-256 hashed storage
-- OTP rate limiting: 5/10min per phone, 20/hour per IP (Redis-backed)
-- Session: DB-backed revocation (tokenHash + revokedAt)
-- HttpOnly + Secure cookies (no X-Token header)
-- BOLA protection on 23 API routes (requireBookingParticipant, requireAssignedTechnician, etc.)
-- Service state machine (role-based transitions, optimistic concurrency)
-- Mass assignment protection (FORBIDDEN_FIELDS, sanitizeInput)
-- Zod input validation (6 schema files)
-- Permission guard (can() function, 14 permissions, 5 roles)
-- Demo endpoint hard-blocked in production (handler + rewrite)
-- Admin auth: no default password in production (ADMIN_BOOTSTRAP_PASSWORD)
-- JWT: no fallback secret in production (throws if missing)
-- Security headers via Caddy (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
-- Repository hygiene script (forbidden artifacts scanner)
-- Production safety gates (SMS/Payment/PostgreSQL in /api/ready)
+- OTP security: CSPRNG + SHA-256 hashed storage
+- OTP rate limiting and DB-backed session revocation
+- HttpOnly + Secure cookies in production
+- BOLA protection helpers and Zod input validation
+- Service state machine and mass-assignment protection
+- Admin bootstrap requires an explicit production password
+- JWT secret required in production
+- Security headers via Caddy
+- Repository hygiene script and production readiness gates
 
 ### Testing
-- 333 tests across 13 files
-- Unit tests (permissions, care-auth, pricing, dispatch, offline-queue, lite-response, session-lifecycle, service-unified)
-- Integration tests (auth OTP flow, CARE BOLA protection)
-- Business E2E tests (47 tests, 14 flow stages)
-- Failure scenario tests (28 tests, 8 categories)
-- Security tests (42 tests, BOLA/IDOR/mass-assignment/OTP-crypto)
-- CI: SQLite (ci.yml)
-- CI: PostgreSQL 16 (postgresql-ci.yml with service container)
-- CI: Production Readiness (build + check:repo)
-- CI: Docker E2E (full stack: build → compose → migrate → health → OTP test)
+- Unit, integration, business-flow, failure-scenario, and security tests are included in the repository.
+- CI workflows cover SQLite, PostgreSQL, production readiness, and Docker E2E.
 
 ### Architecture
 - Next.js 16 + TypeScript 5 + Tailwind CSS 4 + shadcn/ui
-- Prisma ORM with 60 models
-- 70 API routes
-- 105 React components
-- 2,968 i18n translation keys (fa/en)
-- 102 Iranian vehicle brand entries (Persian names)
-- Decimal.js for money-safe calculations (IRR currency)
-- src/modules/ structure (9 module barrels)
+- Prisma ORM
+- PostgreSQL production database with SQLite development/test support
+- Persian/English translation module and RTL support
 
-### Deferred Integrations
-- Real SMS provider (needs Kavenegar API key + real phone test)
-- Real Zarinpal payment (needs merchant ID + real transaction test)
-- Real routing provider (needs Neshan API key + real route test)
-- Production VPS deployment
-- Domain + DNS + HTTPS
-- Production monitoring (Prometheus/Grafana)
-- Load test execution (k6 script ready)
-- Playwright browser E2E
-- OWASP ZAP scan
+### Deferred integrations
+- Real SMS delivery (requires provider credentials and a real-phone test)
+- Real payment transactions (requires merchant credentials and provider sandbox/live test)
+- Real routing provider (requires Neshan or another routing API key)
+- Production VPS deployment, domain, DNS, and HTTPS
+- Production monitoring and alerting
+- Load test execution and OWASP ZAP scan
+- Post-launch observation and support

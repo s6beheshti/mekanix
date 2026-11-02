@@ -1,16 +1,6 @@
 #!/bin/bash
-# MEKANIX — Production Deployment Script
-#
-# Builds and deploys MEKANIX via Docker Compose with PostgreSQL 16 + Redis 7.
-# Does NOT mutate the developer's working tree — all PostgreSQL migration
-# swapping happens inside a temporary build context.
-#
-# Usage:
-#   bash scripts/deploy.sh
-#
-# Required env vars:
-#   DB_PASSWORD     — PostgreSQL password
-#   JWT_SECRET      — JWT signing secret
+# MEKANIX — Production Deployment
+# Requires real production credentials. Demo SMS/payment providers are rejected.
 
 set -euo pipefail
 
@@ -18,94 +8,96 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
-echo "🚀 MEKANIX Production Deployment"
-echo "   Repo: $REPO_DIR"
-echo ""
+fail() { echo "❌ $*" >&2; exit 1; }
+require_var() {
+  local name="$1"
+  [[ -n "${!name:-}" ]] || fail "$name is required"
+}
 
-# ─── Validate required env vars ───
-MISSING=0
-if [ -z "${DB_PASSWORD:-}" ]; then
-  echo "❌ DB_PASSWORD not set"
-  MISSING=1
-fi
-if [ -z "${JWT_SECRET:-}" ]; then
-  echo "❌ JWT_SECRET not set"
-  MISSING=1
-  echo "❌ JWT_SECRET not set"
-  MISSING=1
-fi
-if [ "$MISSING" = "1" ]; then
-  echo ""
-  echo "Set required env vars:"
-  echo "  export DB_PASSWORD=your_secure_password"
-  echo "  export JWT_SECRET=your_secure_secret"
-  exit 1
-fi
+echo "MEKANIX production preflight"
 
-# ─── Create temporary build context with PostgreSQL config ───
+for name in DB_PASSWORD JWT_SECRET REDIS_PASSWORD SMS_PROVIDER PAYMENT_PROVIDER APP_URL; do
+  require_var "$name"
+done
+
+[[ ${#DB_PASSWORD} -ge 24 ]] || fail "DB_PASSWORD must be at least 24 characters"
+[[ ${#JWT_SECRET} -ge 32 ]] || fail "JWT_SECRET must be at least 32 characters"
+[[ ${#REDIS_PASSWORD} -ge 24 ]] || fail "REDIS_PASSWORD must be at least 24 characters"
+
+case "$SMS_PROVIDER" in
+  kavenegar) require_var KAVENEGAR_API_KEY ;;
+  melipayamak)
+    require_var MELIPAYAMAK_USERNAME
+    require_var MELIPAYAMAK_PASSWORD
+    require_var MELIPAYAMAK_SENDER
+    ;;
+  farapayamak)
+    require_var FARAPAYAMAK_USERNAME
+    require_var FARAPAYAMAK_PASSWORD
+    require_var FARAPAYAMAK_SENDER
+    ;;
+  *) fail "Unsupported SMS_PROVIDER: $SMS_PROVIDER" ;;
+esac
+
+case "$PAYMENT_PROVIDER" in
+  zarinpal) require_var ZARINPAL_MERCHANT_ID ;;
+  idpay) require_var IDPAY_API_KEY ;;
+  *) fail "PAYMENT_PROVIDER must be zarinpal or idpay (simulator/NextPay are not production-ready)" ;;
+esac
+
+[[ "$APP_URL" == https://* ]] || fail "APP_URL must be a public HTTPS origin for bank callbacks"
+[[ "${ZARINPAL_SANDBOX:-false}" != "true" ]] || fail "ZARINPAL_SANDBOX must be false in production"
+[[ "${IDPAY_SANDBOX:-false}" != "true" ]] || fail "IDPAY_SANDBOX must be false in production"
+
+[[ -n "${ADMIN_BOOTSTRAP_PASSWORD:-}" ]] || fail "ADMIN_BOOTSTRAP_PASSWORD is required for the initial admin account"
+[[ ${#ADMIN_BOOTSTRAP_PASSWORD} -ge 16 ]] || fail "ADMIN_BOOTSTRAP_PASSWORD must be at least 16 characters"
+
+echo "✅ Required production secrets/providers validated"
+
 BUILD_CTX="$(mktemp -d /tmp/mekanix-build.XXXXXX)"
 trap 'rm -rf "$BUILD_CTX"' EXIT
 
-echo "📦 Preparing build context (PostgreSQL migrations)..."
+echo "Preparing PostgreSQL build context..."
 rsync -a --exclude='node_modules' --exclude='.next' --exclude='.git' \
-  --exclude='db/*.db' --exclude='*.log' \
-  "$REPO_DIR/" "$BUILD_CTX/"
+  --exclude='db/*.db' --exclude='*.log' "$REPO_DIR/" "$BUILD_CTX/"
 
-# Replace SQLite migrations with PostgreSQL migrations
 rm -rf "$BUILD_CTX/prisma/migrations"
 mkdir -p "$BUILD_CTX/prisma/migrations/20260925000000_init"
 cp "$REPO_DIR/prisma/migrations-postgresql/20260925000000_init/migration.sql" \
-   "$BUILD_CTX/prisma/migrations/20260925000000_init/"
+  "$BUILD_CTX/prisma/migrations/20260925000000_init/"
 cp "$REPO_DIR/prisma/migrations-postgresql/migration_lock.toml" \
-   "$BUILD_CTX/prisma/migrations/"
+  "$BUILD_CTX/prisma/migrations/"
+sed -i 's/provider = "sqlite"/provider = "postgresql"/' "$BUILD_CTX/prisma/schema.prisma"
 
-# Switch schema.prisma to PostgreSQL (in build context only)
-sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
-  "$BUILD_CTX/prisma/schema.prisma"
-
-echo "   ✅ Build context ready (PostgreSQL provider + migrations)"
-echo "   ✅ Developer working tree: UNCHANGED"
-echo ""
-
-# ─── Build and deploy ───
-echo "🏗️  Building and deploying with docker compose..."
 cd "$BUILD_CTX"
+echo "Building and starting services..."
 docker compose up -d --build
 
-# ─── Wait for health ───
-echo "⏳ Waiting for app to be healthy..."
-HEALTH_URL="http://localhost:3000/api/health"
+echo "Waiting for liveness..."
 for i in $(seq 1 60); do
-  HEALTH_JSON="$(curl -s "$HEALTH_URL" 2>/dev/null || echo '{}')"
-  if echo "$HEALTH_JSON" | grep -q '"ok":true'; then
-    echo "✅ App is healthy!"
-    echo ""
-    echo "$HEALTH_JSON" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-print(f'  Database: {d[\"services\"][\"database\"]}')
-print(f'  Redis: {d[\"services\"][\"redis\"]}')
-" 2>/dev/null || true
+  HEALTH="$(curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || true)"
+  if echo "$HEALTH" | grep -q '"ok":true'; then
     break
   fi
-  if [ "$i" = "60" ]; then
-    echo "❌ App did not become healthy within 120s"
-    echo "   Check logs: docker compose logs"
-    exit 1
+  if [[ "$i" -eq 60 ]]; then
+    docker compose logs --tail=150
+    fail "Application did not become live within 120 seconds"
   fi
-  echo "   Waiting... ($i/60)"
   sleep 2
 done
 
-echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║  ✅ Deployment complete!                                ║"
-echo "║                                                          ║"
-echo "║  App:    http://localhost:3000                           ║"
-echo "║  Health: http://localhost:3000/api/health               ║"
-echo "║  DB:     localhost:5432 (PostgreSQL 16)                ║"
-echo "║  Redis:  localhost:6379 (Redis 7)                      ║"
-echo "║                                                          ║"
-echo "║  Logs:   docker compose logs -f                         ║"
-echo "║  Stop:   docker compose down                            ║"
-echo "╚══════════════════════════════════════════════════════════╝"
+echo "Waiting for production readiness (real SMS + payment + PostgreSQL)..."
+for i in $(seq 1 30); do
+  READY="$(curl -sS http://127.0.0.1:3000/api/ready 2>/dev/null || true)"
+  if echo "$READY" | grep -q '"ok":true'; then
+    echo "✅ Production readiness passed"
+    echo "$READY"
+    exit 0
+  fi
+  if [[ "$i" -eq 30 ]]; then
+    echo "$READY"
+    docker compose logs --tail=150
+    fail "Production readiness failed. Do not expose this deployment to users."
+  fi
+  sleep 2
+done

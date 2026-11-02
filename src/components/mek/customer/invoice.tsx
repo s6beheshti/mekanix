@@ -42,6 +42,10 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         setJob(updated);
       }
       const pay = await api.payInvoice(invoice.id, method);
+      if ("redirectUrl" in pay) {
+        window.location.assign(pay.redirectUrl);
+        return;
+      }
       if (pay.status === "SUCCEEDED") {
         toast.success(t("pay.success"));
         go("completion", { jobId: job!.id });
