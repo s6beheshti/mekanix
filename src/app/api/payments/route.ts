@@ -97,7 +97,9 @@ export async function POST(req: Request) {
   if (session instanceof NextResponse) return session;
 
   const provider = getPaymentProviderStatus();
-  if (!provider.configured || (provider.provider === "simulator" && process.env.NODE_ENV === "production")) {
+  const isProduction = process.env.NODE_ENV === "production";
+  const sandboxEnabled = process.env.IDPAY_SANDBOX === "true" || process.env.ZARINPAL_SANDBOX === "true";
+  if (!provider.configured || (provider.provider === "simulator" && isProduction) || (isProduction && sandboxEnabled)) {
     return NextResponse.json(
       { error: "درگاه پرداخت واقعی پیکربندی نشده است" },
       { status: 503 }
@@ -125,6 +127,9 @@ export async function POST(req: Request) {
   }
   const payload = body as { invoiceId?: unknown; planId?: unknown };
   if (typeof payload.planId === "string" && payload.planId.trim()) {
+    if (session.role !== "CUSTOMER" && session.role !== "ADMIN") {
+      return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+    }
     return startVipCheckout(payload.planId, session.userId, provider.provider);
   }
   const invoiceId = payload.invoiceId;
