@@ -84,9 +84,9 @@ export async function GET() {
 
     // 3c. Database must be PostgreSQL in production (not SQLite)
     const dbUrl = process.env.DATABASE_URL || "";
-    if (dbUrl.startsWith("file:")) {
+    if (!dbUrl.startsWith("postgresql://") && !dbUrl.startsWith("postgres://")) {
       ready.ok = false;
-      ready.errors.push("Database: SQLite (file:) not allowed in production — use PostgreSQL (postgresql://)");
+      ready.errors.push("Database: production requires a PostgreSQL DATABASE_URL");
     } else {
       ready.checks.databaseProvider = true;
     }
