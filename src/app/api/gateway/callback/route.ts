@@ -73,6 +73,11 @@ async function handleCallback(req: NextRequest) {
     await db.payment.updateMany({ where: { id: log.paymentId, status: "PENDING" }, data: { status: "FAILED" } });
     return resultRedirect(req, "failed");
   }
+  if (!isZarinpal && callbackStatus === "10") {
+    // IDPay status 10 means the transaction is still waiting for payer action.
+    // Do not mark it failed or settle it; the verified callback may arrive later.
+    return resultRedirect(req, "failed");
+  }
   if (!isZarinpal && !["100", "101"].includes(callbackStatus || "")) {
     await db.paymentGatewayLog.update({
       where: { id: log.id },
