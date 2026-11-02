@@ -8,6 +8,77 @@ import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider"
 // POST /api/payments — create a real external checkout for an invoice.
 // The invoice, amount, payer and currency are always resolved server-side.
 // A payment is not successful until /api/gateway/callback verifies it with the provider.
+async function startVipCheckout(planId: string, userId: string, providerName: string) {
+  const plan = await db.vipPlan.findUnique({ where: { id: planId } });
+  if (!plan || !plan.active) {
+    return NextResponse.json({ error: "طرح VIP فعال یا معتبر نیست" }, { status: 404 });
+  }
+  const amount = Math.round(Number(plan.priceIrr));
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return NextResponse.json({ error: "مبلغ طرح VIP معتبر نیست" }, { status: 422 });
+  }
+  const appUrl = process.env.APP_URL;
+  if (!appUrl) return NextResponse.json({ error: "APP_URL برای callback درگاه تنظیم نشده است" }, { status: 503 });
+  let callbackUrl: string;
+  try {
+    const base = new URL(appUrl);
+    if (process.env.NODE_ENV === "production" && base.protocol !== "https:") {
+      return NextResponse.json({ error: "APP_URL در محیط تولید باید HTTPS باشد" }, { status: 503 });
+    }
+    callbackUrl = new URL("/api/gateway/callback", base).toString();
+  } catch {
+    return NextResponse.json({ error: "APP_URL معتبر نیست" }, { status: 503 });
+  }
+
+  const code = "PG-" + randomUUID();
+  const paymentCode = "PAY-" + randomUUID();
+  const gateway = providerName === "zarinpal" ? "ZARINPAL" : "IDPAY";
+  const created = await db.$transaction(async (tx) => {
+    const payment = await tx.payment.create({
+      data: { code: paymentCode, userId, amount, currency: "IRR", method: "card", status: "PENDING" },
+    });
+    const log = await tx.paymentGatewayLog.create({
+      data: {
+        code,
+        userId,
+        amount,
+        currency: "IRR",
+        gateway,
+        status: "INITIATED",
+        purpose: "vip",
+        description: "VIP_PLAN:" + plan.id,
+        paymentId: payment.id,
+      },
+    });
+    return { paymentId: payment.id, logId: log.id };
+  });
+
+  const result = await createPayment({
+    amount,
+    description: "MEKANIX VIP " + plan.name,
+    callbackUrl,
+    orderId: code,
+  });
+  if (!result.success || !result.paymentUrl || !result.authority) {
+    await db.$transaction([
+      db.paymentGatewayLog.update({ where: { id: created.logId }, data: { status: "FAILED" } }),
+      db.payment.update({ where: { id: created.paymentId }, data: { status: "FAILED" } }),
+    ]);
+    return NextResponse.json({ error: result.error || "ایجاد پرداخت درگاه ناموفق بود" }, { status: 502 });
+  }
+  await db.paymentGatewayLog.update({
+    where: { id: created.logId },
+    data: { status: "REDIRECTED", referenceId: result.authority },
+  });
+  return NextResponse.json({
+    ok: true,
+    paymentId: created.paymentId,
+    redirectUrl: result.paymentUrl,
+    amount,
+    currency: "IRR",
+  });
+}
+
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -39,9 +110,13 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const invoiceId = (body as { invoiceId?: unknown })?.invoiceId;
+  const payload = body as { invoiceId?: unknown; planId?: unknown };
+  if (typeof payload.planId === "string" && payload.planId.trim()) {
+    return startVipCheckout(payload.planId, session.userId, provider.provider);
+  }
+  const invoiceId = payload.invoiceId;
   if (typeof invoiceId !== "string" || !invoiceId.trim()) {
-    return NextResponse.json({ error: "invoiceId الزامی است" }, { status: 400 });
+    return NextResponse.json({ error: "invoiceId یا planId الزامی است" }, { status: 400 });
   }
 
   const invoice = await db.invoice.findUnique({
