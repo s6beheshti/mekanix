@@ -4,6 +4,7 @@ import { POST as invoicePaymentPOST } from "@/app/api/payments/route";
 import { POST as gatewayInitiatePOST } from "@/app/api/gateway/initiate/route";
 import { POST as gatewayVerifyPOST } from "@/app/api/gateway/verify/route";
 import { POST as vipSubscribePOST } from "@/app/api/vip/subscribe/route";
+import { POST as prepayPOST } from "@/app/api/prepay/route";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -40,6 +41,16 @@ describe("production payment safety gates", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ invoiceId: "inv_test" }),
+    }));
+    expect(response.status).toBe(503);
+  });
+
+  it("blocks direct simulated prepay settlement in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = await prepayPOST(new Request("https://mekanix.test/api/prepay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: "job_test", cardNumber: "4111111111111111" }),
     }));
     expect(response.status).toBe(503);
   });
