@@ -92,6 +92,7 @@ export function PaymentGatewayDialog({
           userId: userId ?? null,
           amount,
           purpose,
+          planId: planId ?? null,
           description,
           mobile,
           cardNumber: card,
