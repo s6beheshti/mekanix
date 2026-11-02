@@ -9,6 +9,13 @@ import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 // - Only the customer who owns the job can pay their own invoice.
 // - Status transitions to PAID happen ONLY here (after simulated gateway verify).
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "پرداخت فاکتور تا زمان اتصال درگاه بانکی عملیاتی غیرفعال است" },
+      { status: 503 }
+    );
+  }
+
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
