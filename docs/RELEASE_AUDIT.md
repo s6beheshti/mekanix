@@ -18,7 +18,7 @@
 8. Require production secrets and explicit production SMS/payment providers in Docker Compose; enable Redis AOF.
 9. Make scripts/deploy.sh validate strong secrets/provider credentials and poll both liveness and production readiness.
 10. Avoid returning raw dependency error messages from the public health endpoint.
-11. Reconcile the checklist: 204 rows = 102 Done, 32 Prepared, 64 Pending, 6 Partial. The former 137-item summary was inconsistent.
+11. Reconcile the checklist: 204 rows = 102 Done, 31 Prepared, 64 Pending, 7 Partial. The former 137-item summary was inconsistent.
 12. Add regression tests for all three production payment blocks. Add v1.0.1 unreleased notes and clarify development-only placeholders in .env.example.
 
 ## Critical findings still open
@@ -27,6 +27,7 @@
 - No staging environment has been deployed: PostgreSQL migration, Redis persistence, production image, backup/restore, and full workflow need an actual host.
 - External integrations are not verified: real OTP delivery, payment sandbox/live transaction, and routing provider require credentials and test accounts.
 - Operational security is not verified: branch protection is disabled on main; no release exists; OWASP ZAP, penetration test, load test, monitoring/alerts, and restore drill need execution.
+- Persian typography is not fully aligned with the preferred design specification: the app currently loads Vazirmatn; a licensed local IRANSans font package is not in the repository.
 - Launch-day work remains: domain/DNS/TLS, firewall/SSH hardening, admin bootstrap, monitoring, real user acceptance tests, and 24-hour observation.
 
 ## Release decision
