@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   if (session instanceof NextResponse) return session;
 
   const provider = getPaymentProviderStatus();
-  if (!provider.configured || provider.provider === "simulator") {
+  if (!provider.configured || (provider.provider === "simulator" && process.env.NODE_ENV === "production")) {
     return NextResponse.json(
       { error: "درگاه پرداخت واقعی پیکربندی نشده است" },
       { status: 503 }
@@ -84,6 +84,37 @@ export async function POST(req: Request) {
     if (activeLog) {
       return NextResponse.json({ error: "برای این فاکتور یک پرداخت در حال انجام وجود دارد" }, { status: 409 });
     }
+  }
+
+  // Local-only simulator keeps development and automated UI tests usable.
+  // It is unreachable in production and never represents a real bank transaction.
+  if (provider.provider === "simulator" && process.env.NODE_ENV !== "production") {
+    const succeeded = Math.random() > 0.05;
+    const payment = await db.payment.upsert({
+      where: { invoiceId: invoice.id },
+      create: {
+        code: "PAY-DEV-" + randomUUID(),
+        invoiceId: invoice.id,
+        userId: session.userId,
+        amount,
+        currency: "IRR",
+        method: "card",
+        status: succeeded ? "SUCCEEDED" : "FAILED",
+      },
+      update: { status: succeeded ? "SUCCEEDED" : "FAILED", amount, userId: session.userId, method: "card" },
+    });
+    if (succeeded) {
+      await db.$transaction(async (tx) => {
+        await tx.invoice.update({ where: { id: invoice.id }, data: { status: "PAID" } });
+        await tx.job.update({ where: { id: invoice.jobId }, data: { status: "COMPLETED", completedAt: new Date() } });
+        await tx.warranty.upsert({
+          where: { jobId: invoice.jobId },
+          create: { jobId: invoice.jobId, months: 6, active: true },
+          update: { active: true },
+        });
+      });
+    }
+    return NextResponse.json(payment);
   }
 
   const appUrl = process.env.APP_URL;
