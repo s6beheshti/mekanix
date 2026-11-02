@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider";
+import { calculatePrepayFees } from "@/lib/prepay-settlement";
 
 // POST /api/payments — create a real external checkout for an invoice.
 // The invoice, amount, payer and currency are always resolved server-side.
@@ -92,6 +93,99 @@ async function startVipCheckout(planId: string, userId: string, providerName: st
   });
 }
 
+async function startPrepayCheckout(jobId: string, userId: string, providerName: string) {
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    include: {
+      request: { include: { vehicle: true, customer: true } },
+      technician: true,
+    },
+  });
+  if (!job) return NextResponse.json({ error: "درخواست تعمیر پیدا نشد" }, { status: 404 });
+  if (job.request.customer.userId !== userId) {
+    return NextResponse.json({ error: "شما مالک این درخواست نیستید" }, { status: 403 });
+  }
+  if (job.prepayPaid) return NextResponse.json({ error: "هزینه پیش‌خدمت قبلاً پرداخت شده است" }, { status: 409 });
+  if (["CANCELLED", "REJECTED", "COMPLETED"].includes(job.status)) {
+    return NextResponse.json({ error: "این درخواست در وضعیت قابل پرداخت نیست" }, { status: 409 });
+  }
+
+  const fees = calculatePrepayFees(job);
+  const activeCheckout = await db.paymentGatewayLog.findFirst({
+    where: {
+      userId,
+      purpose: "prepay",
+      description: "PREPAY_JOB:" + job.id,
+      status: "REDIRECTED",
+      initiatedAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+    },
+  });
+  if (activeCheckout) {
+    return NextResponse.json({ error: "یک پرداخت پیش‌خدمت برای این درخواست در حال انجام است" }, { status: 409 });
+  }
+
+  const appUrl = process.env.APP_URL;
+  if (!appUrl) return NextResponse.json({ error: "APP_URL برای callback درگاه تنظیم نشده است" }, { status: 503 });
+  let callbackUrl: string;
+  try {
+    const base = new URL(appUrl);
+    if (process.env.NODE_ENV === "production" && base.protocol !== "https:") {
+      return NextResponse.json({ error: "APP_URL در محیط عملیاتی باید HTTPS باشد" }, { status: 503 });
+    }
+    callbackUrl = new URL("/api/gateway/callback", base).toString();
+  } catch {
+    return NextResponse.json({ error: "APP_URL معتبر نیست" }, { status: 503 });
+  }
+
+  const code = "PG-" + randomUUID();
+  const paymentCode = "PAY-" + randomUUID();
+  const gateway = providerName === "zarinpal" ? "ZARINPAL" : "IDPAY";
+  const created = await db.$transaction(async (tx) => {
+    const payment = await tx.payment.create({
+      data: { code: paymentCode, userId, amount: fees.gross, currency: "IRR", method: "card", status: "PENDING" },
+    });
+    const log = await tx.paymentGatewayLog.create({
+      data: {
+        code,
+        userId,
+        amount: fees.gross,
+        currency: "IRR",
+        gateway,
+        status: "INITIATED",
+        purpose: "prepay",
+        description: "PREPAY_JOB:" + job.id,
+        paymentId: payment.id,
+      },
+    });
+    return { paymentId: payment.id, logId: log.id };
+  });
+
+  const result = await createPayment({
+    amount: fees.gross,
+    description: "MEKANIX pre-service " + job.code,
+    callbackUrl,
+    orderId: code,
+  });
+  if (!result.success || !result.paymentUrl || !result.authority) {
+    await db.$transaction([
+      db.paymentGatewayLog.update({ where: { id: created.logId }, data: { status: "FAILED" } }),
+      db.payment.update({ where: { id: created.paymentId }, data: { status: "FAILED" } }),
+    ]);
+    return NextResponse.json({ error: result.error || "ایجاد پرداخت درگاه ناموفق بود" }, { status: 502 });
+  }
+  await db.paymentGatewayLog.update({
+    where: { id: created.logId },
+    data: { status: "REDIRECTED", referenceId: result.authority },
+  });
+  return NextResponse.json({
+    ok: true,
+    paymentId: created.paymentId,
+    redirectUrl: result.paymentUrl,
+    amount: fees.gross,
+    currency: "IRR",
+  });
+}
+
 export async function POST(req: Request) {
   const provider = getPaymentProviderStatus();
   const isProduction = process.env.NODE_ENV === "production";
@@ -126,16 +220,22 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const payload = body as { invoiceId?: unknown; planId?: unknown };
+  const payload = body as { invoiceId?: unknown; planId?: unknown; jobId?: unknown };
   if (typeof payload.planId === "string" && payload.planId.trim()) {
     if (session.role !== "CUSTOMER" && session.role !== "ADMIN") {
       return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
     }
     return startVipCheckout(payload.planId, session.userId, provider.provider);
   }
+  if (typeof payload.jobId === "string" && payload.jobId.trim()) {
+    if (session.role !== "CUSTOMER") {
+      return NextResponse.json({ error: "فقط مشتری می‌تواند هزینه پیش‌خدمت را پرداخت کند" }, { status: 403 });
+    }
+    return startPrepayCheckout(payload.jobId, session.userId, provider.provider);
+  }
   const invoiceId = payload.invoiceId;
   if (typeof invoiceId !== "string" || !invoiceId.trim()) {
-    return NextResponse.json({ error: "invoiceId یا planId الزامی است" }, { status: 400 });
+    return NextResponse.json({ error: "invoiceId، planId یا jobId الزامی است" }, { status: 400 });
   }
 
   const invoice = await db.invoice.findUnique({
