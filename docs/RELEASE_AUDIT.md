@@ -18,7 +18,7 @@
 8. Require production secrets and explicit production SMS/payment providers in Docker Compose; enable Redis AOF.
 9. Make scripts/deploy.sh validate strong secrets/provider credentials and poll both liveness and production readiness.
 10. Avoid returning raw dependency error messages from the public health endpoint.
-11. Reconcile the checklist: 204 rows = 100 Done, 33 Prepared, 65 Pending, 6 Partial. The former 137-item summary was inconsistent.
+11. Reconcile the checklist: 204 rows = 102 Done, 32 Prepared, 64 Pending, 6 Partial. The former 137-item summary was inconsistent.
 12. Add regression tests for all three production payment blocks. Add v1.0.1 unreleased notes and clarify development-only placeholders in .env.example.
 
 ## Critical findings still open
