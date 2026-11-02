@@ -109,7 +109,7 @@ async function startPrepayCheckout(jobId: string, userId: string, providerName: 
     return NextResponse.json({ error: "این درخواست در وضعیت قابل پرداخت نیست" }, { status: 409 });
   }
 
-  let fees;
+  let fees: ReturnType<typeof calculatePrepayFees>;
   try {
     fees = calculatePrepayFees(job);
   } catch {
