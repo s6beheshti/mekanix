@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyPayment } from "@/lib/payment-provider";
+import { settlePrepay } from "@/lib/prepay-settlement";
 
 export const runtime = "nodejs";
 
@@ -59,7 +60,7 @@ async function handleCallback(req: NextRequest) {
   if (!isZarinpal && log.referenceId !== authority) {
     return resultRedirect(req, "failed");
   }
-  if (!["invoice", "vip"].includes(log.purpose) || !log.paymentId || log.currency !== "IRR") {
+  if (!["invoice", "vip", "prepay"].includes(log.purpose) || !log.paymentId || log.currency !== "IRR") {
     return resultRedirect(req, "failed");
   }
   if (log.status === "VERIFIED") return resultRedirect(req, "success", log.referenceId || undefined);
@@ -118,6 +119,19 @@ async function handleCallback(req: NextRequest) {
       const payment = await tx.payment.findUnique({ where: { id: log.paymentId! } });
       if (!payment || payment.userId !== log.userId || Math.round(Number(payment.amount)) !== expectedAmount) {
         throw new Error("Payment owner or amount does not match gateway order");
+      }
+
+      if (log.purpose === "prepay") {
+        const jobId = log.description?.startsWith("PREPAY_JOB:")
+          ? log.description.slice("PREPAY_JOB:".length)
+          : "";
+        if (!jobId) throw new Error("Pre-service job reference is missing");
+        await settlePrepay(tx, jobId, payment.userId, expectedAmount);
+        await tx.paymentGatewayLog.update({
+          where: { id: log.id },
+          data: { status: "VERIFIED", verifiedAt: new Date(), callbackPayload: JSON.stringify(fields) },
+        });
+        return;
       }
 
       if (log.purpose === "vip") {
