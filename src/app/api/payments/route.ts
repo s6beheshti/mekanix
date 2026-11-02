@@ -116,7 +116,6 @@ async function startPrepayCheckout(jobId: string, userId: string, providerName: 
       purpose: "prepay",
       description: "PREPAY_JOB:" + job.id,
       status: "REDIRECTED",
-      initiatedAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
     },
   });
   if (activeCheckout) {
