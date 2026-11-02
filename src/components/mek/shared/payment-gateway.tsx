@@ -152,7 +152,21 @@ export function PaymentGatewayDialog({
         </div>
 
         <AnimatePresence mode="wait">
-          {stage === "form" && (
+          {stage === "form" && process.env.NODE_ENV === "production" && (
+            <div className="space-y-3 rounded-lg border border-amber/30 bg-amber/5 p-4 text-center">
+              <ShieldCheck className="mx-auto size-8 text-amber" />
+              <h3 className="font-semibold">{isFa ? "درگاه پرداخت در حال راه‌اندازی است" : "Payment gateway is being configured"}</h3>
+              <p className="text-sm text-muted-foreground">
+                {isFa
+                  ? "برای حفظ امنیت، دریافت اطلاعات کارت و پرداخت آزمایشی در نسخه عملیاتی غیرفعال است. پس از اتصال درگاه بانکی، پرداخت فعال خواهد شد."
+                  : "For your security, card collection and simulated payments are disabled in production. Payments will be enabled after the bank gateway is integrated."}
+              </p>
+              <Button onClick={close} variant="outline" className="w-full">
+                {t("common.close")}
+              </Button>
+            </div>
+          )}
+          {stage === "form" && process.env.NODE_ENV !== "production" && (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               <div>
                 <Label className="text-xs">{t("pay.gateway.bank")}</Label>
