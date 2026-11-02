@@ -17,7 +17,7 @@ type Stage = "form" | "otp" | "processing" | "done" | "failed";
 
 // Iranian payment dialog.
 // Local development uses the simulator; live production VIP/invoice checkout redirects to the configured Zarinpal/IDPay provider.
-// Pre-service prepayment and wallet top-up remain disabled in production until their server-side entitlement flows are implemented.
+// Pre-service payment is server-settled after verified callback; wallet top-up remains disabled until its ledger flow is implemented.
 export function PaymentGatewayDialog({
   open,
   onOpenChange,
