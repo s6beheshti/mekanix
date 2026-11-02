@@ -5,6 +5,13 @@ import { db } from "@/lib/db";
 // In production: would call Zarinpal/IDPay create-transaction API here.
 // Here: we just log the attempt and return a fake reference for verify step.
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "درگاه آزمایشی غیرفعال است؛ اتصال درگاه عملیاتی باید تکمیل شود" },
+      { status: 503 }
+    );
+  }
+
   const { userId, amount, purpose, description, mobile, cardNumber } = await req.json();
   if (!userId || !amount) {
     return NextResponse.json({ error: "userId and amount are required" }, { status: 400 });
