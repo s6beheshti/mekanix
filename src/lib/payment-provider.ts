@@ -36,7 +36,7 @@ export interface PaymentVerifyResult {
 }
 
 export type CreatePaymentFn = (req: PaymentRequest) => Promise<PaymentResult>;
-export type VerifyPaymentFn = (authority: string, amount: number) => Promise<PaymentVerifyResult>;
+export type VerifyPaymentFn = (authority: string, amount: number, orderId?: string) => Promise<PaymentVerifyResult>;
 
 // ──────────── Simulator (dev mode — mirrors existing Shaparak simulator) ────────────
 
@@ -77,14 +77,15 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        if (data.data?.authority) {
+        if (data.data?.code === 100 && data.data?.authority) {
+          const base = process.env.ZARINPAL_SANDBOX === "true" ? "https://sandbox.zarinpal.com" : "https://www.zarinpal.com";
           return {
             success: true,
             authority: data.data.authority,
-            paymentUrl: `https://www.zarinpal.com/pg/StartPay/${data.data.authority}`,
+            paymentUrl: base + "/pg/StartPay/" + data.data.authority,
           };
         }
-        return { success: false, error: data.errors?.message || "Zarinpal error" };
+        return { success: false, error: data.errors?.message || "Zarinpal request was not accepted" };
       } catch (e) {
         return { success: false, error: (e as Error).message };
       }
@@ -102,7 +103,7 @@ function createZarinpalProvider(merchantId: string): { create: CreatePaymentFn; 
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        if (data.data?.ref_id) {
+        if ([100, 101].includes(Number(data.data?.code)) && data.data?.ref_id) {
           return { success: true, refId: String(data.data.ref_id), amount };
         }
         return { success: false, error: data.errors?.message || "Verification failed" };
@@ -120,19 +121,20 @@ function createIdpayProvider(apiKey: string): { create: CreatePaymentFn; verify:
   return {
     create: async (req) => {
       try {
-        const res = await fetch("https://api.idpay.ir/v1.3/payment", {
+        const res = await fetch("https://api.idpay.ir/v1.1/payment", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "X-API-KEY": apiKey,
-            "X-SANDBOX": "0",
+            ...(process.env.IDPAY_SANDBOX === "true" ? { "X-SANDBOX": "1" } : {}),
           },
           body: JSON.stringify({
             order_id: req.orderId || `ord_${Date.now()}`,
             amount: req.amount,
             name: req.description,
+            desc: req.description,
             callback: req.callbackUrl,
-            mobile: req.mobile,
+            phone: req.mobile,
           }),
           signal: AbortSignal.timeout(15000),
         });
@@ -147,19 +149,23 @@ function createIdpayProvider(apiKey: string): { create: CreatePaymentFn; verify:
     },
     verify: async (authority, amount) => {
       try {
-        const res = await fetch("https://api.idpay.ir/v1.3/payment/verify", {
+        const res = await fetch("https://api.idpay.ir/v1.1/payment/verify", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "X-API-KEY": apiKey,
+            ...(process.env.IDPAY_SANDBOX === "true" ? { "X-SANDBOX": "1" } : {}),
           },
-          body: JSON.stringify({ id: authority, order_id: authority }),
+          body: JSON.stringify({ id: authority, order_id: orderId }),
           signal: AbortSignal.timeout(15000),
         });
         const data = await res.json();
-        // IDPay returns status 100 for successful verify
-        if (data.status === 100) {
-          return { success: true, refId: String(data.track_id), amount };
+        // IDPay returns status 100 on first verification and 101 if already verified.
+        if ([100, 101].includes(Number(data.status)) &&
+            String(data.order_id) === String(orderId) &&
+            Number(data.amount) === amount &&
+            data.track_id) {
+          return { success: true, refId: String(data.track_id), amount: Number(data.amount) };
         }
         return { success: false, error: data.error_message || "Verification failed" };
       } catch (e) {
@@ -218,9 +224,9 @@ export async function createPayment(req: PaymentRequest): Promise<PaymentResult>
   return currentCreate(req);
 }
 
-export async function verifyPayment(authority: string, amount: number): Promise<PaymentVerifyResult> {
+export async function verifyPayment(authority: string, amount: number, orderId?: string): Promise<PaymentVerifyResult> {
   initPaymentProvider();
-  return currentVerify(authority, amount);
+  return currentVerify(authority, amount, orderId);
 }
 
 // ──────────── Health-check helper (used by /api/health + security-audit.sh) ────────────
