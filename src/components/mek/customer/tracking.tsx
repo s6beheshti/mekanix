@@ -285,6 +285,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
             amount={total}
             purpose="prepay"
             description={t("fees.prepayTitle")}
+            jobId={job.id}
             onSuccess={async (_paymentId) => {
               setPrepayBusy(true);
               try {
