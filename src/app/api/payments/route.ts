@@ -109,7 +109,12 @@ async function startPrepayCheckout(jobId: string, userId: string, providerName: 
     return NextResponse.json({ error: "این درخواست در وضعیت قابل پرداخت نیست" }, { status: 409 });
   }
 
-  const fees = calculatePrepayFees(job);
+  let fees;
+  try {
+    fees = calculatePrepayFees(job);
+  } catch {
+    return NextResponse.json({ error: "هزینه پیش‌خدمت برای این مکانیک به‌درستی تنظیم نشده است" }, { status: 422 });
+  }
   const activeCheckout = await db.paymentGatewayLog.findFirst({
     where: {
       userId,
