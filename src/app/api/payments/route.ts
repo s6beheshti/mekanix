@@ -1,26 +1,25 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
+import { createPayment, getPaymentProviderStatus } from "@/lib/payment-provider";
 
-// POST /api/payments
-// Records a payment against an invoice.
-// - userId is derived from the session — NEVER from the request body (BOLA).
-// - Only the customer who owns the job can pay their own invoice.
-// - Status transitions to PAID happen ONLY here (after simulated gateway verify).
+// POST /api/payments — create a real external checkout for an invoice.
+// The invoice, amount, payer and currency are always resolved server-side.
+// A payment is not successful until /api/gateway/callback verifies it with the provider.
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  const provider = getPaymentProviderStatus();
+  if (!provider.configured || provider.provider === "simulator") {
     return NextResponse.json(
-      { error: "پرداخت فاکتور تا زمان اتصال درگاه بانکی عملیاتی غیرفعال است" },
+      { error: "درگاه پرداخت واقعی پیکربندی نشده است" },
       { status: 503 }
     );
   }
 
-  const session = await requireAuth(req);
-  if (session instanceof NextResponse) return session;
-
-  // Tighter rate limit on payments — uses Redis-backed `rateLimitAsync()`
-  // so the budget is shared across instances when REDIS_URL is set.
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(
     `payment:${clientId}`,
@@ -34,105 +33,147 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: any;
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-
-  const { invoiceId, method } = body;
-  if (typeof invoiceId !== "string" || !invoiceId) {
+  const invoiceId = (body as { invoiceId?: unknown })?.invoiceId;
+  if (typeof invoiceId !== "string" || !invoiceId.trim()) {
     return NextResponse.json({ error: "invoiceId الزامی است" }, { status: 400 });
   }
 
-  const inv = await db.invoice.findUnique({
+  const invoice = await db.invoice.findUnique({
     where: { id: invoiceId },
-    include: { job: { include: { request: { include: { customer: true } }, technician: true } } },
+    include: {
+      job: { include: { request: { include: { customer: true } } } },
+      payment: true,
+    },
   });
-  if (!inv) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
+  if (!invoice) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
-  // Resolve payer from SESSION — server-authoritative
-  if (session.role === "ADMIN") {
-    // Admins can pay on behalf (rare); fall through with admin's userId
-  } else if (session.role === "CUSTOMER") {
-    // The customer paying must own this invoice's job's request
-    const job = inv.job;
-    if (!job || !job.request || !job.request.customer) {
-      return NextResponse.json({ error: "نمی‌توان پرداخت‌کننده را تشخیص داد" }, { status: 400 });
+  if (session.role === "CUSTOMER") {
+    if (invoice.job?.request?.customer?.userId !== session.userId) {
+      return NextResponse.json({ error: "شما مالک این فاکتور نیستید" }, { status: 403 });
     }
-    if (job.request.customer.userId !== session.userId) {
-      return NextResponse.json(
-        { error: "شما مالک این فاکتور نیستید" },
-        { status: 403 }
-      );
-    }
-  } else {
+  } else if (session.role !== "ADMIN") {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  const userId = session.userId;
-  if (!userId) return NextResponse.json({ error: "Unable to resolve payer" }, { status: 400 });
-
-  // simulate processing — 95% success
-  const ok = Math.random() > 0.05;
-  const status = ok ? "SUCCEEDED" : "FAILED";
-  const safeMethod = ["card", "wallet", "bank", "cash"].includes(method) ? method : "card";
-
-  const existing = await db.payment.findUnique({ where: { invoiceId } });
-  if (existing) {
-    const updated = await db.payment.update({
-      where: { id: existing.id },
-      data: { status, method: safeMethod },
-    });
-    if (ok) {
-      await db.invoice.update({ where: { id: invoiceId }, data: { status: "PAID" } });
-      await db.job.update({ where: { id: inv.jobId }, data: { status: "COMPLETED", completedAt: new Date() } });
-      await db.warranty.create({ data: { jobId: inv.jobId, months: 6, active: true } }).catch(() => {});
-      if (inv.job?.technician?.userId) {
-        await db.notification.create({
-          data: {
-            userId: inv.job.technician.userId,
-            type: "job_completed",
-            title: "Payment received",
-            body: `Invoice ${inv.code} paid — $${inv.total}`,
-            category: "payment",
-            link: "technician/earnings",
-          },
-        });
-      }
-    }
-    return NextResponse.json(updated);
+  if (invoice.status === "PAID" || invoice.payment?.status === "SUCCEEDED") {
+    return NextResponse.json({ error: "این فاکتور قبلاً پرداخت شده است" }, { status: 409 });
+  }
+  if (!["SENT", "APPROVED", "OVERDUE"].includes(invoice.status)) {
+    return NextResponse.json({ error: "این فاکتور در وضعیت قابل پرداخت نیست" }, { status: 409 });
+  }
+  if (invoice.currency !== "IRR") {
+    return NextResponse.json({ error: "واحد پول فاکتور برای پرداخت بانکی پشتیبانی نمی‌شود" }, { status: 422 });
   }
 
-  const pay = await db.payment.create({
-    data: {
-      code: `PAY-${Math.floor(5000 + Math.random() * 4000)}`,
-      invoiceId,
-      userId,
-      amount: inv.total,
-      currency: inv.currency,
-      method: safeMethod,
-      status,
-    },
-  });
+  const amount = Math.round(Number(invoice.total));
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return NextResponse.json({ error: "مبلغ فاکتور معتبر نیست" }, { status: 422 });
+  }
 
-  if (ok) {
-    await db.invoice.update({ where: { id: invoiceId }, data: { status: "PAID" } });
-    await db.job.update({ where: { id: inv.jobId }, data: { status: "COMPLETED", completedAt: new Date() } });
-    await db.warranty.create({ data: { jobId: inv.jobId, months: 6, active: true } }).catch(() => {});
-    if (inv.job?.technician?.userId) {
-      await db.notification.create({
+  if (invoice.payment?.status === "PENDING") {
+    const activeLog = await db.paymentGatewayLog.findFirst({
+      where: { paymentId: invoice.payment.id, status: "REDIRECTED" },
+      orderBy: { initiatedAt: "desc" },
+    });
+    if (activeLog) {
+      return NextResponse.json({ error: "برای این فاکتور یک پرداخت در حال انجام وجود دارد" }, { status: 409 });
+    }
+  }
+
+  const appUrl = process.env.APP_URL;
+  if (!appUrl) {
+    return NextResponse.json({ error: "APP_URL برای callback درگاه تنظیم نشده است" }, { status: 503 });
+  }
+  let callbackUrl: string;
+  try {
+    const base = new URL(appUrl);
+    if (process.env.NODE_ENV === "production" && base.protocol !== "https:") {
+      return NextResponse.json({ error: "APP_URL در محیط تولید باید HTTPS باشد" }, { status: 503 });
+    }
+    callbackUrl = new URL("/api/gateway/callback", base).toString();
+  } catch {
+    return NextResponse.json({ error: "APP_URL معتبر نیست" }, { status: 503 });
+  }
+
+  const code = "PG-" + randomUUID();
+  const paymentCode = "PAY-" + randomUUID();
+  const gateway = provider.provider === "zarinpal" ? "ZARINPAL" : "IDPAY";
+
+  let paymentId: string;
+  let logId: string;
+  try {
+    const created = await db.$transaction(async (tx) => {
+      const payment = invoice.payment
+        ? await tx.payment.update({
+            where: { id: invoice.payment.id },
+            data: { status: "PENDING", amount, currency: "IRR", method: "card", userId: session.userId },
+          })
+        : await tx.payment.create({
+            data: {
+              code: paymentCode,
+              invoiceId: invoice.id,
+              userId: session.userId,
+              amount,
+              currency: "IRR",
+              method: "card",
+              status: "PENDING",
+            },
+          });
+
+      const log = await tx.paymentGatewayLog.create({
         data: {
-          userId: inv.job.technician.userId,
-          type: "job_completed",
-          title: "Payment received",
-          body: `Invoice ${inv.code} paid — $${inv.total}`,
-          category: "payment",
-          link: "technician/earnings",
+          code,
+          userId: session.userId,
+          amount,
+          currency: "IRR",
+          gateway,
+          status: "INITIATED",
+          purpose: "invoice",
+          description: "Payment for invoice " + invoice.code,
+          paymentId: payment.id,
         },
       });
-    }
+      return { paymentId: payment.id, logId: log.id };
+    });
+    paymentId = created.paymentId;
+    logId = created.logId;
+  } catch (error) {
+    console.error("Unable to create invoice payment record", error);
+    return NextResponse.json({ error: "ثبت درخواست پرداخت انجام نشد؛ دوباره تلاش کنید" }, { status: 409 });
   }
-  return NextResponse.json(pay);
+
+  const result = await createPayment({
+    amount,
+    description: "MEKANIX invoice " + invoice.code,
+    callbackUrl,
+    mobile: undefined,
+    orderId: code,
+  });
+
+  if (!result.success || !result.paymentUrl || !result.authority) {
+    await db.$transaction([
+      db.paymentGatewayLog.update({ where: { id: logId }, data: { status: "FAILED" } }),
+      db.payment.update({ where: { id: paymentId }, data: { status: "FAILED" } }),
+    ]);
+    return NextResponse.json({ error: result.error || "ایجاد پرداخت در درگاه ناموفق بود" }, { status: 502 });
+  }
+
+  await db.paymentGatewayLog.update({
+    where: { id: logId },
+    data: { status: "REDIRECTED", referenceId: result.authority },
+  });
+
+  return NextResponse.json({
+    ok: true,
+    paymentId,
+    redirectUrl: result.paymentUrl,
+    amount,
+    currency: "IRR",
+  });
 }
