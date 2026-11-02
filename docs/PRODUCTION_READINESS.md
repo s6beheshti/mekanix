@@ -277,7 +277,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 19.3 | Admin panel screens | ✅ | `src/components/mek/admin/*` (overview, jobs, technicians, payments, customers, settings) |
 | 19.4 | Splash + onboarding | ✅ | `src/components/mek/onboarding.tsx` + `splash/*` + `public/onboarding/*` |
 | 19.5 | Responsive (mobile-first) | ✅ | Tailwind 4 with `sm`/`md`/`lg` breakpoints throughout |
-| 19.6 | Dark mode default | ✅ | `src/app/globals.css` defines dark-first palette; `theme-provider.tsx` toggles |
+| 19.6 | Light theme default | ✅ | `src/app/layout.tsx` sets defaultTheme=light; `:root` tokens in globals.css define white/light surfaces |
 | 19.7 | Accessibility (WCAG AA) | ⚠️ | Manual audit needed; Radix UI primitives provide baseline ARIA support |
 | 19.8 | Cross-browser testing | ⬜ | Manual; test Chrome / Firefox / Safari post-deploy |
 
@@ -290,7 +290,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 20.1 | i18n module | ✅ | `src/lib/i18n.ts` + `src/lib/use-t.ts` |
 | 20.2 | RTL layout support | ✅ | `src/app/globals.css` includes RTL utilities; `dir="rtl"` settable on root layout |
 | 20.3 | Persian (fa) translation strings | ⚠️ | Skeleton present; full coverage audit needed |
-| 20.4 | Persian font (Vazirmatn / IRANSans) | 🛠️ | Add font file to `public/fonts/` + CSS `@font-face` rule |
+| 20.4 | Preferred Persian font (IRANSans) | ⚠️ | Current layout loads Vazirmatn via next/font/google; no licensed local IRANSans font files are present in public/fonts |
 | 20.5 | Persian SMS templates | ✅ | `sms-provider.ts` MeliPayamak/Farapayamak use `کد تأیید MEKANIX: ${code}` |
 | 20.6 | Persian date formatting | ✅ | `src/lib/format.ts` handles Jalali via date-fns where applicable |
 
@@ -448,9 +448,9 @@ The phase table contains **204 individual checklist rows**. The status counts be
 | 5-9 (External services) | 25 | 1 | 9 | 0 | 35 |
 | 10-14 (Infra + readiness) | 18 | 4 | 11 | 0 | 33 |
 | 15-19 (Observability + QA) | 15 | 1 | 15 | 2 | 33 |
-| 20-25 (Staging + rollback) | 20 | 6 | 8 | 2 | 36 |
+| 20-25 (Staging + rollback) | 20 | 5 | 8 | 3 | 36 |
 | 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
-| **TOTAL** | **102** | **32** | **64** | **6** | **204** |
+| **TOTAL** | **102** | **31** | **64** | **7** | **204** |
 
 **Important release gate (2026-11-02):** the application is **not production-ready yet**. The old /api/gateway/initiate and /api/gateway/verify handlers implement a fake payment flow and are now blocked in production. The payment provider abstraction exists, but the production create → redirect → callback → verify → idempotent settlement flow is not yet wired into those handlers. /api/ready therefore deliberately remains 503 until that integration is completed, even when provider credentials are present.
 
