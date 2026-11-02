@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { userId, amount, purpose, description, mobile, cardNumber } = await req.json();
+  const { userId, amount, purpose, description, mobile, cardNumber, planId } = await req.json();
   if (!userId || !amount) {
     return NextResponse.json({ error: "userId and amount are required" }, { status: 400 });
   }
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       referenceId,
       cardNumber: cardNumber ? maskCard(cardNumber) : null,
       mobile: mobile ?? null,
-      description: description ?? null,
+      description: purpose === "vip" && typeof planId === "string" ? `VIP_PLAN:${planId}` : (description ?? null),
     },
   });
 
