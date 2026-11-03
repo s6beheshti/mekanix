@@ -159,6 +159,7 @@ describe("createSession — DB record creation", () => {
 
   it("fails closed in production when the session row cannot be persisted", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "test-only-production-jwt-secret-32-characters-minimum");
     mockSessionCreate.mockRejectedValueOnce(new Error("DB unavailable"));
     await expect(createSession(PAYLOAD)).rejects.toThrow("Session persistence failed in production");
   });
@@ -232,6 +233,7 @@ describe("verifySession — DB revocation checks", () => {
 
   it("rejects the session in production when the session store is unavailable", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "test-only-production-jwt-secret-32-characters-minimum");
     const token = await createSession(PAYLOAD);
     mockSessionFindUnique.mockRejectedValueOnce(new Error("DB unavailable"));
     await expect(verifySession(token)).resolves.toBeNull();
@@ -279,6 +281,7 @@ describe("revokeSession — single-token revocation", () => {
 
   it("throws in production when revocation cannot be persisted", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "test-only-production-jwt-secret-32-characters-minimum");
     mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
     await expect(revokeSession("some.jwt.token")).rejects.toThrow("Session revocation failed in production");
   });
@@ -302,6 +305,7 @@ describe("revokeAllUserSessions — user-wide revocation", () => {
 
   it("throws in production when user-wide revocation cannot be persisted", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "test-only-production-jwt-secret-32-characters-minimum");
     mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
     await expect(revokeAllUserSessions("user_abc")).rejects.toThrow("User session revocation failed in production");
   });
@@ -353,6 +357,7 @@ describe("POST /api/auth/logout — endpoint", () => {
 
   it("returns 503 and keeps the cookie when production revocation fails", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "test-only-production-jwt-secret-32-characters-minimum");
     const token = await createSession(PAYLOAD);
     mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
     mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
