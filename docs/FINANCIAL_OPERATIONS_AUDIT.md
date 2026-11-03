@@ -157,3 +157,18 @@ The purpose-specific effects have different duplicate risks:
 The inspected test tree contains provider create/verify contract tests and pure prepay fee-calculation tests, but no dedicated gateway callback settlement test covering simultaneous duplicate callbacks, retries after partial settlement, or the three purpose branches.
 
 **Required controls:** atomically claim a callback log with a conditional UPDATE ... WHERE status = REDIRECTED and require exactly one winner before applying side effects; keep the claim and settlement in one transaction so rollback permits safe retry; add database uniqueness constraints as a second line of defense (for example one PREPAY transaction per job/kind and one VIP subscription per payment); use conditional invoice/job state transitions; and add PostgreSQL integration tests that execute concurrent duplicate callbacks for PREPAY, VIP and invoice payments. Preserve the existing behavior that transient provider verification failures remain retryable. This is a source-level concurrency risk, not evidence of duplicate production credits or subscriptions.
+
+
+## 16. Unverified negative callback can cancel a pending payment
+
+In src/app/api/gateway/callback/route.ts, after matching a callback to a REDIRECTED PaymentGatewayLog, the handler reads the browser/provider callback Status field. For Zarinpal, any Status other than OK causes the handler to set the gateway log to CANCELLED and the linked PENDING Payment to FAILED. For IDPay, any status other than 100, 101 or the special pending status 10 takes the same cancellation path. These negative branches do not call verifyPayment or otherwise make a server-to-server status inquiry before mutating the database.
+
+The callback query/form fields are external input. Matching an unpredictable authority/reference and order id reduces exposure, but it is not a provider-authenticated proof that the payment attempt was cancelled. If an attacker obtains or guesses the callback identifiers, a forged negative callback could prematurely close an otherwise valid pending attempt. This source review does not establish that identifiers are guessable or that an attack has occurred; it identifies an avoidable trust-boundary weakness.
+
+**Required controls:** treat callback fields only as a trigger to query the provider. For both positive and negative outcomes, use a provider-authenticated server-to-server status/verification result before changing Payment or PaymentGatewayLog to a terminal state. If the provider does not expose a reliable negative-status lookup, leave the attempt pending and resolve it through a safe expiry/reconciliation job. Add tests proving that forged Status values cannot mark a payment FAILED/CANCELLED, while genuine provider cancellation can be reconciled safely.
+
+## 17. Development simulator verification amount mismatch
+
+The simulator provider's verify function returns success with amount 0, while the gateway callback requires Number(verified.amount) to equal the positive expected checkout amount. As a result, simulator callbacks for the gateway-backed VIP and PREPAY paths cannot pass the callback's amount equality check. The invoice development simulator uses a separate local branch and does not exercise this callback path. This is a development/test integration inconsistency, not a production payment vulnerability.
+
+**Required controls:** have simulator verification echo the server-supplied expected amount (and a deterministic reference) or add a dedicated test-only simulator verification contract. Keep simulator activation unreachable in production and test that guard explicitly.
