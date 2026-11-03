@@ -92,7 +92,15 @@ docker compose -f docker-compose.staging.yml exec -T backup-scheduler \
   sh -c 'ls -1 /backups/*.sql.gz.gpg'
 ```
 
-Run `scripts/restore-db.sh` from the scheduler container with `DATABASE_URL` overridden to the isolated restore database and `RESTORE_CONFIRM=RESTORE`. Do not point a restore drill at the source or live database. The restore utility validates the GPG stream before connecting; PostgreSQL restore uses `ON_ERROR_STOP` and a single transaction.
+Run the restore from the scheduler container, overriding `DATABASE_URL` with the isolated restore database URL (reachable as `db` from the Compose network). The passphrase is already injected into the scheduler container; never print it in shell history:
+
+```bash
+docker compose -f docker-compose.staging.yml exec -T \
+  -e DATABASE_URL="$TEST_DB_URL" -e RESTORE_CONFIRM=RESTORE \
+  backup-scheduler bash /app/scripts/restore-db.sh /backups/<backup-file>.sql.gz.gpg
+```
+
+Replace `<backup-file>` with the exact encrypted filename listed in `/backups`. Do not point a restore drill at the source or live database. The restore utility validates the GPG stream before connecting; PostgreSQL restore uses `ON_ERROR_STOP` and a single transaction.
 
 Do not use `docker compose down -v` on a staging environment unless intentionally deleting its database, Redis, and backup volumes. Keep the backup encryption passphrase in a separate secure secret store; losing it makes encrypted backups unrecoverable.
 
