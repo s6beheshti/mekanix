@@ -41,23 +41,31 @@ async function readFields(req: NextRequest): Promise<CallbackFields> {
 async function handleCallback(req: NextRequest) {
   const fields = await readFields(req);
   const authority = fields.Authority || fields.id || "";
-  const isZarinpal = Boolean(fields.Authority);
+  const isSimulator = fields.simulator === "true";
+  const isZarinpal = !isSimulator && Boolean(fields.Authority);
+  const isIdpay = !isZarinpal && !isSimulator;
   const orderId = fields.order_id || "";
 
   if (!authority) return resultRedirect(req, "failed");
+  if (isSimulator && process.env.NODE_ENV === "production") return resultRedirect(req, "failed");
 
-  const log = isZarinpal
+  const log = isZarinpal || isSimulator
     ? await db.paymentGatewayLog.findFirst({
-        where: { referenceId: authority, gateway: "ZARINPAL" },
+        where: { referenceId: authority, gateway: isSimulator ? "SHAPARAK_SIM" : "ZARINPAL" },
       })
     : orderId
       ? await db.paymentGatewayLog.findUnique({ where: { code: orderId } })
       : null;
 
-  if (!log || (isZarinpal && log.gateway !== "ZARINPAL") || (!isZarinpal && log.gateway !== "IDPAY")) {
+  if (
+    !log ||
+    (isZarinpal && log.gateway !== "ZARINPAL") ||
+    (isIdpay && log.gateway !== "IDPAY") ||
+    (isSimulator && log.gateway !== "SHAPARAK_SIM")
+  ) {
     return resultRedirect(req, "failed");
   }
-  if (!isZarinpal && log.referenceId !== authority) {
+  if (isIdpay && log.referenceId !== authority) {
     return resultRedirect(req, "failed");
   }
   if (!["invoice", "vip", "prepay"].includes(log.purpose) || !log.paymentId || log.currency !== "IRR") {
@@ -67,8 +75,8 @@ async function handleCallback(req: NextRequest) {
   if (log.status !== "REDIRECTED") return resultRedirect(req, "failed");
 
   // A callback is only a notification. The server-to-server verification response is authoritative.
-  const callbackStatus = isZarinpal ? fields.Status : fields.status;
-  if (isZarinpal && callbackStatus !== "OK") {
+  const callbackStatus = isZarinpal || isSimulator ? fields.Status : fields.status;
+  if ((isZarinpal || isSimulator) && callbackStatus !== "OK") {
     await db.paymentGatewayLog.update({
       where: { id: log.id },
       data: { status: "CANCELLED", callbackPayload: JSON.stringify(fields) },
@@ -76,12 +84,12 @@ async function handleCallback(req: NextRequest) {
     await db.payment.updateMany({ where: { id: log.paymentId, status: "PENDING" }, data: { status: "FAILED" } });
     return resultRedirect(req, "failed");
   }
-  if (!isZarinpal && callbackStatus === "10") {
+  if (isIdpay && callbackStatus === "10") {
     // IDPay status 10 means the transaction is still waiting for payer action.
     // Do not mark it failed or settle it; the verified callback may arrive later.
     return resultRedirect(req, "pending");
   }
-  if (!isZarinpal && !["100", "101"].includes(callbackStatus || "")) {
+  if (isIdpay && !["100", "101"].includes(callbackStatus || "")) {
     await db.paymentGatewayLog.update({
       where: { id: log.id },
       data: { status: "CANCELLED", callbackPayload: JSON.stringify(fields) },
