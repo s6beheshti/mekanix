@@ -88,13 +88,15 @@ The current `src/components/mek/admin/payments.tsx` is read-only: it fetches and
 Therefore, the source confirms an API capability, not a currently visible button in the shipped admin payments screen. Restricting the UI alone would not remove the backend risk; the API transition rules must be corrected independently.
 
 
-## 9. Prepay pending-balance release dead end
+## 9. Prepay hold scheduling depends on the job-completion path
 
-The current `src/lib/prepay-settlement.ts` creates the PREPAY `WalletTransaction` with `status: "PENDING"` and `holdUntil: null`. In the inspected `src/app/api/wallets/route.ts` release loop, a transaction is eligible only when all three conditions hold: status is PENDING, holdUntil is truthy, and holdUntil is earlier than the current time.
+The current `src/lib/prepay-settlement.ts` creates the PREPAY `WalletTransaction` with `status: "PENDING"` and `holdUntil: null`, while incrementing `Wallet.pendingBalance`. The wallet GET release loop requires a non-null `holdUntil` earlier than now.
 
-Therefore, the PREPAY transaction created by this settlement path is not eligible for that auto-release loop: its holdUntil is explicitly null. The same settlement increments `Wallet.pendingBalance` by the technician's net amount, but this path does not set a release date or otherwise move that amount into `Wallet.balance`. The repository route tree inspected for this audit contains no separate wallet-release endpoint or scheduled release worker; the only wallet release implementation found is the GET-side loop described above.
+There is an important second writer: `src/app/api/jobs/[id]/status/route.ts` sets `holdUntil` to completion time + 12 hours for all PENDING wallet transactions when a job transitions to COMPLETED through that route. Thus the original null does **not** by itself prove that every prepay transaction is permanently stuck.
 
-**Implication:** unless another out-of-band process changes these rows, prepay net earnings can remain in pending balance indefinitely and cannot be withdrawn through the current balance-based withdrawal route. This is a code-path conclusion, not proof that any deployed technician balance is affected. Define the intended prepay hold policy (immediate availability versus a timed hold), persist a valid release time when applicable, and route all release paths through one atomic, idempotent status + wallet + ledger operation. Add a regression test proving the chosen PREPAY release policy.
+However, the verified invoice callback in `src/app/api/gateway/callback/route.ts` independently sets the job to COMPLETED inside its own transaction and does not run that 12-hour WalletTransaction update. The local simulator invoice-success path in `src/app/api/payments/route.ts` also marks the job COMPLETED directly without setting the prepay hold. Those completion paths can leave a previously created PREPAY transaction with `holdUntil: null`, making it ineligible for the GET release loop. Conversely, completion through the job-status route schedules the 12-hour hold.
+
+**Implication:** the intended hold policy is implemented inconsistently across completion paths. A prepay balance may remain pending after invoice/simulator completion, depending on which path completed the job. Centralize completion settlement so every path atomically applies the same hold policy, and test all completion entry points plus release idempotency. This is a code-path finding, not proof that any deployed technician balance is affected.
 
 ## 10. Invoice callback does not post technician earnings
 
@@ -105,3 +107,14 @@ This is separate from the PREPAY path, which does create pending wallet transact
 ## 11. Referral claim is not proof of a separate payout
 
 The inspected `PATCH /api/referral` route only changes the Referral claim state and creates a notification; it does not itself create a monetary credit. The route tree contains no separately named referral payout endpoint or worker. Repository-wide code search was not conclusive, so this audit does **not** claim that no other writer exists anywhere in the codebase. A full writer trace is still required before calling referral rewards payable. Until that trace and a corresponding wallet/ledger entry are verified, the UI's claimed state must not be treated as evidence of a credited balance.
+
+
+## 12. Cancellation does not reconcile collected prepay or invoice payments
+
+The customer cancellation transition in `src/app/api/jobs/[id]/status/route.ts` allows CANCELLED from REQUESTED, ACCEPTED and EN_ROUTE. The route updates the job/request state and emits ordinary notifications/messages, but the cancellation branch does not inspect or update related `Payment`, `PaymentGatewayLog`, `WalletTransaction`, `Wallet` or `WalletLedger` records. Since prepay checkout is allowed for any job not CANCELLED, REJECTED or COMPLETED, a customer can have a successful prepay and subsequently cancel while the job is still in an allowed cancellation state. No refund or pending-earning reversal is performed by this cancellation path.
+
+Separately, `PATCH /api/invoices/[id]` permits a technician or admin to set invoice status to CANCELLED without checking the current invoice status. It does not reconcile a linked Payment. Therefore the route can mark an already-PAID invoice CANCELLED while its Payment remains SUCCEEDED; this is a status inconsistency, not a refund. The generic admin payment PATCH also permits status-only REFUNDED and does not invoke a provider refund or ledger reversal (see the earlier admin payment section).
+
+The inspected `src/lib/payment-provider.ts` abstraction exposes create and verify operations only; no refund operation is defined for the supported providers. The gateway callback's failed/cancelled branch applies to an unverified checkout and is not a post-settlement refund.
+
+**Required controls before production:** define cancellation eligibility and fee/refund policy for each stage; prevent invoice cancellation after successful payment unless a dedicated audited refund workflow is used; implement provider-specific refund request + verification/reconciliation, idempotency, and compensating wallet/ledger entries; and test prepay-paid-then-cancel, invoice-paid-then-cancel, duplicate refund callback, provider timeout, and partial failure scenarios. Do not use a status field alone as proof that money was returned.
