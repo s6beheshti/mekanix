@@ -86,3 +86,22 @@ The current Prisma schema labels Wallet balances and WalletTransaction amounts a
 The current `src/components/mek/admin/payments.tsx` is read-only: it fetches and displays payment rows and aggregate statistics, and contains no action that calls the generic admin PATCH endpoint. The status-only mutation is nevertheless exposed by the backend route `PATCH /api/admin/payments/:id` through the generic `[resource]/[id]` handler.
 
 Therefore, the source confirms an API capability, not a currently visible button in the shipped admin payments screen. Restricting the UI alone would not remove the backend risk; the API transition rules must be corrected independently.
+
+
+## 9. Prepay pending-balance release dead end
+
+The current `src/lib/prepay-settlement.ts` creates the PREPAY `WalletTransaction` with `status: "PENDING"` and `holdUntil: null`. In the inspected `src/app/api/wallets/route.ts` release loop, a transaction is eligible only when all three conditions hold: status is PENDING, holdUntil is truthy, and holdUntil is earlier than the current time.
+
+Therefore, the PREPAY transaction created by this settlement path is not eligible for that auto-release loop: its holdUntil is explicitly null. The same settlement increments `Wallet.pendingBalance` by the technician's net amount, but this path does not set a release date or otherwise move that amount into `Wallet.balance`. The repository route tree inspected for this audit contains no separate wallet-release endpoint or scheduled release worker; the only wallet release implementation found is the GET-side loop described above.
+
+**Implication:** unless another out-of-band process changes these rows, prepay net earnings can remain in pending balance indefinitely and cannot be withdrawn through the current balance-based withdrawal route. This is a code-path conclusion, not proof that any deployed technician balance is affected. Define the intended prepay hold policy (immediate availability versus a timed hold), persist a valid release time when applicable, and route all release paths through one atomic, idempotent status + wallet + ledger operation. Add a regression test proving the chosen PREPAY release policy.
+
+## 10. Invoice callback does not post technician earnings
+
+The invoice branch in `src/app/api/gateway/callback/route.ts` marks the invoice PAID, marks the job COMPLETED, activates the warranty, and sends notifications. It does not create a `WalletTransaction`, increment the technician wallet, or create a `WalletLedger` entry in that transaction. The technician is notified that payment was received, but the inspected callback does not record an earning for that completed invoice.
+
+This is separate from the PREPAY path, which does create pending wallet transactions. Do not assume the invoice amount automatically becomes technician income. Before implementing invoice earnings, define labor/parts/travel split, platform commission, refund/chargeback handling, hold period, and the exact wallet/ledger unit. Add a test that reconciles a verified invoice payment to the expected technician earning and commission.
+
+## 11. Referral claim is not proof of a separate payout
+
+The inspected `PATCH /api/referral` route only changes the Referral claim state and creates a notification; it does not itself create a monetary credit. The route tree contains no separately named referral payout endpoint or worker. Repository-wide code search was not conclusive, so this audit does **not** claim that no other writer exists anywhere in the codebase. A full writer trace is still required before calling referral rewards payable. Until that trace and a corresponding wallet/ledger entry are verified, the UI's claimed state must not be treated as evidence of a credited balance.
