@@ -28,6 +28,16 @@ jobs:
       
       - name: Check for forbidden artifacts
         run: bash scripts/check-hygiene.sh
+
+      - name: Install GPG for encrypted backup regression tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gnupg gzip
+
+      - name: Validate and test encrypted backup/restore
+        run: |
+          bash -n scripts/backup-db.sh
+          bash -n scripts/restore-db.sh
+          bash -n scripts/test-backup-encryption.sh
+          bash scripts/test-backup-encryption.sh
       
       - name: Run ESLint
         run: bun run lint
