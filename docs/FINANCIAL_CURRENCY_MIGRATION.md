@@ -269,3 +269,11 @@ The following findings were verified against the current `main` source and repos
 4. Implement and test a complete admin withdrawal lifecycle (approve, reject, payout confirmation, reversal/refund) with ledger entries and reconciliation.
 5. Define the CARE extra-cost currency and validation contract; on approval, specify exactly how approved extras enter final pricing/invoice/payment.
 6. Trace or deliberately retire the unused `PartUsage` financial model before migration.
+
+
+### Legacy Job parts and package-price administration
+
+- `src/app/api/jobs/[id]/parts/route.ts` is a writer for the separate legacy `Part` model, not CARE's `PartUsage`. It allows the assigned technician or ADMIN to create a part with `unitPrice`, defaulting to zero; the field has no explicit currency/unit comment in the schema, and the route does not attach a currency. The invoice route consumes `Part.unitPrice` when calculating `partsTotal`, so this is a direct upstream input to the IRR-labelled invoice total.
+- The legacy part route only checks that a numeric `unitPrice` is not negative. It does not explicitly require a finite safe integer or validate a currency. Quantity is floored when numeric; non-numeric quantity falls back to one.
+- `src/app/api/care/admin/packages/route.ts` lets ADMIN create `ServicePackage.basePrice` using `body.basePrice || 0`, without an explicit currency field or monetary validation. The inspected `src/lib/pricing.ts` currently fetches this value but treats it as informational rather than adding it to the calculated CARE booking total.
+- Do not conflate the two parts models: `Part.unitPrice` feeds the legacy Job invoice path; `PartUsage.unitPrice` belongs to CARE and has no writer in the inspected API route tree.
