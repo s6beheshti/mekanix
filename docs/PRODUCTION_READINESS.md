@@ -14,7 +14,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 0.1 | Tag a release commit (`v1.0.0`) | 🛠️ | `package.json` version pinned at `0.2.1`; release tag pending `git tag v1.0.0` |
+| 0.1 | Tag a release commit (`v1.0.1`) | ⬜ | Current `package.json` version is `1.0.0`; changelog has `1.0.1` marked Unreleased. Freeze the final release commit, set package version to `1.0.1`, then create and verify the `v1.0.1` tag only after all release gates pass |
 | 0.2 | Update `CHANGELOG.md` | ✅ | CHANGELOG.md already exists; v1.0.0 notes are present |
 | 0.3 | Lock all dependency versions | ✅ | `bun.lock` checked in; all deps pinned to exact semver |
 | 0.4 | Freeze Prisma schema | ✅ | `prisma/schema.prisma` is stable; migration `20260925000000_init` committed for both SQLite and PostgreSQL |
@@ -27,8 +27,8 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 1.1 | ESLint passes with 0 errors | ✅ | `bun run lint` → exit 0; permissive ruleset in `eslint.config.mjs` |
 | 1.2 | `tsc --noEmit` passes with 0 errors | ✅ | `bunx tsc --noEmit` → exit 0 |
-| 1.3 | Unit + integration tests pass | ✅ | `bun run test` → 216/216 tests pass across 10 files |
-| 1.4 | CI workflow on PR | 🛠️ | `scripts/setup-ci.sh` exists; wire into GitHub Actions on first push to production repo |
+| 1.3 | Unit + integration tests pass | ✅ | Merged PR #8 exact head passed CI with 349 tests across 16 files; rerun the full suite on the final release candidate before tagging |
+| 1.4 | CI workflow on PR | ✅ | GitHub Actions CI, PostgreSQL CI, Docker E2E and Production Readiness workflows are configured and have passed on merged PR #8; require green checks on every release PR |
 | 1.5 | Pre-commit hooks (lint + tsc) | 🛠️ | Add `husky` install in production repo; commands already verified to pass |
 | 1.6 | Code coverage report | ⚠️ | `vitest run --coverage` configured but thresholds not enforced |
 

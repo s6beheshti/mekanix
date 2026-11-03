@@ -30,6 +30,8 @@ https://<staging-host>/api/gateway/callback
 
 Register that callback URL in the selected payment provider's sandbox dashboard where required.
 
+Schema migration safety: staging and production must use the checked-in provider-specific Prisma migrations through the Compose `migrate` service (`prisma migrate deploy`). **Do not run `bun run db:push` or `bun run db:reset` against staging or production**; the `db:push` script explicitly accepts data loss and bypasses the reviewed migration history.
+
 Then run:
 
 ```bash
