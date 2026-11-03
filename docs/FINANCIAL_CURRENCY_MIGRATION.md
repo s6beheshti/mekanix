@@ -21,6 +21,14 @@ There are important contradictions even before PR #3: `Technician.hourlyRate`, `
 
 The invoice creation route calculates amounts using technician rates and part prices, then persists the invoice with `currency: "IRR"`. The pricing engine independently returns `currency: "IRR"` and documents integer IRR values; the two pricing paths still need to be reconciled.
 
+### Confirmed pre-service settlement unit conflict
+
+The current `main` pre-service path in `src/lib/prepay-settlement.ts` reads technician inspection/travel fee fields as direct numeric values, calculates the gross/commission/net amounts, and writes those same numbers into `Job`, `WalletTransaction`, and `Wallet` fields whose schema comments describe IRR.
+
+PR #3 instead treats the technician fee fields as USD base, multiplies the gross amount by the USD/IRR rate for the gateway request, but its fulfillment path posts the unconverted USD gross/commission/net values into those same `Job` and wallet columns. It also writes the USD numeric amount into `Payment.amount` while setting `Payment.currency: "IRR"`. This is a second, independent unit mismatch affecting technician earnings and platform commission—not only the invoice path.
+
+The exact unit of the existing technician fee rows remains unresolved. Do not resolve this by assuming that the values 3/7/20 are USD or IRR; inspect the actual deployed configuration and reconcile the business pricing policy first.
+
 ### PR #3 changes the meaning of existing columns
 
 The PR documents Invoice, Payment, Wallet, WalletTransaction, WithdrawalRequest and WalletLedger values as USD base amounts. It also changes `VipPlan.priceIrr` to `priceUsd`.
