@@ -19,6 +19,49 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Encrypted daily backups. This service has no published host port.
+  backup-scheduler:
+    mem_limit: ${BACKUP_MEM_LIMIT:-512m}
+    cpus: ${BACKUP_CPUS:-0.5}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    build:
+      context: .
+      dockerfile: Dockerfile.backup-scheduler
+    environment:
+      - NODE_ENV=production
+      - APP_ENV=production
+      - HOME=/tmp
+      - GNUPGHOME=/tmp/gnupg
+      - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
+      - BACKUP_DIR=/backups
+      - BACKUP_SCRIPT=/app/scripts/backup-db.sh
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_INTERVAL_MS=${BACKUP_INTERVAL_MS:-86400000}
+      - BACKUP_ENCRYPTION_REQUIRED=true
+      - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:?Set BACKUP_ENCRYPTION_PASSPHRASE}
+      - BACKUP_ADMIN_TOKEN=${BACKUP_ADMIN_TOKEN:?Set BACKUP_ADMIN_TOKEN}
+      - BACKUP_ALERT_WEBHOOK_URL=${BACKUP_ALERT_WEBHOOK_URL:-}
+    volumes:
+      - backupdata:/backups
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3005/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   app:
     build: .
     ports:
@@ -90,3 +133,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  backupdata:
