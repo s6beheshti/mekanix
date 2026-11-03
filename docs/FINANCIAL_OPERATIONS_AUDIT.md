@@ -131,3 +131,12 @@ The schema defines `WalletLedger` with types including RELEASE, REFUND, COMMISSI
 - No inspected route performs a complete reconciliation between Wallet balance columns, WalletTransaction state, WalletLedger entries, WithdrawalRequest state and external bank/provider payout confirmation.
 
 **Implication:** WalletLedger cannot currently be treated as a complete audit trail for all wallet movements, and a REQUESTED withdrawal is not evidence that a bank payout was executed. Before production payouts, define one authoritative posting service that atomically writes the transaction, ledger, wallet totals and withdrawal state, with a durable external-payout reference and idempotent reconciliation. Add invariant tests that recompute balances from ledger entries and cover PREPAY, RELEASE, COMMISSION, WITHDRAWAL, REFUND and manual adjustment flows.
+
+
+## 14. Withdrawal request validation schema is documented but not enforced
+
+`src/lib/schemas/wallet.ts` exports `withdrawRequestSchema` with numeric/positive/max-10,000 amount checks, an allowed payment-method enum and bounded destination strings. Its file header says it is used by the withdrawal POST route, but the inspected `src/app/api/wallets/withdraw/route.ts` does not import or call it.
+
+The route parses JSON directly, checks only `!amount || amount <= 0`, and then passes amount/method/destination fields into the database. It does not enforce the schema's 10,000 cap, number type, integer/safe-integer constraints, allowed method enum, or string length limits. It also does not require a card/IBAN destination based on the selected method. Invalid JSON is not caught locally in this route.
+
+**Implication:** the schema's constraints are not an effective API contract until the route actually parses with it. Wire the schema into the handler, add explicit integer/currency-unit validation and method-specific destination validation, and test malformed JSON, strings, fractional/oversized values, unknown methods and missing bank details. This is a source-level validation gap; it does not prove invalid withdrawals have occurred.
