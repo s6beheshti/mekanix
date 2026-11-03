@@ -228,3 +228,44 @@ This expands the source-level inventory but does not complete the whole-reposito
 - On successful invoice verification, the callback marks the Invoice `PAID`, marks the Job `COMPLETED`, activates/upserts the Warranty, and sends notifications. In the inspected invoice branch it does **not** create a `WalletTransaction`, update the technician `Wallet`, or create a `WalletLedger` entry. The notification to the technician says payment was received, but the inspected transaction does not post an earning. This is a settlement-completeness gap separate from the USD/IRR mismatch in PR #3.
 - The same callback's `prepay` branch calls `settlePrepay()`; that function writes Job fee/commission/net fields, creates PREPAY and COMMISSION WalletTransactions, and increments Wallet pending balance and lifetime totals. Those are direct fee values from Technician configuration; the current schema documents Wallet and WalletTransaction amounts as IRR, but the Technician fee fields still have contradictory comments/default magnitudes as recorded above.
 - Do not solve the missing invoice wallet credit by simply copying PR #3's USD-base settlement logic. First approve the canonical settlement unit, define the invoice-to-technician earning/commission/hold/refund rules, and add populated-database tests proving invoice, Payment, Job, WalletTransaction, Wallet, WalletLedger and WithdrawalRequest reconcile.
+
+
+## 8. Wallet release, withdrawal and CARE extra-cost trace
+
+The following findings were verified against the current `main` source and repository API route tree. They are source-level findings; deployed balances and historical units remain unverified.
+
+### Wallet auto-release
+
+- `src/app/api/wallets/route.ts` performs automatic release as a side effect of `GET /api/wallets`: it finds transactions with `status=PENDING` and an expired `holdUntil`, changes each to `AVAILABLE`, decrements `Wallet.pendingBalance`, and increments `Wallet.balance`.
+- Each transaction status update and wallet balance update is executed as separate database calls, not one transaction. The release path does not create a corresponding `WalletLedger` RELEASE entry.
+- The code filters a previously fetched list and then updates by transaction ID without a conditional status transition. Concurrent wallet reads can both select the same pending transaction and both increment the balance. A failure between the status update and balance update can also leave the transaction and wallet totals inconsistent.
+- This is a correctness and auditability risk independent of the USD/IRR question. Release should become an idempotent server-side operation with a conditional PENDING → AVAILABLE transition and atomic wallet + ledger posting; GET should be read-only.
+
+### Withdrawal request
+
+- `src/app/api/wallets/withdraw/route.ts` checks that the caller is a technician, rate-limits the request, checks the wallet balance, then in a transaction creates a `WithdrawalRequest`, deducts the requested amount from `Wallet.balance`, and creates a negative `WalletLedger` entry with type `WITHDRAWAL`.
+- The amount is checked only with `!amount || amount <= 0` in the route. The existing `withdrawRequestSchema` defines a numeric amount and a maximum of 10,000 plus a method enum, but the route does not parse or apply that schema. The route therefore does not enforce those schema constraints at this endpoint. It also does not explicitly require a safe integer or finite amount.
+- The route reads the wallet balance inside the transaction, but does not use a conditional atomic debit such as `updateMany where balance >= amount`. Two concurrent requests can both read the same balance and write calculated balances, so the current read-then-set pattern is not a robust concurrency guard.
+- The repository's `src/app/api` tree contains `/api/wallets` and `/api/wallets/withdraw`, but no dedicated withdrawal approval/rejection/processing route. The generic admin resource handlers support customers, technicians, jobs, payments, reviews, vehicles, categories and applications; they do not expose `WithdrawalRequest`. The admin payments screen lists Payment records only. Based on the inspected source, a complete operational payout/rejection/refund workflow is not present in these routes.
+- The withdrawal amount field is explicitly documented as IRR in the schema. This intended schema unit still does not prove the unit of any deployed wallet balance or old withdrawal row.
+
+### CARE extra proposals and part usage
+
+- `src/app/api/care/bookings/[id]/extra-proposal/route.ts` writes `CustomerApproval.partPrice`, `laborPrice`, and `totalPrice` from the request body. The calculation is `partPrice × quantity + laborPrice`; there is no explicit currency field or currency validation, and no robust numeric/integer validation of those monetary inputs in this route. The notification renders the calculated value with the Persian word `تومان`, while the schema fields themselves do not specify a unit.
+- `src/app/api/care/bookings/[id]/approve-extra/route.ts` changes approval/finding/booking status and writes a timeline event. It does not add the approved amount to `PricingSnapshot`, create an invoice, create a Payment, or post a wallet/ledger entry. Approval is therefore workflow consent, not financial settlement in this route.
+- The complete `src/app/api` route tree contains no dedicated route that creates `PartUsage` records. The model exists and is returned in booking detail/mission responses, but its write/settlement lifecycle is not established by the inspected API surface.
+- Consequently, `CustomerApproval` and `PartUsage` values must not be included in a historical currency conversion until their actual writers, final invoice inclusion rules and representative stored values are established.
+
+### Insurance claim submission is not a payout
+
+- `src/app/api/insurance/claim/route.ts` creates an `InsuranceClaim` with the submitted amount and changes the policy status to `claimed`. It does not transfer funds, create a Payment, or credit a wallet. The route's amount check requires a positive number but does not define or validate a currency; the schema comment says the claim amount is IRR.
+- Treat claim creation as submission for review, not evidence of an approved or paid claim.
+
+### Required remediation before any financial code change
+
+1. Make wallet reads side-effect free; move hold release into a dedicated idempotent operation.
+2. Make each release and its wallet/ledger postings atomic, with a conditional status transition so concurrent workers cannot release the same transaction twice.
+3. Replace withdrawal read-then-set with an atomic conditional debit and use the existing Zod schema at the route boundary; define integer/precision and currency rules explicitly.
+4. Implement and test a complete admin withdrawal lifecycle (approve, reject, payout confirmation, reversal/refund) with ledger entries and reconciliation.
+5. Define the CARE extra-cost currency and validation contract; on approval, specify exactly how approved extras enter final pricing/invoice/payment.
+6. Trace or deliberately retire the unused `PartUsage` financial model before migration.
