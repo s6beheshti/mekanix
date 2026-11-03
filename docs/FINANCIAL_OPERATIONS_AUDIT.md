@@ -79,3 +79,10 @@ The chosen approach must be tested against both supported database engines. It s
 ### 7.4 Schema comments do not settle the deployed currency contract
 
 The current Prisma schema labels Wallet balances and WalletTransaction amounts as IRR. Technician fee defaults are 15, 3, 7 and 20 with IRR comments, while the checked-in seed has USD-described fee assumptions and converts none of those values before creating IRR-labelled invoice/payment rows. These are conflicting source-level conventions. Neither comments nor demo fixtures establish the unit of deployed historical rows.
+
+
+## 8. Admin UI versus admin API: important distinction
+
+The current `src/components/mek/admin/payments.tsx` is read-only: it fetches and displays payment rows and aggregate statistics, and contains no action that calls the generic admin PATCH endpoint. The status-only mutation is nevertheless exposed by the backend route `PATCH /api/admin/payments/:id` through the generic `[resource]/[id]` handler.
+
+Therefore, the source confirms an API capability, not a currently visible button in the shipped admin payments screen. Restricting the UI alone would not remove the backend risk; the API transition rules must be corrected independently.
