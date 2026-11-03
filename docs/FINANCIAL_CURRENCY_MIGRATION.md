@@ -277,3 +277,10 @@ The following findings were verified against the current `main` source and repos
 - The legacy part route only checks that a numeric `unitPrice` is not negative. It does not explicitly require a finite safe integer or validate a currency. Quantity is floored when numeric; non-numeric quantity falls back to one.
 - `src/app/api/care/admin/packages/route.ts` lets ADMIN create `ServicePackage.basePrice` using `body.basePrice || 0`, without an explicit currency field or monetary validation. The inspected `src/lib/pricing.ts` currently fetches this value but treats it as informational rather than adding it to the calculated CARE booking total.
 - Do not conflate the two parts models: `Part.unitPrice` feeds the legacy Job invoice path; `PartUsage.unitPrice` belongs to CARE and has no writer in the inspected API route tree.
+
+
+### Test coverage gap — wallet and withdrawal
+
+- The current test tree contains no dedicated wallet-release or withdrawal-request test file. The inspected E2E business-flow setup only mocks `wallet.findUnique`; it does not exercise the release loop, ledger release posting, concurrent withdrawal debit, or payout approval/rejection.
+- The existing `tests/unit/prepay-settlement.test.ts` is present but does not cover wallet hold release or withdrawal lifecycle.
+- Add focused unit/integration tests for: concurrent release of one expired transaction; rollback between transaction status and wallet/ledger posting; two simultaneous withdrawals against the same balance; invalid fractional/non-finite/over-limit withdrawal values; withdrawal rejection and reversal; and end-to-end reconciliation of wallet balance against ledger entries.
