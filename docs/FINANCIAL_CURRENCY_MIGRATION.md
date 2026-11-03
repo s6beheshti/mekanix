@@ -8,18 +8,18 @@
 
 ### Current `main` contract
 
-The current Prisma schema and initial SQLite/PostgreSQL migrations describe these values as IRR:
+The current `main` codebase is **not internally consistent enough to infer one unit for every stored amount**:
 
-- `Invoice.total` and related invoice components; `Invoice.currency` defaults to `IRR`.
-- `Payment.amount`; `Payment.currency` defaults to `IRR`.
-- `Wallet.balance`, `pendingBalance`, `totalEarned`, `totalCommission`, and `totalWithdrawn`.
-- `WalletTransaction.grossAmount`, `commissionAmount`, and `netAmount`.
-- `WithdrawalRequest.amount`.
-- `VipPlan.priceIrr`.
-- `PaymentGatewayLog.amount` and `currency`.
-- `WalletLedger.amount`.
+- `Invoice` and `Payment` have `currency` fields defaulting to `IRR`; the invoice route persists `currency: "IRR"`.
+- Wallet and wallet-transaction comments describe their amounts as IRR; `WithdrawalRequest.amount` is also commented IRR.
+- `VipPlan.priceIrr` is named and commented as IRR.
+- `PaymentGatewayLog.amount` is commented IRR and has `currency` defaulting to `IRR`.
+- `WalletLedger` has no currency field and no explicit unit comment; it cannot be safely assumed to be IRR without tracing its writers and deployed data.
+- Several other monetary fields have no currency field, including technician rates/fees, part prices, job fees/earnings, service-package prices and pricing snapshots.
 
-The invoice creation route calculates amounts using the technician's stored rates and parts prices, then persists the invoice with `currency: "IRR"`. The pricing engine also returns `currency: "IRR"` and documents integer IRR values.
+There are important contradictions even before PR #3: `Technician.hourlyRate`, `travelFeeBase`, `inspectionFee` and `inspectionFeeHeavy` have small defaults (15, 3, 7 and 20) while comments call them IRR. The invoice route uses those values to calculate an invoice and labels it IRR. Separately, the pricing engine uses a 50,000 IRR base labor rate and returns IRR. The seed also uses VIP prices 9/19/39 under `priceIrr`. These facts mean schema names/comments alone do not prove the actual unit of all historical values.
+
+The invoice creation route calculates amounts using technician rates and part prices, then persists the invoice with `currency: "IRR"`. The pricing engine independently returns `currency: "IRR"` and documents integer IRR values; the two pricing paths still need to be reconciled.
 
 ### PR #3 changes the meaning of existing columns
 
@@ -59,17 +59,20 @@ The current seed defines VIP prices as `priceIrr: 9, 19, 39`. These values are s
 9. Preserve a recoverable backup and verify row counts, totals and checksums before/after any production migration.
 10. No real gateway, SMS or production credentials are required for this migration phase.
 
-## 3. Recommended target contract for MEKANIX
+## 3. Required target contract before implementation
 
-For the domestic Iranian payment and settlement flow, the safest default is:
+The repository evidence does not yet justify silently declaring every existing value to be IRR or USD. The implementation must first produce a field-by-field unit inventory and reconcile the two existing pricing paths.
 
-- Persist customer invoices, payment records, technician wallets, wallet ledger entries, withdrawals and VIP prices in **IRR**.
-- Keep `currency = "IRR"` explicit on every persisted financial entity, including wallet and ledger records that currently lack a currency column.
-- Convert only at a boundary (for example, a USD-denominated external price displayed to a user or a provider requiring a different unit); store the conversion snapshot alongside the resulting transaction.
-- Do not store a USD value in a field labelled IRR.
-- Do not aggregate wallet amounts across different currencies. If multi-currency wallets are ever required, introduce separate per-currency balances and ledger accounting first.
+The target contract must then guarantee:
 
-This is a recommendation based on the repository's current IRR invoice, pricing and Iranian gateway model. It is not a claim that production currency policy has already been approved.
+- Every persisted monetary amount has an explicit, validated currency/unit.
+- Every value used in a calculation is either in the same currency or converted through one shared conversion function with a persisted rate snapshot and documented rounding rule.
+- Invoice creation, payment reservation, provider verification, fulfillment, wallet/ledger posting, refunds and withdrawals all use the same declared unit at each boundary.
+- No field is called `priceUsd` while holding an unconverted legacy IRR value, or called `amount` with an implicit unit.
+- Wallet balances and ledgers cannot aggregate unlike currencies. If more than one currency is supported, balances and ledger postings must be separated by currency.
+- The final canonical unit for domestic customer charges and technician settlement must be explicitly approved before changing writers.
+
+A domestic IRR settlement model may be the simplest target for Iran, but it must not be assumed until the actual units of existing rate fields, seed data and any deployed rows have been reconciled.
 
 ## 4. Implementation sequence
 
@@ -77,22 +80,23 @@ This is a recommendation based on the repository's current IRR invoice, pricing 
 
 - Keep PR #3 unmerged.
 - Inventory every monetary Prisma field, API write, API read, UI formatter, seed, background task and settlement job.
-- Record the unit and precision for each field.
+- Record the unit, precision and source of truth for each field; explicitly flag fields whose units are unknown or contradictory.
+- Reconcile the legacy invoice route with the newer pricing engine and technician/part rates.
 - Identify every calculation that combines values from more than one model.
 - Confirm whether any production database exists and obtain a verified backup before planning a data migration.
 
 ### Phase B — Establish one unit contract
 
-- Confirm IRR as the canonical persisted unit for domestic MEKANIX financial records.
+- Approve one canonical unit policy for domestic MEKANIX charges and settlements.
 - Correct PR #3's USD-base assumptions or isolate them to explicit, separately typed fields.
-- Keep the gateway amount in IRR and verify that the amount sent to the provider exactly matches the persisted gateway log.
+- Keep the gateway amount in the provider's required unit and verify that the amount sent to the provider exactly matches the persisted gateway log.
 - Ensure invoice creation, payment initiation, callback verification, fulfillment, refunds, VIP activation, technician wallet credit and withdrawal all use the same unit.
 
 ### Phase C — Additive schema migration
 
-- Add explicit currency fields where absent (wallet, wallet transactions, withdrawals and wallet ledger).
-- Backfill existing rows to `IRR` without changing their numeric values.
-- Retain `VipPlan.priceIrr` for existing data unless a separately reviewed conversion source and policy are proven.
+- Add explicit currency fields where absent (including wallet, wallet transactions, withdrawals, wallet ledger and other monetary models).
+- Backfill a currency only where repository history and deployed data prove the unit. Keep ambiguous legacy rows explicitly unresolved; do not default them to IRR or USD merely to satisfy a non-null constraint.
+- Retain the legacy VIP price field/value until its unit is proven or a separately reviewed conversion source and policy are available.
 - Avoid destructive column drops/renames until all code paths have moved and a compatibility window has passed.
 - Produce matching SQLite and PostgreSQL migrations.
 
@@ -101,7 +105,7 @@ This is a recommendation based on the repository's current IRR invoice, pricing 
 For both SQLite and PostgreSQL, test:
 
 - A populated database created from the current `main` schema.
-- Exact preservation of every legacy amount and its IRR unit after migration.
+- Exact preservation of every legacy amount and its verified unit after migration; ambiguous rows must remain flagged and must not become payable/settleable until reconciled.
 - Invoice → payment initiation → provider verification → fulfillment.
 - Duplicate and concurrent callbacks (exactly-once fulfillment).
 - Failed/cancelled payment retry.
@@ -128,12 +132,13 @@ Do not mark the payment work production-ready until all of the following are tru
 ## 5. Open questions that cannot be answered from repository code alone
 
 - Is there an existing production database with real customer, invoice, wallet or VIP records?
-- If so, what is the actual stored unit of each historical amount? The schema/comments alone cannot prove deployed data semantics.
-- Were VIP seed values `9 / 19 / 39` intended as USD, IRR, or another display unit?
+- If so, what is the actual stored unit of each historical amount? Schema/comments alone cannot prove deployed data semantics.
+- What are the intended units for technician rates/fees (defaults 15/3/7/20), part prices, invoice totals and the two pricing paths?
+- Were VIP seed values `9 / 19 / 39` intended as USD, IRR, toman, or another display unit?
 - Is IRR the approved canonical unit for every domestic settlement, including technician payouts?
 
 Until these are confirmed, no historical currency conversion should be run.
 
 ## 6. Current decision
 
-**No financial data migration is approved or executed by this audit.** The next implementation change must be additive and data-preserving, with populated-database tests in both database engines. PR #3 remains blocked until the invoice/payment unit mismatch and all legacy-value semantics are resolved.
+**No financial data migration is approved or executed by this audit.** The next implementation change must be additive and data-preserving, with populated-database tests in both database engines. Do not assign a currency to ambiguous historical values until the unit inventory is complete. PR #3 remains blocked until the invoice/payment unit mismatch and all legacy-value semantics are resolved.
