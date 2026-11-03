@@ -18,7 +18,7 @@ PGDUMP
 cat > "$TMP/bin/psql" <<'PSQL'
 #!/usr/bin/env bash
 case " $* " in
-  *" -c "*) printf '1\n' ;;
+  *"-c"*) printf '1\n' ;;
   *) cat > "$PSQL_RESTORE_CAPTURE" ;;
 esac
 PSQL
