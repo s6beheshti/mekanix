@@ -4,9 +4,9 @@
 // Verifies the Session DB lifecycle wiring added to `src/lib/auth.ts`:
 //   - createSession writes a Session row (tokenHash is SHA-256 hex, NEVER the raw JWT)
 //   - verifySession honours the DB record (revoked / expired / missing → null)
-//   - verifySession falls back to JWT-only auth if the DB throws (backward compat)
+//   - JWT-only fallback is restricted to non-production environments
 //   - revokeSession marks `revokedAt = now` and is idempotent
-//   - revokeAllUserSessions scopes by userId and is idempotent
+//   - revokeAllUserSessions scopes by userId, is idempotent, and fails closed in production
 //   - logout endpoint returns 200, calls revokeSession, clears the cookie
 //   - logout endpoint returns 401 without auth
 //
