@@ -126,10 +126,10 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 8.3 | `migrate deploy` runs on container start | ✅ | `Dockerfile` CMD: `prisma migrate deploy && node server.js` |
 | 8.4 | Connection pooling | ⬜ | Use PgBouncer in prod; not configured yet |
 | 8.5 | Read replica | ⬜ | Optional; not yet needed at expected scale |
-| 8.6 | Daily backup script | ✅ | `scripts/backup-db.sh` (pg_dump + gzip + 30-day retention) |
-| 8.7 | Restore script | ✅ | `scripts/restore-db.sh` (with `RESTORE` confirmation prompt) |
-| 8.8 | Backup-scheduler mini-service | ✅ | `mini-services/backup-scheduler/index.ts` triggers backups every 24 h |
-| 8.9 | Backup encryption at rest | ⬜ | gpg encryption pending; script ready to extend |
+| 8.6 | Daily backup script | 🛠️ | `scripts/backup-db.sh` streams PostgreSQL/SQLite dumps through GPG AES-256 when required; CI regression and staging verification pending |
+| 8.7 | Restore script | 🛠️ | `scripts/restore-db.sh` decrypts before restore, uses transactional PostgreSQL restore, and validates SQLite integrity; staging drill pending |
+| 8.8 | Backup-scheduler mini-service | 🛠️ | Isolated Compose service performs startup + daily backups; authenticated manual trigger; CI/Docker validation pending |
+| 8.9 | Backup encryption at rest | 🛠️ | GPG AES-256 symmetric encryption with required 32+ character production passphrase; CI and staging evidence pending |
 | 8.10 | Point-in-time recovery (PITR) | ⬜ | Configure via cloud provider (RDS/Cloud SQL) in production |
 
 ---
@@ -247,7 +247,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 |---|------|--------|----------|
 | 17.1 | Alert on `/api/health` 503 | ⬜ | Needs external monitoring (UptimeRobot webhook → Slack/Telegram) |
 | 17.2 | Alert on disk space (>80%) | ⬜ | Server-side `node_exporter` + alertmanager rule |
-| 17.3 | Alert on backup failure | 🛠️ | `mini-services/backup-scheduler` runs every 24 h; logs failure — wire to alert channel |
+| 17.3 | Alert on backup failure | 🛠️ | Scheduler can send a failure event to `BACKUP_ALERT_WEBHOOK_URL` over HTTPS; real alert destination still needs configuration |
 | 17.4 | Alert on payment failure rate | ⬜ | Needs metrics aggregation |
 | 17.5 | Alert on SMS provider error spike | ⬜ | Needs log-based alerts |
 | 17.6 | Telegram bot for alerts | ⚠️ | `mini-services/telegram-rate-bot/` exists; needs wiring to alert source |
@@ -329,7 +329,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 23.3 | SMS provider down → OTP send still succeeds (DB-only) | ✅ | `sendOtp()` failure is non-fatal; OTP record persists first |
 | 23.4 | ETA provider down → falls back to 40 km/h estimate | ✅ | All providers catch errors and return `defaultEtaProvider` |
 | 23.5 | Payment gateway timeout → no double-spend | ✅ | `gateway/verify` checks `log.status === "VERIFIED"` before processing |
-| 23.6 | Disk full → backup fails (non-fatal) | 🛠️ | `backup-scheduler` catches + logs errors; alerts wire to monitoring |
+| 23.6 | Disk full → backup fails (non-fatal) | 🛠️ | Backup exits non-zero, scheduler records failure and optionally sends an HTTPS alert; exercise in staging still pending |
 | 23.7 | Container restart → migrations re-apply idempotently | ✅ | `prisma migrate deploy` is idempotent; `Dockerfile` CMD runs it on every boot |
 
 ---
@@ -338,11 +338,11 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 24.1 | Backup script (PostgreSQL) | ✅ | `scripts/backup-db.sh` (pg_dump + gzip + 30-day retention; falls back to SQLite `cp` for dev) |
-| 24.2 | Restore script | ✅ | `scripts/restore-db.sh` (with `RESTORE` confirmation prompt) |
-| 24.3 | Daily automated backup | ✅ | `mini-services/backup-scheduler/index.ts` runs every 24 h |
-| 24.4 | Manual backup endpoint | ✅ | `POST /backup-now` on backup-scheduler (port 3005) |
-| 24.5 | Backup retention policy | ✅ | 30 days default; configurable via `BACKUP_RETENTION_DAYS` env |
+| 24.1 | Backup script (PostgreSQL) | 🛠️ | `scripts/backup-db.sh` creates verified AES-256 encrypted artifacts in staging/production; CI test pending |
+| 24.2 | Restore script | 🛠️ | `scripts/restore-db.sh` decrypts and validates before applying; staging restore drill pending |
+| 24.3 | Daily automated backup | 🛠️ | `backup-scheduler` Compose service runs once at startup and every 24 h; Docker E2E pending |
+| 24.4 | Manual backup endpoint | 🛠️ | `POST /backup-now` requires a 32+ character Bearer token and is not published to the host; test pending |
+| 24.5 | Backup retention policy | 🛠️ | 30 days default; configurable with positive-integer validation; test pending |
 | 24.6 | Off-site backup replication | ⬜ | Configure `rclone` to S3 / Backblaze B2 in production |
 | 24.7 | Restore drill (monthly) | ⬜ | Schedule + runbook pending |
 
@@ -419,7 +419,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 30.3 | Submit sitemap to Iranian search engines | ⬜ | Manual submission |
 | 30.4 | Announce on social media | ⬜ | Marketing |
 | 30.5 | Enable monitoring alerts | ⬜ | Phase 17 |
-| 30.6 | Begin daily backup schedule | ✅ | `mini-services/backup-scheduler` runs every 24 h |
+| 30.6 | Begin daily backup schedule | 🛠️ | Scheduler is wired into production Compose; enable after production secrets and first successful encrypted backup |
 
 ---
 
@@ -430,7 +430,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | 31.1 | Check `/api/health` 24 h uptime | ⬜ | External uptime monitor |
 | 31.2 | Check error logs (no 5xx spike) | ⬜ | Server-side log review |
 | 31.3 | Check DB size + slow queries | ⬜ | `pg_stat_statements` |
-| 31.4 | Verify backup ran successfully | 🛠️ | `mini-services/backup-scheduler` `/backups` endpoint lists files |
+| 31.4 | Verify backup ran successfully | ⬜ | Launch verification: confirm encrypted artifact, restore drill, and monitoring evidence |
 | 31.5 | Confirm SMS delivery rate | ⬜ | Provider dashboard (Kavenegar/MeliPayamak) |
 | 31.6 | Confirm payment success rate | ⬜ | Provider dashboard (Zarinpal/IDPay) |
 | 31.7 | Gather user feedback | ⬜ | Support tickets + app store reviews |
@@ -440,7 +440,7 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 
 ## Summary (reconciled 2026-11-02)
 
-The phase table contains **204 individual checklist rows**. The status counts below are recalculated from those rows; the former summary (137 items) did not match the checklist and has been replaced.
+The phase table contains **204 individual checklist rows**. Current status counts: **92 Done, 41 Prepared, 64 Pending, 7 Partial**. Prepared means repository implementation exists but still requires the stated CI, staging, or live operational evidence.
 
 | Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial | Total |
 |-------------|--------|-------------|-----------|-----------|-------|
