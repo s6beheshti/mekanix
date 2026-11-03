@@ -191,3 +191,32 @@ This is a source-level inventory, not a statement about deployed rows. “Unreso
 ### Required follow-up before writing SQL
 
 For each row above, enumerate every create/update path and every consumer. In particular, verify that the invoice route and pricing engine are not creating different unit conventions, and that wallet posting, withdrawal, refund and admin adjustment code all use the same unit as the underlying wallet. The migration must not proceed from this table alone; the inventory must be completed against the entire repository and representative database fixtures.
+
+
+## 7. Additional writer/consumer trace — CARE, referrals and insurance
+
+The following findings were verified against the current `main` source after the initial inventory. They are source-level findings only; they do not establish the unit of any deployed row.
+
+### CARE pricing and booking
+
+- `src/lib/pricing.ts` explicitly documents its outputs as integer IRR values (toman × 10), uses Decimal arithmetic, and returns `currency: "IRR"`. Its current base labor and visit prices are hard-coded as 50,000 IRR/hour and 15,000 IRR respectively; parts cost is accepted as an input.
+- `calculatePrice()` fetches `ServicePackage.basePrice`, but explicitly treats it as informational and does not include it in the calculated total. Therefore package basePrice is not currently a source for the booking total in this path.
+- `src/app/api/care/bookings/route.ts` creates a ServiceBooking and PricingSnapshot in one transaction. It stores the pricing result's component amounts and currency in the snapshot. At initial booking, parts and travel distance are both passed as zero; the snapshot is therefore an initial estimate, not a final repair invoice.
+- `src/app/api/payments/route.ts` accepts `invoiceId`, `planId`, or `jobId`; it has no `bookingId` checkout branch. The inspected CARE booking route creates a snapshot but does not initiate a payment. Do not treat CARE PricingSnapshot.total as a settled or paid amount.
+- `CustomerApproval.partPrice/laborPrice/totalPrice` and `PartUsage.unitPrice/totalPrice` have no currency field in the schema. The inspected booking-detail endpoint reads these records, but the corresponding write/approval/settlement paths still need to be located and traced before assigning a currency or designing a migration.
+
+### Referral reward
+
+- `Referral.rewardAmount` has a schema comment/default indicating an IRR credit (default 5), but no currency column.
+- `src/app/api/referral/route.ts` calculates referral statistics by summing `rewardAmount` and its PATCH handler changes `rewardClaimed` to true and status to `rewarded`, then sends a notification whose text says the user earned that amount in IRR.
+- That PATCH handler does not itself create a Wallet, WalletTransaction, WalletLedger, Payment, or other monetary credit. A separate reward-credit workflow may exist; it must be identified and reconciled before this is treated as an actual paid/credited reward. Do not infer that setting `rewardClaimed=true` proves funds were transferred.
+
+### Insurance amounts
+
+- `InsurancePolicy.premiumAmount` is commented IRR in the schema; `InsuranceClaim.amount` is also commented IRR. `coverageAmount` has no explicit currency/unit comment and none of these fields has a currency column.
+- `src/app/api/insurance/route.ts` accepts `premiumAmount` and `coverageAmount` from the authenticated user's request body (after field whitelisting), parses them as numbers, and persists them without a currency field or conversion. This is policy-record entry, not evidence of an insurer checkout or a verified claim payout.
+- No insurance-claim write/settlement route was identified in the inspected paths. Trace partner/claim processing before migration; do not assume coverageAmount has the same unit as premiumAmount solely because they share a model.
+
+### Follow-up status
+
+This expands the source-level inventory but does not complete the whole-repository trace. In particular, CARE approval/PartUsage writers, customer reward credit, insurance claim settlement, wallet release/withdrawal/refund/admin adjustment paths, and any data import/seed writers remain open. No schema or historical data changes are authorized by these findings.
