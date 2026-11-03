@@ -87,12 +87,28 @@ function authedReq(url: string, token: string | null): Request {
 }
 
 async function mintToken(role: "CUSTOMER" | "TECHNICIAN" | "ADMIN"): Promise<string> {
-  return createSession({
-    userId: `user_${role.toLowerCase()}`,
+  const userId = `user_${role.toLowerCase()}`;
+  const token = await createSession({
+    userId,
     role,
     phone: "+989121234567",
     isGuest: false,
   });
+  const persisted = mockSessionCreate.mock.calls[mockSessionCreate.mock.calls.length - 1]?.[0]?.data;
+  if (!persisted || persisted.userId !== userId) {
+    throw new Error("Test setup did not persist the expected session identity");
+  }
+  mockSessionFindUnique.mockResolvedValueOnce({
+    id: "sess_1",
+    userId: persisted.userId,
+    tokenHash: persisted.tokenHash,
+    device: null,
+    ip: null,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    createdAt: new Date(),
+  });
+  return token;
 }
 
 beforeEach(() => {
