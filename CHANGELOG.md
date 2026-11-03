@@ -3,6 +3,7 @@
 ## [1.0.1] - Unreleased
 
 ### Security and release hardening
+- Fail closed in production/staging when Session persistence, lookup, or revocation fails; keep JWT-only compatibility fallback limited to development/test and verify the stored session owner matches the signed token.
 - Add a dedicated, non-root encrypted backup scheduler to production and staging Compose; run an initial backup and then a configurable daily schedule.
 - Stream PostgreSQL/SQLite backup output through GPG AES-256 before it reaches persistent storage; require a 32+ character passphrase in production/staging and verify the encrypted gzip payload before publishing the artifact.
 - Harden backup restore with pre-restore decryption/validation, transactional PostgreSQL restore, and staged SQLite restore with integrity checks; retain support for legacy unencrypted archives for recovery compatibility.
