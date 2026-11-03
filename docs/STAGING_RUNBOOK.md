@@ -85,6 +85,12 @@ docker compose -f docker-compose.staging.yml exec -T backup-scheduler \
 
 The scheduler exposes no host port. Its internal `GET /ready` endpoint returns 200 only after a successful backup. Manual execution is available only through authenticated `POST /backup-now`; `GET /backups` also requires the Bearer token. Never publish port 3005.
 
+Trigger a manual backup from inside the scheduler container without exposing the token in command arguments or shell history:
+
+```bash
+docker compose -f docker-compose.staging.yml exec -T backup-scheduler bun -e 'const r = await fetch("http://127.0.0.1:3005/backup-now", { method: "POST", headers: { Authorization: "Bearer " + process.env.BACKUP_ADMIN_TOKEN } }); const body = await r.json(); if (!r.ok) { console.error(body); process.exit(1); } console.log(body.output);'
+```
+
 For a restore drill, restore into a separate disposable database whose name includes `test`, `staging`, or `restore`. Stop application writers for that target, then use the encrypted artifact and the same staging-only passphrase:
 
 ```bash
