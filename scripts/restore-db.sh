@@ -1,94 +1,82 @@
-#!/bin/bash
-# MEKANIX — Database Restore Script (SQLite dev + PostgreSQL prod)
-#
-# Restores a database from a backup file created by scripts/backup-db.sh.
-#
-# Usage:
-#   bash scripts/restore-db.sh <backup-file>
-#   bash scripts/restore-db.sh /backups/mekanix_20260925_120000.sql.gz
-#
-# Environment:
-#   DATABASE_URL — connection string (sqlite or postgresql)
+#!/usr/bin/env bash
+# MEKANIX — database restore (encrypted .gpg and legacy .gz backups)
+# Stop application writers before restoring. Use a separate test database first.
 
-set -euo pipefail
+set -Eeuo pipefail
+umask 077
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_FILE="${1:?Usage: bash scripts/restore-db.sh <backup-file>}"
 DB_URL="${DATABASE_URL:-file:$REPO_DIR/db/custom.db}"
+PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
+RESTORE_TMP="$(mktemp)"
+SQLITE_TMP=""
+cleanup() {
+  rm -f "$RESTORE_TMP"
+  [[ -z "$SQLITE_TMP" ]] || rm -f "$SQLITE_TMP"
+}
+trap cleanup EXIT
 
-if [ ! -f "$BACKUP_FILE" ]; then
-  echo "❌ Backup file not found: $BACKUP_FILE"
-  exit 1
+[[ -f "$BACKUP_FILE" ]] || { echo "ERROR: backup file not found" >&2; exit 1; }
+case "$DB_URL" in
+  postgresql://*|postgres://*) TARGET_KIND="PostgreSQL";;
+  file:*) TARGET_KIND="SQLite";;
+  *) echo "ERROR: unsupported DATABASE_URL scheme" >&2; exit 1;;
+esac
+
+if [[ "$BACKUP_FILE" == *.gpg ]]; then
+  (( ${#PASSPHRASE} >= 1 )) || { echo "ERROR: BACKUP_ENCRYPTION_PASSPHRASE is required" >&2; exit 1; }
+  GNUPGHOME="${GNUPGHOME:-${HOME:-/tmp}/.gnupg}"
+  mkdir -p "$GNUPGHOME"
+  chmod 700 "$GNUPGHOME"
+  export GNUPGHOME
+  echo "Decrypting and validating encrypted backup..."
+  gpg --batch --yes --no-tty --pinentry-mode loopback --passphrase-fd 3 \
+    --decrypt "$BACKUP_FILE" 3<<<"$PASSPHRASE" | gzip -dc > "$RESTORE_TMP"
+else
+  [[ "$BACKUP_FILE" == *.gz ]] || { echo "ERROR: unsupported backup format" >&2; exit 1; }
+  echo "WARNING: restoring a legacy unencrypted backup"
+  gzip -dc "$BACKUP_FILE" > "$RESTORE_TMP"
+fi
+[[ -s "$RESTORE_TMP" ]] || { echo "ERROR: decrypted backup is empty" >&2; exit 1; }
+
+echo "Restore target: $TARGET_KIND"
+if [[ "${RESTORE_CONFIRM:-}" != "RESTORE" ]]; then
+  read -r -p "This operation replaces database contents. Type RESTORE to continue: " CONFIRM
+  [[ "$CONFIRM" == "RESTORE" ]] || { echo "Restore aborted"; exit 1; }
 fi
 
-echo "⚠️  WARNING: This will DROP and RESTORE the database!"
-echo "   Backup: $BACKUP_FILE"
-echo "   Target: $DB_URL"
-echo ""
-read -p "Are you sure? (type RESTORE to continue): " CONFIRM
-if [ "$CONFIRM" != "RESTORE" ]; then
-  echo "Aborted."
-  exit 0
-fi
-
-echo ""
-echo "📦 Restoring database..."
-
-# ─── Detect database type ───
 case "$DB_URL" in
   postgresql://*|postgres://*)
-    echo "   Type: PostgreSQL"
-    if ! command -v psql &> /dev/null; then
-      echo "❌ psql not installed — install postgresql-client"
+    command -v psql >/dev/null 2>&1 || { echo "ERROR: psql is not installed" >&2; exit 1; }
+    # The dump is applied transactionally; a failed statement does not leave a
+    # partially restored schema. The dump must target an isolated/approved DB.
+    psql --set ON_ERROR_STOP=on --single-transaction "$DB_URL" < "$RESTORE_TMP"
+    psql --set ON_ERROR_STOP=on "$DB_URL" -Atc 'SELECT count(*) FROM "_prisma_migrations";' >/dev/null
+    ;;
+  file:*)
+    SQLITE_PATH="${DB_URL#file:}"
+    [[ "$SQLITE_PATH" = /* ]] || SQLITE_PATH="$REPO_DIR/$SQLITE_PATH"
+    SQLITE_DIR="$(dirname "$SQLITE_PATH")"
+    mkdir -p "$SQLITE_DIR"
+    SQLITE_TMP="$(mktemp "$SQLITE_DIR/.mekanix-restore.XXXXXX")"
+    if head -c 256 "$RESTORE_TMP" | grep -aEiq 'PRAGMA|BEGIN TRANSACTION|CREATE TABLE'; then
+      command -v sqlite3 >/dev/null 2>&1 || { echo "ERROR: sqlite3 is required to restore a SQL dump" >&2; exit 1; }
+      sqlite3 "$SQLITE_TMP" < "$RESTORE_TMP"
+    else
+      cp "$RESTORE_TMP" "$SQLITE_TMP"
+    fi
+    if command -v sqlite3 >/dev/null 2>&1; then
+      INTEGRITY="$(sqlite3 "$SQLITE_TMP" 'PRAGMA integrity_check;')"
+      [[ "$INTEGRITY" == "ok" ]] || { echo "ERROR: SQLite integrity check failed" >&2; exit 1; }
+    else
+      echo "ERROR: sqlite3 is required to verify a SQLite restore" >&2
       exit 1
     fi
-    # Drop existing connections, then restore
-    # NOTE: For production, consider using pg_restore with --clean --if-exists
-    gunzip -c "$BACKUP_FILE" | psql "$DB_URL"
-    ;;
-  file:*)
-    echo "   Type: SQLite"
-    SQLITE_PATH="${DB_URL#file:}"
-    # For SQLite, decompress then overwrite the DB file
-    # If the backup is a SQL dump (.sql.gz), use sqlite3 .read
-    # If the backup is a binary .db.gz, just decompress and copy
-    if command -v sqlite3 &> /dev/null; then
-      # Try as SQL dump first
-      if gunzip -c "$BACKUP_FILE" | head -1 | grep -qi "PRAGMA\|BEGIN TRANSACTION\|CREATE TABLE"; then
-        echo "   Restoring from SQL dump..."
-        rm -f "$SQLITE_PATH"
-        sqlite3 "$SQLITE_PATH" < <(gunzip -c "$BACKUP_FILE")
-      else
-        echo "   Restoring from binary copy..."
-        gunzip -c "$BACKUP_FILE" > "$SQLITE_PATH"
-      fi
-    else
-      # No sqlite3 available — assume binary copy
-      echo "   Restoring from binary copy (sqlite3 not available)..."
-      gunzip -c "$BACKUP_FILE" > "$SQLITE_PATH"
-    fi
-    ;;
-  *)
-    echo "❌ Unsupported DATABASE_URL scheme: $DB_URL"
-    exit 1
+    chmod 600 "$SQLITE_TMP"
+    mv -f "$SQLITE_TMP" "$SQLITE_PATH"
+    SQLITE_TMP=""
     ;;
 esac
 
-echo "✅ Restore complete!"
-echo ""
-echo "Verifying..."
-
-# ─── Verify restore ───
-case "$DB_URL" in
-  postgresql://*|postgres://*)
-    psql "$DB_URL" -c "SELECT count(*) FROM \"_prisma_migrations\";" 2>/dev/null || true
-    psql "$DB_URL" -c "SELECT count(*) FROM \"User\";" 2>/dev/null || true
-    ;;
-  file:*)
-    if command -v sqlite3 &> /dev/null; then
-      SQLITE_PATH="${DB_URL#file:}"
-      sqlite3 "$SQLITE_PATH" "SELECT count(*) FROM _prisma_migrations;" 2>/dev/null || true
-      sqlite3 "$SQLITE_PATH" "SELECT count(*) FROM User;" 2>/dev/null || true
-    fi
-    ;;
-esac
+echo "Restore completed and verified."

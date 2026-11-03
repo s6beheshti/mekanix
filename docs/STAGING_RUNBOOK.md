@@ -10,7 +10,7 @@ Required:
 - `DB_PASSWORD`: unique staging database password (24+ characters; use URL-safe characters).
 - `REDIS_PASSWORD`: unique staging Redis password (24+ characters).
 - `JWT_SECRET`: random staging-only secret (32+ characters).
-- `ADMIN_BOOTSTRAP_PASSWORD`: one-time strong staging admin password (16+ characters).
+- `ADMIN_BOOTSTRAP_PASSWORD`: one-time strong staging admin password (16+ characters).\n- `BACKUP_ENCRYPTION_PASSPHRASE`: independent, single-line staging-only secret (32+ characters).\n- `BACKUP_ADMIN_TOKEN`: independent staging-only random token (32+ characters).
 - `APP_URL`: public HTTPS origin for staging, e.g. `https://staging.example.ir`.
 - `PAYMENT_PROVIDER`: `zarinpal` or `idpay`.
 - The selected provider's sandbox credential: `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY`.
@@ -72,14 +72,43 @@ Before each staging release candidate:
 - Record the exact image/commit SHA tested.
 - Keep staging logs and test evidence attached to the release PR.
 
-Example database backup:
+The isolated `backup-scheduler` service creates an encrypted backup immediately after startup and every 24 hours. It uses GPG AES-256; plaintext dumps are streamed directly into encryption and are not written to the persistent backup volume.
+
+Check the scheduler and encrypted artifact:
 
 ```bash
-docker compose -f docker-compose.staging.yml exec -T db \
-  pg_dump -U mekanix mekanix_staging > mekanix-staging-$(date +%F-%H%M).sql
+docker compose -f docker-compose.staging.yml ps backup-scheduler
+docker compose -f docker-compose.staging.yml logs --tail=100 backup-scheduler
+docker compose -f docker-compose.staging.yml exec -T backup-scheduler \
+  sh -c 'find /backups -maxdepth 1 -type f -name "*.sql.gz.gpg" -ls'
 ```
 
-Do not use `docker compose down -v` on a staging environment unless intentionally deleting its database and Redis volumes.
+The scheduler exposes no host port. Its internal `GET /ready` endpoint returns 200 only after a successful backup. Manual execution is available only through authenticated `POST /backup-now`; `GET /backups` also requires the Bearer token. Never publish port 3005.
+
+Trigger a manual backup from inside the scheduler container without exposing the token in command arguments or shell history:
+
+```bash
+docker compose -f docker-compose.staging.yml exec -T backup-scheduler bun -e 'const r = await fetch("http://127.0.0.1:3005/backup-now", { method: "POST", headers: { Authorization: "Bearer " + process.env.BACKUP_ADMIN_TOKEN } }); const body = await r.json(); if (!r.ok) { console.error(body); process.exit(1); } console.log(body.output);'
+```
+
+For a restore drill, restore into a separate disposable database whose name includes `test`, `staging`, or `restore`. Stop application writers for that target, then use the encrypted artifact and the same staging-only passphrase:
+
+```bash
+docker compose -f docker-compose.staging.yml exec -T backup-scheduler \
+  sh -c 'ls -1 /backups/*.sql.gz.gpg'
+```
+
+Run the restore from the scheduler container, overriding `DATABASE_URL` with the isolated restore database URL (reachable as `db` from the Compose network). The passphrase is already injected into the scheduler container; never print it in shell history:
+
+```bash
+docker compose -f docker-compose.staging.yml exec -T \
+  -e DATABASE_URL="$TEST_DB_URL" -e RESTORE_CONFIRM=RESTORE \
+  backup-scheduler bash /app/scripts/restore-db.sh /backups/<backup-file>.sql.gz.gpg
+```
+
+Replace `<backup-file>` with the exact encrypted filename listed in `/backups`. Do not point a restore drill at the source or live database. The restore utility validates the GPG stream before connecting; PostgreSQL restore uses `ON_ERROR_STOP` and a single transaction.
+
+Do not use `docker compose down -v` on a staging environment unless intentionally deleting its database, Redis, and backup volumes. Keep the backup encryption passphrase in a separate secure secret store; losing it makes encrypted backups unrecoverable.
 
 ## 5. Promotion to production
 
