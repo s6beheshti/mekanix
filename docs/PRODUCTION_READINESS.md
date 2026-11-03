@@ -445,12 +445,12 @@ The phase table contains **204 individual checklist rows**. Current status count
 | Phase group | ✅ Done | 🛠️ Prepared | ⬜ Pending | ⚠️ Partial | Total |
 |-------------|--------|-------------|-----------|-----------|-------|
 | 0-4 (Build + config) | 20 | 10 | 0 | 2 | 32 |
-| 5-9 (External services) | 25 | 1 | 9 | 0 | 35 |
+| 5-9 (External services) | 22 | 5 | 8 | 0 | 35 |
 | 10-14 (Infra + readiness) | 18 | 4 | 11 | 0 | 33 |
 | 15-19 (Observability + QA) | 15 | 1 | 15 | 2 | 33 |
-| 20-25 (Staging + rollback) | 20 | 5 | 8 | 3 | 36 |
-| 26-31 (Launch) | 4 | 10 | 21 | 0 | 35 |
-| **TOTAL** | **102** | **31** | **64** | **7** | **204** |
+| 20-25 (Staging + rollback) | 15 | 10 | 8 | 3 | 36 |
+| 26-31 (Launch) | 2 | 11 | 22 | 0 | 35 |
+| **TOTAL** | **92** | **41** | **64** | **7** | **204** |
 
 **Important release gate (2026-11-02):** the application is **not production-ready yet**. Invoice, pre-service, and VIP create → redirect → callback → server verification → transactional settlement are now implemented for Zarinpal v4 and IDPay v1.1; legacy simulator endpoints remain blocked in production. The integration has not yet been exercised with real provider sandbox credentials and registered callback domains. Wallet top-up remains disabled until a ledger and funding policy are defined. `/api/ready` allows a properly configured isolated staging environment, but live production readiness requires non-sandbox credentials, real SMS, HTTPS `APP_URL`, PostgreSQL, and applied migrations.
 
