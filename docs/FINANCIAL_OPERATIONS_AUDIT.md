@@ -118,3 +118,16 @@ Separately, `PATCH /api/invoices/[id]` permits a technician or admin to set invo
 The inspected `src/lib/payment-provider.ts` abstraction exposes create and verify operations only; no refund operation is defined for the supported providers. The gateway callback's failed/cancelled branch applies to an unverified checkout and is not a post-settlement refund.
 
 **Required controls before production:** define cancellation eligibility and fee/refund policy for each stage; prevent invoice cancellation after successful payment unless a dedicated audited refund workflow is used; implement provider-specific refund request + verification/reconciliation, idempotency, and compensating wallet/ledger entries; and test prepay-paid-then-cancel, invoice-paid-then-cancel, duplicate refund callback, provider timeout, and partial failure scenarios. Do not use a status field alone as proof that money was returned.
+
+
+## 13. Wallet ledger does not mirror all balance movements; payout lifecycle is incomplete
+
+The schema defines `WalletLedger` with types including RELEASE, REFUND, COMMISSION and WITHDRAWAL, but the inspected writers do not consistently create ledger rows for these events:
+
+- PREPAY settlement in `src/lib/prepay-settlement.ts` creates PREPAY and COMMISSION `WalletTransaction` rows and increments `pendingBalance`, `totalEarned` and `totalCommission`; it does not create corresponding `WalletLedger` entries.
+- The wallet GET auto-release loop changes a PENDING `WalletTransaction` to AVAILABLE and moves netAmount from pendingBalance to balance using two separate writes; it creates no RELEASE ledger row and is not atomic/idempotent under concurrent GET requests.
+- Withdrawal creation is the inspected path that does create a WITHDRAWAL ledger row, but the wallet balance is written from a precomputed `balanceAfter` after a read inside a transaction, without a conditional debit/row lock. This retains the previously documented stale-read concurrency risk.
+- The inspected API route tree exposes `POST /api/wallets/withdraw` to create a REQUESTED withdrawal, but no dedicated approval/rejection/payout execution route was found. `WithdrawalRequest.txnId` is available in the schema, but no writer was found in the inspected routes to attach a PAYOUT `WalletTransaction` when funds are actually sent.
+- No inspected route performs a complete reconciliation between Wallet balance columns, WalletTransaction state, WalletLedger entries, WithdrawalRequest state and external bank/provider payout confirmation.
+
+**Implication:** WalletLedger cannot currently be treated as a complete audit trail for all wallet movements, and a REQUESTED withdrawal is not evidence that a bank payout was executed. Before production payouts, define one authoritative posting service that atomically writes the transaction, ledger, wallet totals and withdrawal state, with a durable external-payout reference and idempotent reconciliation. Add invariant tests that recompute balances from ledger entries and cover PREPAY, RELEASE, COMMISSION, WITHDRAWAL, REFUND and manual adjustment flows.
