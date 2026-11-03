@@ -368,6 +368,23 @@ describe("POST /api/auth/logout — endpoint", () => {
     expect(setCookie?.toLowerCase()).toMatch(/expires|max-age.*0/);
   });
 
+  it("returns 503 and keeps the cookie when production revocation fails", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "production-session-test-secret-at-least-32-characters");
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
+    mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
+
+    const req = new Request("https://mekanix.test/api/auth/logout", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const res = await logoutPOST(req);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("5");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
   it("works with cookie-based auth too (not just Bearer)", async () => {
     const token = await createSession(PAYLOAD);
     mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
