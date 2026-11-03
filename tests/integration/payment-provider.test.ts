@@ -53,6 +53,28 @@ describe("real payment provider contracts", () => {
     });
   });
 
+  it("simulator verification returns the server-provided expected amount", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("PAYMENT_PROVIDER", "simulator");
+
+    const gateway = await import("@/lib/payment-provider");
+    const created = await gateway.createPayment({
+      amount: 250000,
+      description: "MEKANIX VIP",
+      callbackUrl: "https://mekanix.test/api/gateway/callback",
+      orderId: "PG-simulator-order",
+    });
+    expect(created.success).toBe(true);
+    expect(created.paymentUrl).toContain("simulator=true");
+
+    const verified = await gateway.verifyPayment(created.authority!, 250000, "PG-simulator-order");
+    expect(verified).toEqual({
+      success: true,
+      refId: `ref_${created.authority}`,
+      amount: 250000,
+    });
+  });
+
   it("uses the Zarinpal sandbox host and requires a successful request code", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("PAYMENT_PROVIDER", "zarinpal");
