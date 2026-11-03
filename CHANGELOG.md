@@ -3,6 +3,11 @@
 ## [1.0.1] - Unreleased
 
 ### Security and release hardening
+- Add a dedicated, non-root encrypted backup scheduler to production and staging Compose; run an initial backup and then a configurable daily schedule.
+- Stream PostgreSQL/SQLite backup output through GPG AES-256 before it reaches persistent storage; require a 32+ character passphrase in production/staging and verify the encrypted gzip payload before publishing the artifact.
+- Harden backup restore with pre-restore decryption/validation, transactional PostgreSQL restore, and staged SQLite restore with integrity checks; retain support for legacy unencrypted archives for recovery compatibility.
+- Protect manual backup and backup listing endpoints with a constant-time Bearer-token check; do not publish the scheduler port; add optional HTTPS failure alerts.
+- Add offline encrypted backup/restore regression coverage and Docker E2E checks for the first encrypted artifact.
 - Initialize the configured payment provider during server startup.
 - Fail closed in production when the payment provider is missing, unsupported, or not configured; simulator fallback is development-only.
 - Keep legacy simulator endpoints blocked in production; route invoice payments through authenticated Zarinpal/IDPay checkout.
@@ -25,7 +30,7 @@
 - Complete provider-specific callback verification and test with provider sandbox credentials.
 - Run CI on the release pull request and resolve any failures.
 - Run a full PostgreSQL staging smoke test, OWASP ZAP scan, and cross-browser/mobile QA.
-- Activate real SMS, payment credentials, domain, TLS, monitoring, backups, and alerts only when production credentials and infrastructure are supplied.
+- Complete provider sandbox transactions, encrypted-backup CI and staging restore drill; configure off-site backup replication and an external alert destination before public release.
 - Complete real provider sandbox transactions before marking payment integration as production-verified.
 
 ## [1.0.0] - 2026-09-25
