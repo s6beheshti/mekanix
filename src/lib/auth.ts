@@ -17,18 +17,20 @@ import { kvGet, kvSet } from "./redis";
 
 // ──────────── JWT ────────────
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const encoder = new TextEncoder();
 
 function getSecret(): Uint8Array {
-  if (!JWT_SECRET) {
+  // Read at call time so runtime environment validation and test overrides
+  // cannot be bypassed by module-import timing.
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("JWT_SECRET environment variable is required in production");
     }
     // Dev-only fallback — NEVER in production
     return encoder.encode("mekanix-dev-secret-change-in-production");
   }
-  return encoder.encode(JWT_SECRET);
+  return encoder.encode(jwtSecret);
 }
 
 export type Session = {
