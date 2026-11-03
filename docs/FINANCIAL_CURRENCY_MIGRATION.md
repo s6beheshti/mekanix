@@ -220,3 +220,11 @@ The following findings were verified against the current `main` source after the
 ### Follow-up status
 
 This expands the source-level inventory but does not complete the whole-repository trace. In particular, CARE approval/PartUsage writers, customer reward credit, insurance claim settlement, wallet release/withdrawal/refund/admin adjustment paths, and any data import/seed writers remain open. No schema or historical data changes are authorized by these findings.
+
+
+### Invoice callback and technician earnings — additional verified gap
+
+- `src/app/api/gateway/callback/route.ts` verifies the provider transaction server-to-server, checks that the gateway log is IRR, checks the stored Payment owner and amount, then for invoice payments verifies that the invoice is still payable, has `currency === "IRR"`, and its rounded total exactly matches the verified gateway amount.
+- On successful invoice verification, the callback marks the Invoice `PAID`, marks the Job `COMPLETED`, activates/upserts the Warranty, and sends notifications. In the inspected invoice branch it does **not** create a `WalletTransaction`, update the technician `Wallet`, or create a `WalletLedger` entry. The notification to the technician says payment was received, but the inspected transaction does not post an earning. This is a settlement-completeness gap separate from the USD/IRR mismatch in PR #3.
+- The same callback's `prepay` branch calls `settlePrepay()`; that function writes Job fee/commission/net fields, creates PREPAY and COMMISSION WalletTransactions, and increments Wallet pending balance and lifetime totals. Those are direct fee values from Technician configuration; the current schema documents Wallet and WalletTransaction amounts as IRR, but the Technician fee fields still have contradictory comments/default magnitudes as recorded above.
+- Do not solve the missing invoice wallet credit by simply copying PR #3's USD-base settlement logic. First approve the canonical settlement unit, define the invoice-to-technician earning/commission/hold/refund rules, and add populated-database tests proving invoice, Payment, Job, WalletTransaction, Wallet, WalletLedger and WithdrawalRequest reconcile.
