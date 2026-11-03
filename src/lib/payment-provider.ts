@@ -49,11 +49,13 @@ const simulatorCreate: CreatePaymentFn = async (req) => {
   };
 };
 
-const simulatorVerify: VerifyPaymentFn = async (authority) => {
+const simulatorVerify: VerifyPaymentFn = async (authority, amount) => {
   return {
     success: true,
     refId: `ref_${authority}`,
-    amount: 0,
+    // The simulator mirrors the expected server-side amount; it never reads
+    // amount or status from an untrusted callback query parameter.
+    amount,
   };
 };
 
