@@ -17,18 +17,20 @@ import { kvGet, kvSet } from "./redis";
 
 // ──────────── JWT ────────────
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const encoder = new TextEncoder();
 
 function getSecret(): Uint8Array {
-  if (!JWT_SECRET) {
+  // Read at call time so runtime environment validation and test overrides
+  // cannot be bypassed by module-import timing.
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("JWT_SECRET environment variable is required in production");
     }
     // Dev-only fallback — NEVER in production
     return encoder.encode("mekanix-dev-secret-change-in-production");
   }
-  return encoder.encode(JWT_SECRET);
+  return encoder.encode(jwtSecret);
 }
 
 export type Session = {
@@ -50,10 +52,10 @@ export type Session = {
 //     change / account compromise response
 //   - Per-device tracking (device + ip columns) for the security dashboard
 //
-// Backward compatibility: if the Session table doesn't exist yet (e.g. a
-// pre-migration DB) or the DB call throws, `createSession`/`verifySession`
-// fall back to JWT-only behaviour so existing deployments keep working
-// without forcing a migration.
+// Production security invariant: a JWT is valid only while its hashed
+// Session record exists and is queryable. Production fails closed if the
+// Session store is unavailable; JWT-only fallback is restricted to local
+// development/test compatibility while migrations are being applied.
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — matches JWT exp
 
@@ -86,9 +88,8 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     .setExpirationTime("30d")
     .sign(getSecret());
 
-  // Persist a Session DB record so the token can be revoked/tracked.
-  // Wrap in try/catch: if the Session table doesn't exist (pre-migration
-  // DB) or the DB is unavailable, we still return the JWT so login works.
+  // Persist the revocation record before returning the JWT. Production must
+  // never issue a session that cannot subsequently be checked and revoked.
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   try {
@@ -103,6 +104,11 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     });
   } catch (e) {
     console.error("[auth] Failed to create Session DB record:", e);
+    // In production every issued JWT must have a persisted revocation record.
+    // Never issue a token that cannot be revoked or checked against the DB.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Session persistence failed in production");
+    }
   }
 
   return token;
@@ -125,10 +131,8 @@ export async function verifySession(token: string): Promise<Session | null> {
     isGuest: payload.isGuest as boolean,
   };
 
-  // 2. Check the Session DB for revocation. Wrap in try/catch for backward
-  //    compat: if the Session table doesn't exist (pre-migration DB) or the
-  //    DB call throws, fall back to JWT-only auth so existing deployments
-  //    keep working.
+  // 2. Check the Session DB for revocation. Production fails closed on any
+  //    storage error because JWT-only fallback would bypass revocation.
   try {
     const tokenHash = hashToken(token);
     const sessionRecord = await db.session.findUnique({
@@ -140,7 +144,9 @@ export async function verifySession(token: string): Promise<Session | null> {
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
-    // Fall through — return the JWT-derived session (backward compat).
+    // Production authentication is fail-closed: DB availability is required
+    // to enforce revocation. JWT-only fallback is development/test compatibility.
+    if (process.env.NODE_ENV === "production") return null;
   }
 
   return session;
@@ -166,6 +172,9 @@ export async function revokeSession(token: string): Promise<void> {
     });
   } catch (e) {
     console.error("[auth] Failed to revoke session:", e);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Session revocation failed in production");
+    }
   }
 }
 
@@ -185,6 +194,9 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
     });
   } catch (e) {
     console.error("[auth] Failed to revoke all user sessions:", e);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("User session revocation failed in production");
+    }
   }
 }
 
