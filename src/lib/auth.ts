@@ -103,6 +103,11 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     });
   } catch (e) {
     console.error("[auth] Failed to create Session DB record:", e);
+    // In production every issued JWT must have a persisted revocation record.
+    // Never issue a token that cannot be revoked or checked against the DB.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Session persistence failed in production");
+    }
   }
 
   return token;
@@ -140,7 +145,9 @@ export async function verifySession(token: string): Promise<Session | null> {
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
-    // Fall through — return the JWT-derived session (backward compat).
+    // Production authentication is fail-closed: DB availability is required
+    // to enforce revocation. JWT-only fallback is development/test compatibility.
+    if (process.env.NODE_ENV === "production") return null;
   }
 
   return session;
@@ -166,6 +173,9 @@ export async function revokeSession(token: string): Promise<void> {
     });
   } catch (e) {
     console.error("[auth] Failed to revoke session:", e);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Session revocation failed in production");
+    }
   }
 }
 
@@ -185,6 +195,9 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
     });
   } catch (e) {
     console.error("[auth] Failed to revoke all user sessions:", e);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("User session revocation failed in production");
+    }
   }
 }
 
