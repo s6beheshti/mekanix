@@ -32,6 +32,14 @@
 - CI includes an offline encryption/restore regression test; Docker E2E checks that the service creates an encrypted artifact and does not leave a plaintext archive.
 - This is repository implementation, not yet proof of operational recovery: CI must pass on this branch and staging must complete a restore into a separate disposable database. Off-site replication and an external alert destination remain operational tasks.
 
+## Authentication session hardening added in PR #8
+
+- Production/staging no longer issue a JWT when the Session row cannot be persisted.
+- Production/staging reject JWT authentication if the Session store cannot be queried; development/test compatibility fallback remains limited to non-production.
+- Single-session and user-wide revocation failures propagate instead of being reported as successful.
+- Session verification checks that the persisted Session row belongs to the user encoded in the signed token.
+- CI and PostgreSQL CI evidence is pending for the exact PR head; this implementation must not be called verified until those checks complete.
+
 ## Critical findings still open
 - Invoice, pre-service, and VIP checkout code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs. Amount and plan are server-derived, user ownership comes from the authenticated session, callbacks are verified server-to-server, and invoice settlement, technician prepay wallet credit, and VIP activation are transactional. VIP activation now requires a matching verified payment; the former free-activation endpoint is closed. These flows are **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
 - CI is configured on the release PR. The latest revision's four workflows are running; only completed green checks count as validated.
