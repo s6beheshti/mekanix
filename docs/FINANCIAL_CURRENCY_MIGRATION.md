@@ -163,6 +163,13 @@ This is a source-level inventory, not a statement about deployed rows. “Unreso
 | `PricingSnapshot` price components and `total` | Has `currency` defaulting to IRR | No equivalent USD migration in the inspected change | Must be traced through all writers and readers |
 | `ServicePackage.basePrice` | No currency field | No equivalent currency migration | Unresolved |
 | Referral / insurance amounts | Some fields are explicitly commented IRR | Not comprehensively migrated | Trace all writers and readers before changing units |
+| `ServiceCategory.basePrice` | Decimal amount with no currency field or unit comment | No explicit unit conversion in the PR migration | Unresolved; must trace category pricing consumers |
+| `DiscountCode.value`, `minAmount` | Decimal fields; `type` determines percent/fixed semantics, but fixed-value currency is not stored | No explicit currency migration | Separate percentage discounts from fixed monetary discounts; fixed unit unresolved |
+| `ServicePackage.basePrice` | Decimal amount without currency field | No explicit currency migration | Unresolved; package base price is currently fetched by pricing engine but documented as informational |
+| `CustomerApproval.partPrice`, `laborPrice`, `totalPrice` | Decimal amounts without currency field | No explicit currency migration | Unresolved; customer-approved extras must use the same unit as invoice settlement |
+| `PartUsage.unitPrice`, `totalPrice` | Decimal amounts without currency field | No explicit currency migration | Unresolved; separate from legacy `Part.unitPrice`; trace CARE booking writers/readers |
+| `Referral.rewardAmount` | Comment says IRR credit; no currency field | Not comprehensively migrated | Comment is evidence of intended unit, not proof of deployed rows |
+| `InsurancePolicy.premiumAmount`, `coverageAmount`; `InsuranceClaim.amount` | Premium and claim amount comments say IRR; coverage has no explicit unit comment | Not comprehensively migrated | Preserve intended IRR comments but inspect deployed data and all partner flows |
 
 ### Required follow-up before writing SQL
 
