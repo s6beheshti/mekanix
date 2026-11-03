@@ -38,7 +38,7 @@
 - Production/staging reject JWT authentication if the Session store cannot be queried; development/test compatibility fallback remains limited to non-production.
 - Single-session and user-wide revocation failures propagate instead of being reported as successful.
 - Session verification checks that the persisted Session row belongs to the user encoded in the signed token.
-- CI and PostgreSQL CI evidence is pending for the exact PR head; this implementation must not be called verified until those checks complete.
+- Exact PR #8 head `29035418dd6347f2b0442c76bfa8651aa38e7c8f` passed CI (16 test files / 349 tests), PostgreSQL CI, Docker E2E, and Production Readiness. PR #8 was merged into `main` as `dce1e7a07c3c287caa7ff2da0b971ba3173fb0e6` on 2026-11-03.
 
 ## Critical findings still open
 - Invoice, pre-service, and VIP checkout code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs. Amount and plan are server-derived, user ownership comes from the authenticated session, callbacks are verified server-to-server, and invoice settlement, technician prepay wallet credit, and VIP activation are transactional. VIP activation now requires a matching verified payment; the former free-activation endpoint is closed. These flows are **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
