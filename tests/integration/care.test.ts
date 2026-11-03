@@ -94,7 +94,7 @@ async function mintToken(role: "CUSTOMER" | "TECHNICIAN" | "ADMIN"): Promise<str
     phone: "+989121234567",
     isGuest: false,
   });
-  const persisted = mockSessionCreate.mock.calls.at(-1)?.[0]?.data;
+  const persisted = mockSessionCreate.mock.calls[mockSessionCreate.mock.calls.length - 1]?.[0]?.data;
   if (!persisted || persisted.userId !== userId) {
     throw new Error("Test setup did not persist the expected session identity");
   }
