@@ -21,6 +21,8 @@ jobs:
       APP_URL: https://mekanix.test
       ZARINPAL_SANDBOX: false
       IDPAY_SANDBOX: false
+      BACKUP_ENCRYPTION_PASSPHRASE: test_only_backup_passphrase_32_chars_minimum
+      BACKUP_ADMIN_TOKEN: test_only_backup_admin_token_32_chars_minimum
     
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +61,8 @@ jobs:
           ZARINPAL_MERCHANT_ID: staging-test-merchant
           ZARINPAL_SANDBOX: "true"
           IDPAY_SANDBOX: "false"
+          BACKUP_ENCRYPTION_PASSPHRASE: staging_test_backup_passphrase_32_chars
+          BACKUP_ADMIN_TOKEN: staging_test_backup_admin_token_32_chars
 
       - name: Build and start Docker Compose stack
         run: |
@@ -103,6 +107,26 @@ jobs:
           print(f'✅ Database: {db_status}')
           "
       
+      - name: Verify encrypted backup scheduler
+        run: |
+          cd /tmp/mekanix-build
+          echo "Waiting for first encrypted backup..."
+          for i in $(seq 1 60); do
+            if docker compose exec -T backup-scheduler sh -c 'test -n "$(find /backups -maxdepth 1 -type f -name "*.sql.gz.gpg" -print -quit)"' 2>/dev/null; then
+              docker compose exec -T backup-scheduler bun -e "const r = await fetch('http://127.0.0.1:3005/ready'); const d = await r.json(); if (!r.ok || d.lastBackupOk !== true) { console.error(d); process.exit(1); } console.log('Encrypted backup scheduler ready:', d.lastBackupAt);"
+              if docker compose exec -T backup-scheduler sh -c 'find /backups -maxdepth 1 -type f -name "*.sql.gz" -print -quit | grep -q .' ; then
+                echo "Plaintext backup found in encrypted production backup volume"
+                exit 1
+              fi
+              echo "Encrypted backup created and verified"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs backup-scheduler
+          echo "Encrypted backup was not created"
+          exit 1
+
       - name: Test OTP flow
         run: |
           SEND_RESP=$(curl -s -X POST http://localhost:3000/api/auth/otp/send \
