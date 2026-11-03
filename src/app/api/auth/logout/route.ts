@@ -40,10 +40,20 @@ export async function POST(req: Request) {
 
   // 3. Revoke the Session DB row (idempotent — see revokeSession).
   if (token) {
-    await revokeSession(token);
+    try {
+      await revokeSession(token);
+    } catch (error) {
+      console.error("[auth/logout] Session revocation failed:", error);
+      // Keep the cookie so the client can retry; never claim logout succeeded
+      // until the revocation has been persisted.
+      return NextResponse.json(
+        { error: "خروج امن موقتاً امکان‌پذیر نیست؛ لطفاً دوباره تلاش کنید" },
+        { status: 503, headers: { "Retry-After": "5" } }
+      );
+    }
   }
 
-  // 4. Clear the HttpOnly cookie so the browser drops the token too.
+  // 4. Clear the HttpOnly cookie only after successful revocation.
   const response = NextResponse.json({ ok: true });
   response.cookies.delete("mekanix-token");
   return response;
