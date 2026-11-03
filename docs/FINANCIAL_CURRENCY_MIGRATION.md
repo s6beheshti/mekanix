@@ -142,3 +142,28 @@ Until these are confirmed, no historical currency conversion should be run.
 ## 6. Current decision
 
 **No financial data migration is approved or executed by this audit.** The next implementation change must be additive and data-preserving, with populated-database tests in both database engines. Do not assign a currency to ambiguous historical values until the unit inventory is complete. PR #3 remains blocked until the invoice/payment unit mismatch and all legacy-value semantics are resolved.
+
+## Appendix A — Initial monetary-field inventory
+
+This is a source-level inventory, not a statement about deployed rows. “Unresolved” means the schema or current write path does not prove the unit consistently.
+
+| Model / field group | Current `main` evidence | PR #3 evidence | Migration status |
+|---|---|---|---|
+| `Technician.hourlyRate`, `travelFeeBase`, `inspectionFee`, `inspectionFeeHeavy` | Comments say IRR; defaults are 15 / 3 / 7 / 20 | Comments and seed values are changed to USD | No value conversion; historical unit unresolved |
+| `Part.unitPrice` | No explicit currency field/unit on the model field | Not converted by a migration | Unresolved; used in invoice calculations |
+| `Job.inspectionFee`, `travelFee`, `platformCommission`, `netEarnings` | No currency field on these fields | Fulfillment writes USD-base amounts | No per-row currency tagging/backfill |
+| `Invoice` components and `total` | `currency` defaults to IRR; invoice route writes IRR | `total` is documented as USD base | No numeric conversion; initiation treats total as USD |
+| `Payment.amount` | `currency` defaults to IRR | `amount` is documented as USD base | No numeric conversion; initiation writes USD numeric value with IRR label |
+| `Wallet` balances and lifetime totals | Comments say IRR | Comments say USD base | No numeric conversion or currency field |
+| `WalletTransaction` gross / commission / net | Comments say IRR | Comments say USD base | No numeric conversion or currency field |
+| `WithdrawalRequest.amount` | Comment says IRR | Comment says USD base | No numeric conversion or currency field |
+| `VipPlan.priceIrr` | Named/commented IRR | Renamed to `priceUsd` | Migration only renames the column; numeric values unchanged |
+| `PaymentGatewayLog.amount` | Explicit IRR comment and currency default | Remains IRR | This is the gateway-facing amount; compare it to the exact provider request/verification unit |
+| `WalletLedger.amount`, `balanceBefore`, `balanceAfter` | No currency field and no explicit unit comment | `amount` documented USD base | No numeric conversion or currency field |
+| `PricingSnapshot` price components and `total` | Has `currency` defaulting to IRR | No equivalent USD migration in the inspected change | Must be traced through all writers and readers |
+| `ServicePackage.basePrice` | No currency field | No equivalent currency migration | Unresolved |
+| Referral / insurance amounts | Some fields are explicitly commented IRR | Not comprehensively migrated | Trace all writers and readers before changing units |
+
+### Required follow-up before writing SQL
+
+For each row above, enumerate every create/update path and every consumer. In particular, verify that the invoice route and pricing engine are not creating different unit conventions, and that wallet posting, withdrawal, refund and admin adjustment code all use the same unit as the underlying wallet. The migration must not proceed from this table alone; the inventory must be completed against the entire repository and representative database fixtures.
