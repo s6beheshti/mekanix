@@ -1,73 +1,54 @@
-#!/bin/bash
-# MEKANIX — Backup/Restore Test
-#
-# Tests that backup + restore actually works:
-# 1. Backs up the production DB
-# 2. Restores to a temporary test DB
-# 3. Verifies record counts match
-# 4. Cleans up the test DB
-#
-# Usage:
-#   bash scripts/test-backup-restore.sh
-#
-# Environment:
-#   DATABASE_URL — production PostgreSQL URL
-#   TEST_DB_URL  — temporary test PostgreSQL URL (will be dropped)
+#!/usr/bin/env bash
+# Destructive integration test for PostgreSQL backup/restore.
+# The target must be a separate disposable database whose name includes
+# test, staging, or restore. Production/source targets are never restored over.
 
-set -euo pipefail
-
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROD_URL="${DATABASE_URL:?DATABASE_URL is required}"
-TEST_URL="${TEST_DB_URL:?TEST_DB_URL is required for restore test}"
-BACKUP_FILE="/tmp/mekanix-backup-test-$(date +%s).sql.gz"
+TEST_URL="${TEST_DB_URL:?TEST_DB_URL is required}"
+PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
+(( ${#PASSPHRASE} >= 32 )) || { echo "ERROR: BACKUP_ENCRYPTION_PASSPHRASE must contain at least 32 characters" >&2; exit 1; }
+command -v pg_dump >/dev/null 2>&1 || { echo "ERROR: pg_dump is required" >&2; exit 1; }
+command -v psql >/dev/null 2>&1 || { echo "ERROR: psql is required" >&2; exit 1; }
+command -v gpg >/dev/null 2>&1 || { echo "ERROR: gpg is required" >&2; exit 1; }
 
-echo "🧪 MEKANIX — Backup/Restore Test"
-echo ""
+PROD_TARGET="$(psql "$PROD_URL" -Atc "SELECT current_database() || '|' || COALESCE(inet_server_addr()::text, 'local') || '|' || COALESCE(inet_server_port()::text, 'local')")"
+TEST_TARGET="$(psql "$TEST_URL" -Atc "SELECT current_database() || '|' || COALESCE(inet_server_addr()::text, 'local') || '|' || COALESCE(inet_server_port()::text, 'local')")"
+PROD_DB="${PROD_TARGET%%|*}"
+TEST_DB="${TEST_TARGET%%|*}"
 
-# Step 1: Backup
-echo "1️⃣  Backing up production DB..."
-pg_dump "$PROD_URL" | gzip > "$BACKUP_FILE"
-BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-echo "   ✅ Backup created: $BACKUP_SIZE"
+[[ "$PROD_TARGET" != "$TEST_TARGET" ]] || { echo "ERROR: source and restore targets are identical" >&2; exit 1; }
+case "${TEST_DB,,}" in
+  *test*|*staging*|*restore*) ;;
+  *) echo "ERROR: TEST_DB_URL must target a disposable database named with test, staging, or restore" >&2; exit 1 ;;
+esac
 
-if [ ! -s "$BACKUP_FILE" ]; then
-  echo "   ❌ Backup is empty!"
-  exit 1
-fi
+BACKUP_DIR="$(mktemp -d)"
+cleanup() { rm -rf "$BACKUP_DIR"; }
+trap cleanup EXIT
+export BACKUP_DIR
+export BACKUP_ENCRYPTION_REQUIRED=true
+export NODE_ENV=production
 
-# Step 2: Count records in production
-echo ""
-echo "2️⃣  Counting records in production..."
-PROD_USERS=$(psql "$PROD_URL" -t -c "SELECT count(*) FROM \"User\"" 2>/dev/null | xargs)
-PROD_VEHICLES=$(psql "$PROD_URL" -t -c "SELECT count(*) FROM \"Vehicle\"" 2>/dev/null | xargs)
-echo "   Users: $PROD_USERS"
-echo "   Vehicles: $PROD_VEHICLES"
+echo "Creating encrypted PostgreSQL backup from source database '$PROD_DB'..."
+DATABASE_URL="$PROD_URL" bash "$ROOT/scripts/backup-db.sh"
+BACKUP_FILE="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.sql.gz.gpg' -print -quit)"
+[[ -n "$BACKUP_FILE" && -s "$BACKUP_FILE" ]] || { echo "ERROR: encrypted backup artifact missing" >&2; exit 1; }
 
-# Step 3: Restore to test DB
-echo ""
-echo "3️⃣  Restoring to test DB..."
-# Drop and recreate the test database
-psql "$TEST_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
-gunzip -c "$BACKUP_FILE" | psql "$TEST_URL" 2>/dev/null
-echo "   ✅ Restore complete"
+echo "Preparing disposable restore database '$TEST_DB'..."
+psql --set ON_ERROR_STOP=on "$TEST_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
-# Step 4: Verify record counts match
-echo ""
-echo "4️⃣  Verifying record counts..."
-TEST_USERS=$(psql "$TEST_URL" -t -c "SELECT count(*) FROM \"User\"" 2>/dev/null | xargs)
-TEST_VEHICLES=$(psql "$TEST_URL" -t -c "SELECT count(*) FROM \"Vehicle\"" 2>/dev/null | xargs)
-echo "   Test DB Users: $TEST_USERS (expected: $PROD_USERS)"
-echo "   Test DB Vehicles: $TEST_VEHICLES (expected: $PROD_VEHICLES)"
+echo "Restoring encrypted backup into the isolated target..."
+DATABASE_URL="$TEST_URL" BACKUP_ENCRYPTION_PASSPHRASE="$PASSPHRASE" RESTORE_CONFIRM=RESTORE \
+  bash "$ROOT/scripts/restore-db.sh" "$BACKUP_FILE"
 
-if [ "$PROD_USERS" = "$TEST_USERS" ] && [ "$PROD_VEHICLES" = "$TEST_VEHICLES" ]; then
-  echo ""
-  echo "✅ Backup/Restore test PASSED — record counts match!"
-  # Clean up
-  rm -f "$BACKUP_FILE"
-  psql "$TEST_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
-  exit 0
-else
-  echo ""
-  echo "❌ Backup/Restore test FAILED — record counts don't match!"
-  echo "   Keeping backup at: $BACKUP_FILE for investigation"
-  exit 1
-fi
+SOURCE_USERS="$(psql --set ON_ERROR_STOP=on "$PROD_URL" -Atc 'SELECT count(*) FROM "User"')"
+RESTORED_USERS="$(psql --set ON_ERROR_STOP=on "$TEST_URL" -Atc 'SELECT count(*) FROM "User"')"
+SOURCE_VEHICLES="$(psql --set ON_ERROR_STOP=on "$PROD_URL" -Atc 'SELECT count(*) FROM "Vehicle"')"
+RESTORED_VEHICLES="$(psql --set ON_ERROR_STOP=on "$TEST_URL" -Atc 'SELECT count(*) FROM "Vehicle"')"
+
+[[ "$SOURCE_USERS" == "$RESTORED_USERS" ]] || { echo "ERROR: restored User count differs" >&2; exit 1; }
+[[ "$SOURCE_VEHICLES" == "$RESTORED_VEHICLES" ]] || { echo "ERROR: restored Vehicle count differs" >&2; exit 1; }
+
+echo "Encrypted PostgreSQL backup/restore passed. User=$RESTORED_USERS Vehicle=$RESTORED_VEHICLES"
