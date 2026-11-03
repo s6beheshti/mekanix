@@ -47,3 +47,35 @@ The inspected `PATCH /api/referral` handler changes `rewardClaimed` and referral
 ## 6. Scope and limitations
 
 This is not a full production readiness approval. The findings are based on repository source and do not establish actual deployed data semantics, historical balances, external provider refunds, bank payout execution, or the existence/non-existence of out-of-repository operational procedures. Keep PR #3 blocked until the currency contract and settlement paths are resolved. Keep this audit documentation-only until the owner approves a concrete implementation scope.
+
+
+## 7. Concurrency detail confirmed from the current implementation
+
+### 7.1 Wallet release: duplicate credit is possible
+
+The wallet GET handler first loads pending transactions into memory. For each expired row it performs two independent database calls:
+
+1. `walletTransaction.update({ where: { id }, data: { status: "AVAILABLE" } })`
+2. `wallet.update({ data: { pendingBalance: decrement(netAmount), balance: increment(netAmount) } })`
+
+There is no conditional `status: PENDING` predicate in the update and no single database transaction combining the status transition with the wallet balance movement. Two concurrent GET requests can both have loaded the same PENDING row and both increment the wallet, even though the row ends AVAILABLE only once. A process failure between the two writes can also leave status and balances inconsistent.
+
+### 7.2 Withdrawal: transaction wrapper does not prevent stale-balance lost updates
+
+The withdrawal handler does use a database transaction, but its concurrency control is not sufficient by itself. Each transaction reads the wallet balance, calculates `balanceAfter = balanceBefore - amount` in application code, creates a withdrawal request and ledger entry, then writes the precomputed balance with a normal `update`.
+
+Under PostgreSQL's common READ COMMITTED isolation, two concurrent transactions can both read the same starting balance before either commits. Their wallet updates serialize at the row, but the later update can write its stale precomputed balance rather than subtracting from the newly committed balance. Both withdrawal requests and both ledger entries may therefore commit while the wallet balance reflects only one debit. This is a lost-update / ledger-to-balance inconsistency risk, not a demonstrated production incident.
+
+A robust fix should use one of:
+- a conditional atomic debit (update only where balance is still at least the requested amount, with an atomic decrement), and verify exactly one row was updated; or
+- explicit row locking / serializable isolation with retry handling.
+
+The chosen approach must be tested against both supported database engines. It should also use an idempotency key so client retries cannot create duplicate withdrawal requests.
+
+### 7.3 The withdrawal schema exists but is not wired into the route
+
+`src/lib/schemas/wallet.ts` documents `withdrawRequestSchema` as used by the withdrawal route and sets a 10,000 maximum, but the current route imports no schema and reads `req.json()` directly. Consequently, the route does not enforce the schema's numeric type, upper bound or method enum. The schema itself currently does not require integer amounts or bank/card destination details; those requirements need a deliberate product decision before enforcing them.
+
+### 7.4 Schema comments do not settle the deployed currency contract
+
+The current Prisma schema labels Wallet balances and WalletTransaction amounts as IRR. Technician fee defaults are 15, 3, 7 and 20 with IRR comments, while the checked-in seed has USD-described fee assumptions and converts none of those values before creating IRR-labelled invoice/payment rows. These are conflicting source-level conventions. Neither comments nor demo fixtures establish the unit of deployed historical rows.
