@@ -113,7 +113,7 @@ jobs:
           echo "Waiting for first encrypted backup..."
           for i in $(seq 1 60); do
             if docker compose exec -T backup-scheduler sh -c 'test -n "$(find /backups -maxdepth 1 -type f -name "*.sql.gz.gpg" -print -quit)"' 2>/dev/null; then
-              docker compose exec -T backup-scheduler bun -e "const r = await fetch('http://127.0.0.1:3005/ready'); const d = await r.json(); if (!r.ok || d.lastBackupOk !== true) { console.error(d); process.exit(1); } console.log('Encrypted backup scheduler ready:', d.lastBackupAt);"
+              docker compose exec -T backup-scheduler bun -e "const r = await fetch('http://127.0.0.1:3005/ready'); const d = await r.json(); if (!r.ok || d.lastBackupOk !== true) { console.error(d); process.exit(1); } const unauth = await fetch('http://127.0.0.1:3005/backups'); if (unauth.status !== 401) { console.error('Unauthenticated backup listing was not rejected:', unauth.status); process.exit(1); } const auth = await fetch('http://127.0.0.1:3005/backups', { headers: { Authorization: 'Bearer ' + process.env.BACKUP_ADMIN_TOKEN } }); if (!auth.ok) { console.error('Authenticated backup listing failed:', auth.status); process.exit(1); } console.log('Encrypted backup scheduler ready; authenticated listing works:', d.lastBackupAt);"
               if docker compose exec -T backup-scheduler sh -c 'find /backups -maxdepth 1 -type f -name "*.sql.gz" -print -quit | grep -q .' ; then
                 echo "Plaintext backup found in encrypted production backup volume"
                 exit 1
