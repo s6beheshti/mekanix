@@ -172,3 +172,16 @@ The callback query/form fields are external input. Matching an unpredictable aut
 The simulator provider's verify function returns success with amount 0, while the gateway callback requires Number(verified.amount) to equal the positive expected checkout amount. As a result, simulator callbacks for the gateway-backed VIP and PREPAY paths cannot pass the callback's amount equality check. The invoice development simulator uses a separate local branch and does not exercise this callback path. This is a development/test integration inconsistency, not a production payment vulnerability.
 
 **Required controls:** have simulator verification echo the server-supplied expected amount (and a deterministic reference) or add a dedicated test-only simulator verification contract. Keep simulator activation unreachable in production and test that guard explicitly.
+
+
+## 18. Concurrent checkout creation can open multiple bank payment attempts
+
+The checkout handlers in src/app/api/payments/route.ts perform an active REDIRECTED checkout lookup before creating a new Payment and PaymentGatewayLog. The lookup and subsequent creation are not protected by one transaction, lock, idempotency key, or database uniqueness constraint.
+
+- **VIP:** two concurrent requests for the same user and plan can both observe no active checkout, then create separate PENDING Payment rows and separate gateway logs, and each can call the external provider to create a bank checkout.
+- **PREPAY:** the same check-then-create sequence exists for a job. Concurrent requests can create separate payments and gateway attempts for the same prepay fee.
+- **Invoice:** when a pending Payment already exists, concurrent requests can each create a separate gateway log linked to that same Payment because PaymentGatewayLog.paymentId is not unique. If no Payment exists yet, Payment.invoiceId uniqueness may reject one competing Payment creation, but this does not protect the existing-PENDING case.
+
+A customer could therefore receive more than one valid bank checkout for a single intended VIP/prepay action (or multiple gateway attempts against one invoice payment). If more than one attempt is paid, the callback settlement race described in section 15 increases the risk of duplicate collection or conflicting fulfillment. The source review does not prove that customers have been charged twice; it identifies a concurrent request path that can create multiple live checkout sessions.
+
+**Required controls:** accept a client-generated idempotency key scoped to user + purpose + business reference and persist it under a unique constraint; enforce one active checkout per business action using a transaction-safe claim/lease or database constraint appropriate to the supported databases; re-use the same Payment and gateway attempt on retry; reconcile/cancel superseded attempts with provider confirmation; and add concurrent integration tests for VIP, PREPAY and invoice checkout creation. Do not rely on an application-level findFirst followed by create as a uniqueness guarantee.
