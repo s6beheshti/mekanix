@@ -23,10 +23,19 @@
 
 - Add an isolated staging profile with sandbox-only gateway settings, console OTP, HTTPS callback origin, and a step-by-step staging verification runbook. Staging must use a real sandbox provider, never the successful payment simulator.
 
+## Encrypted backup implementation added on this branch
+
+- Production/staging backup streams are compressed and encrypted with GPG AES-256 before the persistent backup volume is written.
+- Production and staging Compose now include an isolated backup scheduler with a read-only root filesystem, a private tmpfs GPG home, resource limits, and no published host port.
+- The scheduler creates a backup at startup and every 24 hours; manual backup and backup listing require a 32+ character Bearer token.
+- Restore decrypts and validates the archive before applying it. PostgreSQL restore is transactional; SQLite restore is staged to a temporary file and checked with `PRAGMA integrity_check`.
+- CI includes an offline encryption/restore regression test; Docker E2E checks that the service creates an encrypted artifact and does not leave a plaintext archive.
+- This is repository implementation, not yet proof of operational recovery: CI must pass on this branch and staging must complete a restore into a separate disposable database. Off-site replication and an external alert destination remain operational tasks.
+
 ## Critical findings still open
 - Invoice, pre-service, and VIP checkout code is now wired to Zarinpal v4 and IDPay v1.1 create/verify APIs. Amount and plan are server-derived, user ownership comes from the authenticated session, callbacks are verified server-to-server, and invoice settlement, technician prepay wallet credit, and VIP activation are transactional. VIP activation now requires a matching verified payment; the former free-activation endpoint is closed. These flows are **not yet proven against either provider sandbox**; valid merchant credentials and callback-domain registration are still required.
 - CI is configured on the release PR. The latest revision's four workflows are running; only completed green checks count as validated.
-- No staging environment has been deployed: PostgreSQL migration, Redis persistence, production image, backup/restore, and full workflow need an actual host.
+- No staging environment has been deployed: PostgreSQL migration, Redis persistence, production image, encrypted backup/restore, and full workflow need an actual host.
 - External integrations are not verified: real OTP delivery, payment sandbox/live transaction, and routing provider require credentials and test accounts.
 - Operational security is not verified: branch protection is disabled on main; no release exists; OWASP ZAP, penetration test, load test, monitoring/alerts, and restore drill need execution.
 - Wallet top-up remains disabled in production: the current schema models technician earnings wallets, but there is no approved customer/top-up ledger and settlement policy. It must not be activated until those accounting semantics are defined.
