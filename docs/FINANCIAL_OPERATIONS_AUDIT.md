@@ -218,3 +218,15 @@ Outside production, however, the simulator routes have no `requireAuth` call and
 **Boundary and severity:** this is a development/staging isolation weakness, not a path through the real production gateway while the production guard is correctly set. If a staging or preview deployment has `NODE_ENV` other than `production` and is reachable by untrusted users, a caller may manufacture simulator payments and VIP entitlements. The route guard currently relies on one environment variable; a mistaken deployment configuration could expose the demo behavior.
 
 **Required controls:** add a server-side environment allowlist that permits simulator routes only for explicitly local/test environments (not merely anything other than production); add deployment tests proving simulator routes return 503 in staging and production configurations; require an authenticated session and derive user identity from it; derive amount and purpose from server-side records; bind verification to the same user, log, purpose and state; make simulator verification idempotent and transactional; and ensure staging uses the real production-like guard even when it uses sandbox provider credentials. Do not expose these endpoints on a publicly reachable preview deployment.
+
+
+
+## 21. Simulator verification is not atomic or retry-safe
+
+The non-production `POST /api/gateway/verify` handler reads a simulator log, rejects it only when the status is already `VERIFIED`, then performs three separate operations: update the log to `VERIFIED`, create a new `SUCCEEDED` Payment, and update the log again to attach the new Payment id. These operations are not wrapped in one database transaction and there is no conditional `REDIRECTED → VERIFIED` claim.
+
+Two simultaneous verification requests can both read the log before either changes its status, both pass the check, and both create separate successful Payment records for the same simulator attempt. Only the last Payment id written remains linked from the gateway log; the other successful Payment can be orphaned. A process failure after marking the log VERIFIED but before creating/linking the Payment can instead leave a verified log with no linked Payment, while retries are rejected as already verified.
+
+**Boundary:** this is confined to the local/demo simulator while its `NODE_ENV !== "production"` guard is correctly applied. It is not evidence of duplicate real-bank charges.
+
+**Required controls:** perform a conditional state transition that claims the log exactly once, create/link the Payment in the same transaction, add a unique relation or idempotency constraint for one simulator Payment per gateway log, and test concurrent verification plus process-failure/retry behavior. Keep the environment isolation controls in section 20.
