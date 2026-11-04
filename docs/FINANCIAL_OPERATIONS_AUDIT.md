@@ -185,3 +185,20 @@ The checkout handlers in src/app/api/payments/route.ts perform an active REDIREC
 A customer could therefore receive more than one valid bank checkout for a single intended VIP/prepay action (or multiple gateway attempts against one invoice payment). If more than one attempt is paid, the callback settlement race described in section 15 increases the risk of duplicate collection or conflicting fulfillment. The source review does not prove that customers have been charged twice; it identifies a concurrent request path that can create multiple live checkout sessions.
 
 **Required controls:** accept a client-generated idempotency key scoped to user + purpose + business reference and persist it under a unique constraint; enforce one active checkout per business action using a transaction-safe claim/lease or database constraint appropriate to the supported databases; re-use the same Payment and gateway attempt on retry; reconcile/cancel superseded attempts with provider confirmation; and add concurrent integration tests for VIP, PREPAY and invoice checkout creation. Do not rely on an application-level findFirst followed by create as a uniqueness guarantee.
+
+
+
+## 19. Provider checkout can succeed remotely while the local attempt remains unrecognizable
+
+The checkout handlers in `src/app/api/payments/route.ts` create a local Payment and PaymentGatewayLog in a database transaction, initially with the log status `INITIATED`. They then call `createPayment(...)` outside that transaction. Only after the provider returns success do they update the log to `REDIRECTED` and persist `referenceId`. The callback handler accepts only `REDIRECTED` logs; it returns failure for any other status.
+
+This creates an ambiguous-outcome window:
+
+- If the provider creates a checkout but the application process stops, the database update fails, or the network response is lost before the application receives the authority, the local log can remain `INITIATED` (or the route can mark it `FAILED` after a provider timeout/error).
+- The customer may nevertheless have a live provider checkout or may complete payment through a checkout already created remotely.
+- The callback handler rejects an `INITIATED`/`FAILED` log because it requires `REDIRECTED`. For Zarinpal, the callback lookup also depends on `referenceId`, which is only written after the provider response. For IDPay, the order code can locate the log, but the callback is rejected unless the returned authority matches the locally persisted `referenceId`.
+- Therefore a genuine provider payment can become impossible to reconcile through the normal callback path if the remote create succeeded but local persistence did not complete.
+
+The provider adapters catch network errors and return a failed result. A timeout does not necessarily prove that the provider did not create the checkout: the request may have been processed remotely while the response was lost. The route currently treats every unsuccessful result as terminal, setting the gateway log and Payment to `FAILED`, with no distinct ambiguous/pending-reconciliation state.
+
+**Required controls:** persist a stable merchant order/idempotency identifier before calling the provider; distinguish definite provider rejection from timeout/unknown outcome; do not mark ambiguous attempts terminal; make callback correlation possible from the pre-persisted order identifier while still requiring provider-authenticated verification; add a reconciliation job/API that queries provider status for unknown attempts; and test provider-success/local-write-failure, provider-timeout-after-remote-acceptance, process crash between create and update, and duplicate create retries. Do not assume that a local `FAILED` status proves that no bank checkout or charge exists. This is a source-level failure-window risk, not evidence of an actual lost payment.
